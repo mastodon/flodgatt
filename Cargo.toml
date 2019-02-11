@@ -1,0 +1,11 @@
+[package]
+name = "ragequit"
+version = "0.1.0"
+authors = ["Julian Laubstein <contact@julianlaubstein.de>"]
+edition = "2018"
+
+[dependencies]
+actix-web = "0.7.18"
+structopt = "0.2.14"
+log = "0.4.6"
+env_logger = "0.6.0"
