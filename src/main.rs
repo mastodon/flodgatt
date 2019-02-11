@@ -38,5 +38,6 @@ fn main() {
     })
     .bind(addr)
     .unwrap()
+    .shutdown_timeout(10)
     .run();
 }
