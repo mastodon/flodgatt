@@ -1,5 +1,6 @@
 [package]
 name = "ragequit"
+description = "A blazingly fast drop-in replacement for the Mastodon streaming api server"
 version = "0.1.0"
 authors = ["Julian Laubstein <contact@julianlaubstein.de>"]
 edition = "2018"
