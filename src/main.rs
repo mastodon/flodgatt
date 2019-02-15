@@ -4,7 +4,11 @@ mod middleware;
 
 use actix::prelude::*;
 use actix_redis::RedisActor;
-use actix_web::{http::header, middleware::cors::Cors, server, App};
+use actix_web::{
+    http::{header, Method},
+    middleware::cors::Cors,
+    server, App, HttpResponse,
+};
 use env_logger::Builder;
 use log::info;
 use std::net::SocketAddr;
@@ -40,33 +44,50 @@ fn main() {
         redis: redis_addr.clone(),
     };
 
-    server::new(move || vec![ws_endpoints(&app_state), http_endpoints(&app_state)])
-        .bind(addr)
-        .unwrap()
-        .start();
+    server::new(move || endpoints(&app_state)).bind(addr).unwrap().start();
 
     sys.run();
 }
 
-fn http_endpoints(app_state: &AppState) -> App<AppState> {
+fn endpoints(app_state: &AppState) -> App<AppState> {
     use api::http;
-
-    App::with_state(app_state.clone())
-        .middleware(cors_middleware())
-        .prefix("/api/v1")
-        .resource("/streaming/user", |r| r.with(http::user::index))
-        .resource("/streaming/public", |r| r.with(http::public::index))
-        .resource("/streaming/public/local", |r| r.with(http::public::local))
-        .resource("/streaming/direct", |r| r.with(http::direct::index))
-        .resource("/streaming/hashtag", |r| r.with(http::hashtag::index))
-        .resource("/streaming/hashtag/local", |r| r.with(http::hashtag::local))
-        .resource("/streaming/list", |r| r.with(http::list::index))
-}
-
-fn ws_endpoints(app_state: &AppState) -> App<AppState> {
     use api::ws;
 
-    App::with_state(app_state.clone()).resource("/api/v1/streaming", |r| r.with(ws::index))
+    App::with_state(app_state.clone())
+        .prefix("/api/v1")
+        .resource("/streaming", |r| r.with(ws::index))
+        .resource("/streaming/health", |r| {
+            r.middleware(cors_middleware());
+            r.get().f(|_| HttpResponse::Ok())
+        })
+        .resource("/streaming/user", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::user::index)
+        })
+        .resource("/streaming/public", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::public::index)
+        })
+        .resource("/streaming/public/local", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::public::local)
+        })
+        .resource("/streaming/direct", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::direct::index)
+        })
+        .resource("/streaming/hashtag", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::hashtag::index)
+        })
+        .resource("/streaming/hashtag/local", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::hashtag::local)
+        })
+        .resource("/streaming/list", |r| {
+            r.middleware(cors_middleware());
+            r.get().with(http::list::index)
+        })
 }
 
 fn cors_middleware() -> Cors {
