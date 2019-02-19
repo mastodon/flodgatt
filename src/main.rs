@@ -9,7 +9,7 @@ mod middleware;
 use actix::prelude::*;
 use actix_redis::RedisActor;
 use actix_web::{http::header, middleware::cors::Cors, server, App, HttpResponse};
-use env::ServerConfig;
+use env::{RedisConfig, ServerConfig};
 use env_logger::Builder;
 use envconfig::Envconfig;
 use log::info;
@@ -28,17 +28,20 @@ fn main() {
     info!("starting streaming api server");
 
     let server_cfg = ServerConfig::init().expect("failed to obtain server environment");
-    let addr = SocketAddr::new(server_cfg.address, server_cfg.port);
+    let redis_cfg = RedisConfig::init().expect("failed to obtain redis environment");
 
     let sys = System::new("streaming-api-server");
 
-    let redis_addr = RedisActor::start("127.0.0.1:6379");
+    let redis_addr = RedisActor::start(format!("{}:{}", redis_cfg.host, redis_cfg.port));
 
     let app_state = AppState {
         redis: redis_addr.clone(),
     };
 
-    server::new(move || endpoints(&app_state)).bind(addr).unwrap().start();
+    server::new(move || endpoints(&app_state))
+        .bind(SocketAddr::new(server_cfg.address, server_cfg.port))
+        .unwrap()
+        .start();
 
     sys.run();
 }
