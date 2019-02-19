@@ -14,3 +14,10 @@ actix = "0.7.9"
 actix-redis = "0.5.1"
 redis-async = "0.4.4"
 uuid = "0.7.2"
+envconfig = "0.5.0"
+envconfig_derive = "0.5.0"
+whoami = "0.4.1"
+
+[features]
+default = [ "production" ]
+production = []

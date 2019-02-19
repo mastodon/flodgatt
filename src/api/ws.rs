@@ -16,7 +16,7 @@ impl Actor for WebsocketActor {
 impl StreamHandler<ws::Message, ws::ProtocolError> for WebsocketActor {
     fn started(&mut self, ctx: &mut Self::Context) {
         ctx.run_interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECONDS), |_, inner_ctx| {
-            inner_ctx.ping("0123456789abcdef");
+            inner_ctx.ping("");
         });
     }
 

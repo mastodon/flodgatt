@@ -1,26 +1,21 @@
+#[macro_use]
+extern crate envconfig_derive;
+
 mod api;
 mod common;
+mod env;
 mod middleware;
 
 use actix::prelude::*;
 use actix_redis::RedisActor;
-use actix_web::{
-    http::{header, Method},
-    middleware::cors::Cors,
-    server, App, HttpResponse,
-};
+use actix_web::{http::header, middleware::cors::Cors, server, App, HttpResponse};
+use env::ServerConfig;
 use env_logger::Builder;
+use envconfig::Envconfig;
 use log::info;
 use std::net::SocketAddr;
-use structopt::StructOpt;
 
 const ENV_LOG_VARIABLE: &str = "STREAMING_API_LOG";
-
-#[derive(StructOpt)]
-struct Opt {
-    #[structopt(short, long, default_value = "3666")]
-    port: u16,
-}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -30,11 +25,10 @@ pub struct AppState {
 fn main() {
     Builder::from_env(ENV_LOG_VARIABLE).init();
 
-    let args = Opt::from_args();
-
     info!("starting streaming api server");
 
-    let addr: SocketAddr = ([127, 0, 0, 1], args.port).into();
+    let server_cfg = ServerConfig::init().expect("failed to obtain server environment");
+    let addr = SocketAddr::new(server_cfg.address, server_cfg.port);
 
     let sys = System::new("streaming-api-server");
 
