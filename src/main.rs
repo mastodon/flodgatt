@@ -91,6 +91,10 @@ fn cors_middleware() -> Cors {
     Cors::build()
         .allowed_origin("*")
         .allowed_methods(vec!["GET", "OPTIONS"])
-        .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT, header::CACHE_CONTROL])
+        .allowed_headers(vec![
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            header::CACHE_CONTROL,
+        ])
         .finish()
 }
