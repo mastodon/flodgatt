@@ -15,18 +15,26 @@ impl Actor for WebsocketActor {
 /// Handler for ws::Message message
 impl StreamHandler<ws::Message, ws::ProtocolError> for WebsocketActor {
     fn started(&mut self, ctx: &mut Self::Context) {
-        ctx.run_interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECONDS), |_, inner_ctx| {
-            inner_ctx.ping("");
-        });
+        ctx.run_interval(
+            Duration::from_secs(HEARTBEAT_INTERVAL_SECONDS),
+            |_, inner_ctx| {
+                inner_ctx.ping("Ping from StreamHandler");
+            },
+        );
     }
 
+    // This appears to be an echo server based on the actix_web documentation
+    // We won't actually need echo functionality in the final server
     fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
         debug!("Message {:?}", msg);
 
-        let red = ctx.state().redis.send(Command(RespValue::SimpleString("GET".into())));
+        let red = ctx
+            .state()
+            .redis
+            .send(Command(RespValue::SimpleString("GET".into())));
 
         match msg {
-            ws::Message::Pong(msg) => debug!("{}", msg),
+            ws::Message::Pong(msg) => debug!("matched: {}", msg),
             ws::Message::Text(text) => ctx.text(text),
             _ => (),
         }
