@@ -1,100 +1,127 @@
-#[macro_use]
-extern crate envconfig_derive;
-
-mod api;
-mod common;
-mod env;
-mod middleware;
-
-use actix::prelude::*;
-use actix_redis::RedisActor;
-use actix_web::{http::header, middleware::cors::Cors, server, App, HttpResponse};
-use env::{RedisConfig, ServerConfig};
-use env_logger::Builder;
-use envconfig::Envconfig;
-use log::info;
-use std::net::SocketAddr;
-
-const ENV_LOG_VARIABLE: &str = "STREAMING_API_LOG";
-
-#[derive(Clone)]
-pub struct AppState {
-    redis: Addr<RedisActor>,
-}
+mod pubsub;
+mod query;
+use futures::stream::Stream;
+use warp::{path, Filter};
 
 fn main() {
-    Builder::from_env(ENV_LOG_VARIABLE).init();
+    use warp::path;
+    let base = path!("api" / "v1" / "streaming");
 
-    info!("starting streaming api server");
+    // GET /api/v1/streaming/user
+    let user_timeline = base
+        .and(path("user"))
+        .and(path::end())
+        // TODO get user id from postgress
+        .map(|| pubsub::stream_from("1".to_string()));
 
-    let server_cfg = ServerConfig::init().expect("failed to obtain server environment");
-    let redis_cfg = RedisConfig::init().expect("failed to obtain redis environment");
+    // GET /api/v1/streaming/user/notification
+    let user_timeline_notifications = base
+        .and(path!("user" / "notification"))
+        .and(path::end())
+        // TODO get user id from postgress
+        .map(|| {
+            let full_stream = pubsub::stream_from("1".to_string());
+            // TODO: filter stream to just have notifications
+            full_stream
+        });
 
-    let sys = System::new("streaming-api-server");
+    // GET /api/v1/streaming/public
+    let public_timeline = base
+        .and(path("public"))
+        .and(path::end())
+        .map(|| pubsub::stream_from("public".to_string()));
 
-    let redis_addr = RedisActor::start(format!("{}:{}", redis_cfg.host, redis_cfg.port));
+    // GET /api/v1/streaming/public?only_media=true
+    let public_timeline_media = base
+        .and(path("public"))
+        .and(warp::query())
+        .and(path::end())
+        .map(|q: query::Media| {
+            if q.only_media == "1" || q.only_media == "true" {
+                pubsub::stream_from("public:media".to_string())
+            } else {
+                pubsub::stream_from("public".to_string())
+            }
+        });
 
-    let app_state = AppState {
-        redis: redis_addr.clone(),
-    };
+    // GET /api/v1/streaming/public/local
+    let local_timeline = base
+        .and(path!("public" / "local"))
+        .and(path::end())
+        .map(|| pubsub::stream_from("public:local".to_string()));
 
-    server::new(move || endpoints(&app_state))
-        .bind(SocketAddr::new(server_cfg.address, server_cfg.port))
-        .unwrap()
-        .start();
+    // GET /api/v1/streaming/public/local?only_media=true
+    let local_timeline_media = base
+        .and(path!("public" / "local"))
+        .and(warp::query())
+        .and(path::end())
+        .map(|q: query::Media| {
+            if q.only_media == "1" || q.only_media == "true" {
+                pubsub::stream_from("public:local:media".to_string())
+            } else {
+                pubsub::stream_from("public:local".to_string())
+            }
+        });
 
-    sys.run();
-}
+    // GET /api/v1/streaming/direct
+    let direct_timeline = base
+        .and(path("direct"))
+        .and(path::end())
+        // TODO get user id from postgress
+        .map(|| pubsub::stream_from("direct:1".to_string()));
 
-fn endpoints(app_state: &AppState) -> App<AppState> {
-    use api::http;
-    use api::ws;
+    // GET /api/v1/streaming/hashtag?tag=:hashtag
+    let hashtag_timeline = base
+        .and(path("hashtag"))
+        .and(warp::query())
+        .and(path::end())
+        .map(|q: query::Hashtag| pubsub::stream_from(format!("hashtag:{}", q.tag)));
 
-    App::with_state(app_state.clone())
-        .prefix("/api/v1")
-        .resource("/streaming", |r| r.with(ws::index))
-        .resource("/streaming/health", |r| {
-            r.middleware(cors_middleware());
-            r.get().f(|_| HttpResponse::Ok())
-        })
-        .resource("/streaming/user", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::user::index)
-        })
-        .resource("/streaming/public", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::public::index)
-        })
-        .resource("/streaming/public/local", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::public::local)
-        })
-        .resource("/streaming/direct", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::direct::index)
-        })
-        .resource("/streaming/hashtag", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::hashtag::index)
-        })
-        .resource("/streaming/hashtag/local", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::hashtag::local)
-        })
-        .resource("/streaming/list", |r| {
-            r.middleware(cors_middleware());
-            r.get().with(http::list::index)
-        })
-}
+    // GET /api/v1/streaming/hashtag/local?tag=:hashtag
+    let hashtag_timeline_local = base
+        .and(path!("hashtag" / "local"))
+        .and(warp::query())
+        .and(path::end())
+        .map(|q: query::Hashtag| pubsub::stream_from(format!("hashtag:{}:local", q.tag)));
 
-fn cors_middleware() -> Cors {
-    Cors::build()
-        .allowed_origin("*")
-        .allowed_methods(vec!["GET", "OPTIONS"])
-        .allowed_headers(vec![
-            header::AUTHORIZATION,
-            header::ACCEPT,
-            header::CACHE_CONTROL,
-        ])
-        .finish()
+    // GET /api/v1/streaming/list?list=:list_id
+    let list_timeline = base
+        .and(path("list"))
+        .and(warp::query())
+        .and(path::end())
+        .map(|q: query::List| pubsub::stream_from(format!("list:{}", q.list)));
+
+    let routes = user_timeline
+        .or(user_timeline_notifications)
+        .unify()
+        .or(public_timeline_media)
+        .unify()
+        .or(public_timeline)
+        .unify()
+        .or(local_timeline_media)
+        .unify()
+        .or(local_timeline)
+        .unify()
+        .or(direct_timeline)
+        .unify()
+        .or(hashtag_timeline)
+        .unify()
+        .or(hashtag_timeline_local)
+        .unify()
+        .or(list_timeline)
+        .unify()
+        .and_then(|event_stream| event_stream)
+        .and(warp::sse())
+        .map(|event_stream: pubsub::Receiver, sse: warp::sse::Sse| {
+            sse.reply(warp::sse::keep(
+                event_stream.map(|item| {
+                    let payload = item["payload"].clone();
+                    let event = item["event"].clone();
+                    (warp::sse::event(event), warp::sse::data(payload))
+                }),
+                None,
+            ))
+        });
+
+    warp::serve(routes).run(([127, 0, 0, 1], 3030));
 }
