@@ -14,7 +14,7 @@ impl Stream for Receiver {
 
     fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
         let mut buffer = vec![0u8; 3000];
-        while let Async::Ready(num_bytes_read) = self.rx.poll_read(&mut buffer)? {
+        if let Async::Ready(num_bytes_read) = self.rx.poll_read(&mut buffer)? {
             let re = Regex::new(r"(?x)(?P<json>\{.*\})").unwrap();
 
             if let Some(cap) = re.captures(&String::from_utf8_lossy(&buffer[..num_bytes_read])) {
@@ -24,7 +24,7 @@ impl Stream for Receiver {
             }
             return Ok(Async::NotReady);
         }
-        return Ok(Async::NotReady);
+        Ok(Async::NotReady)
     }
 }
 
@@ -42,18 +42,16 @@ impl Future for Sender {
             self.channel.len(),
             self.channel
         );
-        let mut buffer = subscribe_cmd.as_bytes();
-        self.tx.poll_write(&mut buffer)?;
-        return Ok(Async::NotReady);
+        let buffer = subscribe_cmd.as_bytes();
+        self.tx.poll_write(&buffer)?;
+        Ok(Async::NotReady)
     }
 }
 
 fn get_socket() -> impl Future<Item = TcpStream, Error = Box<Error>> {
     let address = "127.0.0.1:6379".parse().expect("Unable to parse address");
     let connection = TcpStream::connect(&address);
-    connection
-        .and_then(|socket| Ok(socket))
-        .map_err(|e| Box::new(e))
+    connection.and_then(Ok).map_err(Box::new)
 }
 
 fn send_subscribe_cmd(tx: WriteHalf<TcpStream>, channel: String) {
@@ -71,6 +69,6 @@ pub fn stream_from(
             let stream_of_data_from_redis = Receiver { rx };
             Ok(stream_of_data_from_redis)
         })
-        .and_then(|stream| Ok(stream))
-        .map_err(|e| warp::reject::custom(e))
+        .and_then(Ok)
+        .map_err(warp::reject::custom)
 }
