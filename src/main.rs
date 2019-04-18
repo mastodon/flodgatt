@@ -1,10 +1,12 @@
 mod pubsub;
 mod query;
 use futures::stream::Stream;
+use log::info;
+use pretty_env_logger;
 use warp::{path, Filter};
 
 fn main() {
-    use warp::path;
+    pretty_env_logger::init();
     let base = path!("api" / "v1" / "streaming");
 
     // GET /api/v1/streaming/user
@@ -12,7 +14,10 @@ fn main() {
         .and(path("user"))
         .and(path::end())
         // TODO get user id from postgress
-        .map(|| pubsub::stream_from("1".to_string()));
+        .map(|| {
+            info!("GET /api/v1/streaming/user");
+            pubsub::stream_from("1".to_string())
+        });
 
     // GET /api/v1/streaming/user/notification
     let user_timeline_notifications = base
@@ -22,14 +27,14 @@ fn main() {
         .map(|| {
             let full_stream = pubsub::stream_from("1".to_string());
             // TODO: filter stream to just have notifications
+            info!("GET /api/v1/streaming/user/notification");
             full_stream
         });
 
-    // GET /api/v1/streaming/public
-    let public_timeline = base
-        .and(path("public"))
-        .and(path::end())
-        .map(|| pubsub::stream_from("public".to_string()));
+    let public_timeline = base.and(path("public")).and(path::end()).map(|| {
+        info!("GET /api/v1/streaming/public");
+        pubsub::stream_from("public".to_string())
+    });
 
     // GET /api/v1/streaming/public?only_media=true
     let public_timeline_media = base
@@ -37,6 +42,7 @@ fn main() {
         .and(warp::query())
         .and(path::end())
         .map(|q: query::Media| {
+            info!("GET /api/v1/streaming/public?only_media=true");
             if q.only_media == "1" || q.only_media == "true" {
                 pubsub::stream_from("public:media".to_string())
             } else {
@@ -48,7 +54,10 @@ fn main() {
     let local_timeline = base
         .and(path!("public" / "local"))
         .and(path::end())
-        .map(|| pubsub::stream_from("public:local".to_string()));
+        .map(|| {
+            info!("GET /api/v1/streaming/public/local");
+            pubsub::stream_from("public:local".to_string())
+        });
 
     // GET /api/v1/streaming/public/local?only_media=true
     let local_timeline_media = base
@@ -56,6 +65,7 @@ fn main() {
         .and(warp::query())
         .and(path::end())
         .map(|q: query::Media| {
+            info!("GET /api/v1/streaming/public/local?only_media=true");
             if q.only_media == "1" || q.only_media == "true" {
                 pubsub::stream_from("public:local:media".to_string())
             } else {
@@ -68,28 +78,40 @@ fn main() {
         .and(path("direct"))
         .and(path::end())
         // TODO get user id from postgress
-        .map(|| pubsub::stream_from("direct:1".to_string()));
+        .map(|| {
+            info!("GET /api/v1/streaming/direct");
+            pubsub::stream_from("direct:1".to_string())
+        });
 
     // GET /api/v1/streaming/hashtag?tag=:hashtag
     let hashtag_timeline = base
         .and(path("hashtag"))
         .and(warp::query())
         .and(path::end())
-        .map(|q: query::Hashtag| pubsub::stream_from(format!("hashtag:{}", q.tag)));
+        .map(|q: query::Hashtag| {
+            info!("GET /api/v1/streaming/hashtag?tag=:hashtag");
+            pubsub::stream_from(format!("hashtag:{}", q.tag))
+        });
 
     // GET /api/v1/streaming/hashtag/local?tag=:hashtag
     let hashtag_timeline_local = base
         .and(path!("hashtag" / "local"))
         .and(warp::query())
         .and(path::end())
-        .map(|q: query::Hashtag| pubsub::stream_from(format!("hashtag:{}:local", q.tag)));
+        .map(|q: query::Hashtag| {
+            info!("GET /api/v1/streaming/hashtag/local?tag=:hashtag");
+            pubsub::stream_from(format!("hashtag:{}:local", q.tag))
+        });
 
     // GET /api/v1/streaming/list?list=:list_id
     let list_timeline = base
         .and(path("list"))
         .and(warp::query())
         .and(path::end())
-        .map(|q: query::List| pubsub::stream_from(format!("list:{}", q.list)));
+        .map(|q: query::List| {
+            info!("GET /api/v1/streaming/list?list=:list_id");
+            pubsub::stream_from(format!("list:{}", q.list))
+        });
 
     let routes = user_timeline
         .or(user_timeline_notifications)
@@ -123,5 +145,6 @@ fn main() {
             ))
         });
 
+    info!("starting streaming api server");
     warp::serve(routes).run(([127, 0, 0, 1], 3030));
 }

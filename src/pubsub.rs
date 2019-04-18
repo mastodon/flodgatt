@@ -1,4 +1,5 @@
 use futures::{Async, Future, Poll};
+use log::{debug, info};
 use regex::Regex;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, Error, ReadHalf, WriteHalf};
@@ -18,6 +19,7 @@ impl Stream for Receiver {
             let re = Regex::new(r"(?x)(?P<json>\{.*\})").unwrap();
 
             if let Some(cap) = re.captures(&String::from_utf8_lossy(&buffer[..num_bytes_read])) {
+                debug!("{}", &cap["json"]);
                 let json_string = cap["json"].to_string();
                 let json: Value = serde_json::from_str(&json_string.clone())?;
                 return Ok(Async::Ready(Some(json)));
@@ -36,7 +38,7 @@ impl Future for Sender {
     type Item = ();
     type Error = Box<Error>;
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        println!("Subscribing to {}", &self.channel);
+        info!("Subscribing to {}", &self.channel);
         let subscribe_cmd = format!(
             "*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n",
             self.channel.len(),
