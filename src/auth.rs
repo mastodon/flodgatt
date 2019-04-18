@@ -1,4 +1,22 @@
+use super::query;
 use postgres;
+use warp::Filter;
+
+pub fn get_token() -> warp::filters::BoxedFilter<(String,)> {
+    let token_from_header = warp::header::header::<String>("authorization")
+        .map(|auth: String| auth.split(' ').nth(1).unwrap_or("invalid").to_string());
+
+    let token_from_query = warp::query().map(|q: query::Auth| q.access_token);
+    token_from_query.or(token_from_header).unify().boxed()
+}
+
+pub fn get_account_id_from_token(token: String) -> Result<i64, warp::reject::Rejection> {
+    if let Ok(account_id) = get_account_id(token) {
+        Ok(account_id)
+    } else {
+        Err(warp::reject::custom("Error: Invalid access token"))
+    }
+}
 
 fn conn() -> postgres::Connection {
     postgres::Connection::connect(
