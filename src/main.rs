@@ -1,3 +1,4 @@
+mod pg;
 mod pubsub;
 mod query;
 use futures::stream::Stream;
@@ -9,23 +10,47 @@ fn main() {
     pretty_env_logger::init();
     let base = path!("api" / "v1" / "streaming");
 
+    let token = warp::any()
+        .and(warp::header::optional::<String>("authorization"))
+        .map(|auth_header: Option<String>| {
+            if let Some(header_value) = auth_header {
+                header_value
+                    .split(" ")
+                    .nth(1)
+                    .unwrap_or("invalid token")
+                    .to_string()
+            } else {
+                "invalid token".to_string()
+            }
+        });
+
+    fn get_account_id_from_token(token: String) -> Result<i64, warp::reject::Rejection> {
+        if let Ok(account_id) = pg::get_account_id(token) {
+            Ok(account_id)
+        } else {
+            Err(warp::reject::custom("Error: Invalid access token"))
+        }
+    }
+
     // GET /api/v1/streaming/user
     let user_timeline = base
         .and(path("user"))
         .and(path::end())
-        // TODO get user id from postgress
-        .map(|| {
+        .and(token)
+        .and_then(get_account_id_from_token)
+        .map(|account_id: i64| {
             info!("GET /api/v1/streaming/user");
-            pubsub::stream_from("1".to_string())
+            pubsub::stream_from(account_id.to_string())
         });
 
     // GET /api/v1/streaming/user/notification
     let user_timeline_notifications = base
         .and(path!("user" / "notification"))
         .and(path::end())
-        // TODO get user id from postgress
-        .map(|| {
-            let full_stream = pubsub::stream_from("1".to_string());
+        .and(token)
+        .and_then(get_account_id_from_token)
+        .map(|account_id: i64| {
+            let full_stream = pubsub::stream_from(account_id.to_string());
             // TODO: filter stream to just have notifications
             info!("GET /api/v1/streaming/user/notification");
             full_stream
@@ -77,10 +102,11 @@ fn main() {
     let direct_timeline = base
         .and(path("direct"))
         .and(path::end())
-        // TODO get user id from postgress
-        .map(|| {
+        .and(token)
+        .and_then(get_account_id_from_token)
+        .map(|account_id: i64| {
             info!("GET /api/v1/streaming/direct");
-            pubsub::stream_from("direct:1".to_string())
+            pubsub::stream_from(format!("direct:{}", account_id))
         });
 
     // GET /api/v1/streaming/hashtag?tag=:hashtag
