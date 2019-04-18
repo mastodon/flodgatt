@@ -4,6 +4,7 @@ mod query;
 use futures::stream::Stream;
 use log::info;
 use pretty_env_logger;
+use serde_derive::Serialize;
 use warp::{path, Filter};
 
 fn main() {
@@ -14,22 +15,52 @@ fn main() {
         .and(warp::header::optional::<String>("authorization"))
         .map(|auth_header: Option<String>| {
             if let Some(header_value) = auth_header {
-                header_value
-                    .split(" ")
-                    .nth(1)
-                    .unwrap_or("invalid token")
-                    .to_string()
+                Some(
+                    header_value
+                        .split(" ")
+                        .nth(1)
+                        .unwrap_or("invalid token")
+                        .to_string(),
+                )
             } else {
-                "invalid token".to_string()
+                None
             }
         });
 
-    fn get_account_id_from_token(token: String) -> Result<i64, warp::reject::Rejection> {
-        if let Ok(account_id) = pg::get_account_id(token) {
+    fn get_account_id_from_token(token: Option<String>) -> Result<i64, warp::reject::Rejection> {
+        if token.is_none() {
+            Err(warp::reject::custom("Error: Missing access token"))
+        } else if let Ok(account_id) = pg::get_account_id(token.unwrap()) {
             Ok(account_id)
         } else {
             Err(warp::reject::custom("Error: Invalid access token"))
         }
+    }
+
+    #[derive(Serialize)]
+    struct ErrorMessage {
+        error: String,
+    }
+    impl ErrorMessage {
+        fn new(msg: impl std::fmt::Display) -> Self {
+            Self {
+                error: msg.to_string(),
+            }
+        }
+    }
+
+    fn handle_errors(
+        rejection: warp::reject::Rejection,
+    ) -> Result<impl warp::Reply, warp::reject::Rejection> {
+        let err_txt = match rejection.cause() {
+            Some(text) => text.to_string(),
+            None => "Unknown server error".to_string(),
+        };
+        let json = warp::reply::json(&ErrorMessage::new(err_txt));
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::UNAUTHORIZED,
+        ))
     }
 
     // GET /api/v1/streaming/user
@@ -169,7 +200,8 @@ fn main() {
                 }),
                 None,
             ))
-        });
+        })
+        .recover(handle_errors);
 
     info!("starting streaming api server");
     warp::serve(routes).run(([127, 0, 0, 1], 3030));
