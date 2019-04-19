@@ -19,7 +19,7 @@ pub fn handle_errors(
             "Error: Missing access token".to_string()
         }
         Some(text) => text.to_string(),
-        None => "Unknown server error".to_string(),
+        None => "Error: Nonexistant endpoint".to_string(),
     };
     let json = warp::reply::json(&ErrorMessage::new(err_txt));
     Ok(warp::reply::with_status(
