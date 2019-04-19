@@ -61,6 +61,7 @@ fn send_subscribe_cmd(tx: WriteHalf<TcpStream>, channel: String) {
     tokio::spawn(sender.map_err(|e| eprintln!("{}", e)));
 }
 
+/// Create a stream from a string.
 pub fn stream_from(
     timeline: String,
 ) -> impl Future<Item = Receiver, Error = warp::reject::Rejection> {
