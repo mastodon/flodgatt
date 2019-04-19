@@ -12,3 +12,7 @@ pub struct Hashtag {
 pub struct List {
     pub list: String,
 }
+#[derive(Deserialize)]
+pub struct Auth {
+    pub access_token: String,
+}
