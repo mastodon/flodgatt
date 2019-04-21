@@ -1,3 +1,4 @@
+use crate::user::User;
 use futures::{Async, Future, Poll};
 use log::{debug, info};
 use regex::Regex;
@@ -6,15 +7,9 @@ use tokio::io::{AsyncRead, AsyncWrite, Error, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use warp::Stream;
 
-#[derive(Clone)]
-pub enum Filter {
-    None,
-    Language(Vec<String>),
-    Notification,
-}
 pub struct Receiver {
     rx: ReadHalf<TcpStream>,
-    pub filter: Filter,
+    pub user: User,
 }
 impl Stream for Receiver {
     type Item = Value;
@@ -68,16 +63,15 @@ fn send_subscribe_cmd(tx: WriteHalf<TcpStream>, channel: String) {
     tokio::spawn(sender.map_err(|e| eprintln!("{}", e)));
 }
 
-/// Create a stream from a string.
 pub fn stream_from(
     timeline: String,
-    filter: Filter,
+    user: User,
 ) -> impl Future<Item = Receiver, Error = warp::reject::Rejection> {
     get_socket()
         .and_then(move |socket| {
             let (rx, tx) = socket.split();
             send_subscribe_cmd(tx, format!("timeline:{}", timeline));
-            let stream_of_data_from_redis = Receiver { rx, filter };
+            let stream_of_data_from_redis = Receiver { rx, user };
             Ok(stream_of_data_from_redis)
         })
         .map_err(warp::reject::custom)

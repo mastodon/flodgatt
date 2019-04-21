@@ -5,8 +5,8 @@ mod user;
 mod utils;
 use futures::stream::Stream;
 use pretty_env_logger;
-use pubsub::{stream_from, Filter};
-use user::{Scope, User};
+use pubsub::stream_from;
+use user::{Filter, Scope, User};
 use warp::{path, Filter as WarpFilter};
 
 fn main() {
@@ -17,21 +17,21 @@ fn main() {
         .and(path::end())
         .and(user::get_access_token(Scope::Private))
         .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|user: User| stream_from(user.id, Filter::None));
+        .map(|user: User| stream_from(user.id.to_string(), user));
 
     // GET /api/v1/streaming/user/notification                     [private; notification filter]
     let user_timeline_notifications = path!("api" / "v1" / "streaming" / "user" / "notification")
         .and(path::end())
         .and(user::get_access_token(Scope::Private))
         .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|user: User| stream_from(user.id, Filter::Notification));
+        .map(|user: User| stream_from(user.id.to_string(), user.with_notification_filter()));
 
     // GET /api/v1/streaming/public                                [public; language filter]
     let public_timeline = path!("api" / "v1" / "streaming" / "public")
         .and(path::end())
         .and(user::get_access_token(user::Scope::Public))
         .and_then(|token| user::get_account(token, Scope::Public))
-        .map(|user: User| stream_from("public".into(), Filter::Language(user.langs)));
+        .map(|user: User| stream_from("public".into(), user.with_language_filter()));
 
     // GET /api/v1/streaming/public?only_media=true                [public; language filter]
     let public_timeline_media = path!("api" / "v1" / "streaming" / "public")
@@ -40,8 +40,8 @@ fn main() {
         .and_then(|token| user::get_account(token, Scope::Public))
         .and(warp::query())
         .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-            "1" | "true" => stream_from("public:media".into(), Filter::Language(user.langs)),
-            _ => stream_from("public".into(), Filter::Language(user.langs)),
+            "1" | "true" => stream_from("public:media".into(), user.with_language_filter()),
+            _ => stream_from("public".into(), user.with_language_filter()),
         });
 
     // GET /api/v1/streaming/public/local                          [public; language filter]
@@ -49,7 +49,7 @@ fn main() {
         .and(path::end())
         .and(user::get_access_token(user::Scope::Public))
         .and_then(|token| user::get_account(token, Scope::Public))
-        .map(|user: User| stream_from("public:local".into(), Filter::Language(user.langs)));
+        .map(|user: User| stream_from("public:local".into(), user.with_language_filter()));
 
     // GET /api/v1/streaming/public/local?only_media=true          [public; language filter]
     let local_timeline_media = path!("api" / "v1" / "streaming" / "public" / "local")
@@ -58,8 +58,8 @@ fn main() {
         .and(warp::query())
         .and(path::end())
         .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-            "1" | "true" => stream_from("public:local:media".into(), Filter::Language(user.langs)),
-            _ => stream_from("public:local".into(), Filter::None),
+            "1" | "true" => stream_from("public:local:media".into(), user.with_language_filter()),
+            _ => stream_from("public:local".into(), user.with_language_filter()),
         });
 
     // GET /api/v1/streaming/direct                                [private; *no* filter]
@@ -67,28 +67,29 @@ fn main() {
         .and(path::end())
         .and(user::get_access_token(Scope::Private))
         .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|account: User| stream_from(format!("direct:{}", account.id), Filter::None));
+        .map(|user: User| stream_from(format!("direct:{}", user.id), user.with_no_filter()));
 
     // GET /api/v1/streaming/hashtag?tag=:hashtag                  [public; no filter]
     let hashtag_timeline = path!("api" / "v1" / "streaming" / "hashtag")
         .and(warp::query())
         .and(path::end())
-        .map(|q: query::Hashtag| stream_from(format!("hashtag:{}", q.tag), Filter::None));
+        .map(|q: query::Hashtag| stream_from(format!("hashtag:{}", q.tag), User::public()));
 
     // GET /api/v1/streaming/hashtag/local?tag=:hashtag            [public; no filter]
     let hashtag_timeline_local = path!("api" / "v1" / "streaming" / "hashtag" / "local")
         .and(warp::query())
         .and(path::end())
-        .map(|q: query::Hashtag| stream_from(format!("hashtag:{}:local", q.tag), Filter::None));
+        .map(|q: query::Hashtag| stream_from(format!("hashtag:{}:local", q.tag), User::public()));
 
     // GET /api/v1/streaming/list?list=:list_id                    [private; no filter]
     let list_timeline = path!("api" / "v1" / "streaming" / "list")
         .and(user::get_access_token(Scope::Private))
         .and_then(|token| user::get_account(token, Scope::Private))
         .and(warp::query())
+        .and_then(|user: User, q: query::List| user.is_authorized_for_list(q.list))
+        .untuple_one()
         .and(path::end())
-        // TODO: filter down to lists the user can access
-        .map(|_user: User, q: query::List| stream_from(format!("list:{}", q.list), Filter::None));
+        .map(|list: i64, user: User| stream_from(format!("list:{}", list), user.with_no_filter()));
 
     let routes = or!(
         user_timeline,
@@ -105,15 +106,15 @@ fn main() {
     .and_then(|event_stream| event_stream)
     .and(warp::sse())
     .map(|event_stream: pubsub::Receiver, sse: warp::sse::Sse| {
-        let filter = event_stream.filter.clone();
+        let user = event_stream.user.clone();
         sse.reply(warp::sse::keep(
             event_stream.filter_map(move |item| {
                 let payload = item["payload"].clone();
                 let event = item["event"].to_string().clone();
-                let lang = item["language"].to_string().clone();
-                match filter {
+                let toot_lang = item["language"].to_string().clone();
+                match &user.filter {
                     Filter::Notification if event != "notification" => None,
-                    Filter::Language(ref vec) if !vec.contains(&lang) => None,
+                    Filter::Language if !user.langs.contains(&toot_lang) => None,
                     _ => Some((warp::sse::event(event), warp::sse::data(payload))),
                 }
             }),
