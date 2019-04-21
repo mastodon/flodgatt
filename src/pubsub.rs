@@ -9,7 +9,29 @@ use warp::Stream;
 
 pub struct Receiver {
     rx: ReadHalf<TcpStream>,
+    tx: WriteHalf<TcpStream>,
+    timeline: String,
     pub user: User,
+}
+impl Receiver {
+    fn new(socket: TcpStream, timeline: String, user: User) -> Self {
+        let (rx, mut tx) = socket.split();
+        let channel = format!("timeline:{}", timeline);
+        info!("Subscribing to {}", &channel);
+        let subscribe_cmd = format!(
+            "*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n",
+            channel.len(),
+            channel
+        );
+        let buffer = subscribe_cmd.as_bytes();
+        tx.poll_write(&buffer).unwrap();
+        Self {
+            rx,
+            tx,
+            timeline,
+            user,
+        }
+    }
 }
 impl Stream for Receiver {
     type Item = Value;
@@ -31,24 +53,16 @@ impl Stream for Receiver {
         Ok(Async::NotReady)
     }
 }
-
-struct Sender {
-    tx: WriteHalf<TcpStream>,
-    channel: String,
-}
-impl Future for Sender {
-    type Item = ();
-    type Error = Box<Error>;
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        info!("Subscribing to {}", &self.channel);
-        let subscribe_cmd = format!(
+impl Drop for Receiver {
+    fn drop(&mut self) {
+        let channel = format!("timeline:{}", self.timeline);
+        let unsubscribe_cmd = format!(
             "*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n",
-            self.channel.len(),
-            self.channel
+            channel.len(),
+            channel
         );
-        let buffer = subscribe_cmd.as_bytes();
-        self.tx.poll_write(&buffer)?;
-        Ok(Async::NotReady)
+        self.tx.poll_write(unsubscribe_cmd.as_bytes()).unwrap();
+        println!("Receiver got dropped!");
     }
 }
 
@@ -58,20 +72,13 @@ fn get_socket() -> impl Future<Item = TcpStream, Error = Box<Error>> {
     connection.and_then(Ok).map_err(Box::new)
 }
 
-fn send_subscribe_cmd(tx: WriteHalf<TcpStream>, channel: String) {
-    let sender = Sender { tx, channel };
-    tokio::spawn(sender.map_err(|e| eprintln!("{}", e)));
-}
-
 pub fn stream_from(
     timeline: String,
     user: User,
 ) -> impl Future<Item = Receiver, Error = warp::reject::Rejection> {
     get_socket()
         .and_then(move |socket| {
-            let (rx, tx) = socket.split();
-            send_subscribe_cmd(tx, format!("timeline:{}", timeline));
-            let stream_of_data_from_redis = Receiver { rx, user };
+            let stream_of_data_from_redis = Receiver::new(socket, timeline, user);
             Ok(stream_of_data_from_redis)
         })
         .map_err(warp::reject::custom)

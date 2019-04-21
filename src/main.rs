@@ -112,6 +112,9 @@ fn main() {
                 let payload = item["payload"].clone();
                 let event = item["event"].to_string().clone();
                 let toot_lang = item["language"].to_string().clone();
+
+                println!("ding");
+
                 match &user.filter {
                     Filter::Notification if event != "notification" => None,
                     Filter::Language if !user.langs.contains(&toot_lang) => None,
@@ -121,6 +124,7 @@ fn main() {
             None,
         ))
     })
+    .with(warp::reply::with::header("Connection", "keep-alive"))
     .recover(error::handle_errors);
 
     warp::serve(routes).run(([127, 0, 0, 1], 3030));
