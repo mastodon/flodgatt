@@ -10,7 +10,7 @@ pub struct Hashtag {
 }
 #[derive(Deserialize)]
 pub struct List {
-    pub list: String,
+    pub list: i64,
 }
 #[derive(Deserialize)]
 pub struct Auth {
