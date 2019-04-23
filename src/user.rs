@@ -56,7 +56,7 @@ impl User {
             ..self
         }
     }
-    pub fn is_authorized_for_list(self, list: i64) -> Result<(i64, User), warp::reject::Rejection> {
+    pub fn is_authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
         let conn = conn();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
@@ -68,7 +68,7 @@ impl User {
         if !rows.is_empty() {
             let id_of_account_that_owns_the_list: i64 = rows.get(0).get(1);
             if id_of_account_that_owns_the_list == self.id {
-                return Ok((list, self));
+                return Ok(list);
             }
         };
 
@@ -109,7 +109,7 @@ LIMIT 1",
         let id: i64 = only_row.get(1);
         let langs: Vec<String> = only_row.get(2);
         Ok(User {
-            id: id,
+            id,
             langs,
             logged_in: true,
             filter: Filter::None,
