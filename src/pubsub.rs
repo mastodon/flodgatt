@@ -41,6 +41,7 @@ impl RedisCmd {
     }
 }
 
+#[derive(Debug)]
 pub struct Receiver {
     rx: ReadHalf<TcpStream>,
     tx: WriteHalf<TcpStream>,
@@ -49,6 +50,7 @@ pub struct Receiver {
 }
 impl Receiver {
     fn new(socket: TcpStream, tl: String, user: User) -> Self {
+        println!("created a new Receiver");
         let (rx, mut tx) = socket.split();
         tx.poll_write(RedisCmd::subscribe_to_timeline(&tl).as_bytes())
             .expect("Can subscribe to Redis");
@@ -86,30 +88,65 @@ impl Drop for Receiver {
     }
 }
 
+use futures::sink::Sink;
+use tokio::net::tcp::ConnectFuture;
+struct Socket {
+    connect: ConnectFuture,
+    tx: tokio::sync::mpsc::Sender<TcpStream>,
+}
+impl Socket {
+    fn new(address: impl std::fmt::Display, tx: tokio::sync::mpsc::Sender<TcpStream>) -> Self {
+        let address = address
+            .to_string()
+            .parse()
+            .expect("Unable to parse address");
+        let connect = TcpStream::connect(&address);
+        Self { connect, tx }
+    }
+}
+impl Future for Socket {
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.connect.poll() {
+            Ok(Async::Ready(socket)) => {
+                self.tx.clone().try_send(socket);
+                Ok(Async::Ready(()))
+            }
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(e) => {
+                println!("failed to connect: {}", e);
+                Ok(Async::Ready(()))
+            }
+        }
+    }
+}
+
 pub struct PubSub {}
 
 impl PubSub {
-    pub fn from(
-        timeline: impl std::fmt::Display,
-        user: User,
-    ) -> impl Future<Item = Receiver, Error = warp::reject::Rejection> {
+    pub fn from(timeline: impl std::fmt::Display, user: User) -> Receiver {
         while OPEN_CONNECTIONS.load(Ordering::Relaxed) > MAX_CONNECTIONS.load(Ordering::Relaxed) {
             thread::sleep(time::Duration::from_millis(1000));
         }
         let new_connections = OPEN_CONNECTIONS.fetch_add(1, Ordering::Relaxed) + 1;
         println!("{} connection(s) now open", new_connections);
 
+        let (tx, mut rx) = tokio::sync::mpsc::channel(5);
+        let socket = Socket::new("127.0.0.1:6379", tx);
+
+        tokio::spawn(futures::future::lazy(move || socket));
+
+        let socket = loop {
+            if let Ok(Async::Ready(Some(msg))) = rx.poll() {
+                break msg;
+            }
+            thread::sleep(time::Duration::from_millis(100));
+        };
+
         let timeline = timeline.to_string();
-        fn get_socket() -> impl Future<Item = TcpStream, Error = Box<Error>> {
-            let address = "127.0.0.1:6379".parse().expect("Unable to parse address");
-            let connection = TcpStream::connect(&address);
-            connection.and_then(Ok).map_err(Box::new)
-        }
-        get_socket()
-            .and_then(move |socket| {
-                let stream_of_data_from_redis = Receiver::new(socket, timeline, user);
-                Ok(stream_of_data_from_redis)
-            })
-            .map_err(warp::reject::custom)
+        let stream_of_data_from_redis = Receiver::new(socket, timeline, user);
+        stream_of_data_from_redis
     }
 }

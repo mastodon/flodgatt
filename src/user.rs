@@ -23,14 +23,14 @@ fn conn() -> postgres::Connection {
     )
     .unwrap()
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Filter {
     None,
     Language,
     Notification,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct User {
     pub id: i64,
     pub langs: Vec<String>,
