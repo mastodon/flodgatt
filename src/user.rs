@@ -33,7 +33,7 @@ pub enum Filter {
 #[derive(Clone, Debug)]
 pub struct User {
     pub id: i64,
-    pub langs: Vec<String>,
+    pub langs: Option<Vec<String>>,
     pub logged_in: bool,
     pub filter: Filter,
 }
@@ -77,7 +77,7 @@ impl User {
     pub fn public() -> Self {
         User {
             id: -1,
-            langs: Vec::new(),
+            langs: None,
             logged_in: false,
             filter: Filter::None,
         }
@@ -107,7 +107,8 @@ LIMIT 1",
     if !result.is_empty() {
         let only_row = result.get(0);
         let id: i64 = only_row.get(1);
-        let langs: Vec<String> = only_row.get(2);
+        let langs: Option<Vec<String>> = only_row.get(2);
+        println!("Granting logged-in access");
         Ok(User {
             id,
             langs,
@@ -115,9 +116,10 @@ LIMIT 1",
             filter: Filter::None,
         })
     } else if let Scope::Public = scope {
+        println!("Granting public access");
         Ok(User {
             id: -1,
-            langs: Vec::new(),
+            langs: None,
             logged_in: false,
             filter: Filter::None,
         })

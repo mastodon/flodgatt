@@ -1,18 +1,16 @@
+use crate::stream;
 use crate::user::User;
 use futures::{Async, Future, Poll};
-use log::{debug, info};
-use regex::Regex;
-use serde_json::Value;
+use log::info;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{thread, time};
-use tokio::io::{AsyncRead, AsyncWrite, Error, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use warp::Stream;
 
-static OPEN_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
-static MAX_CONNECTIONS: AtomicUsize = AtomicUsize::new(400);
+pub static OPEN_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+pub static MAX_CONNECTIONS: AtomicUsize = AtomicUsize::new(400);
 
-struct RedisCmd {
+pub struct RedisCmd {
     resp_cmd: String,
 }
 impl RedisCmd {
@@ -27,13 +25,13 @@ impl RedisCmd {
         );
         Self { resp_cmd }
     }
-    fn subscribe_to_timeline(timeline: &str) -> String {
+    pub fn subscribe_to_timeline(timeline: &str) -> String {
         let channel = format!("timeline:{}", timeline);
         let subscribe = RedisCmd::new("subscribe", &channel);
         info!("Subscribing to {}", &channel);
         subscribe.resp_cmd
     }
-    fn unsubscribe_from_timeline(timeline: &str) -> String {
+    pub fn unsubscribe_from_timeline(timeline: &str) -> String {
         let channel = format!("timeline:{}", timeline);
         let unsubscribe = RedisCmd::new("unsubscribe", &channel);
         info!("Unsubscribing from {}", &channel);
@@ -41,54 +39,6 @@ impl RedisCmd {
     }
 }
 
-#[derive(Debug)]
-pub struct Receiver {
-    rx: ReadHalf<TcpStream>,
-    tx: WriteHalf<TcpStream>,
-    tl: String,
-    pub user: User,
-}
-impl Receiver {
-    fn new(socket: TcpStream, tl: String, user: User) -> Self {
-        println!("created a new Receiver");
-        let (rx, mut tx) = socket.split();
-        tx.poll_write(RedisCmd::subscribe_to_timeline(&tl).as_bytes())
-            .expect("Can subscribe to Redis");
-        Self { rx, tx, tl, user }
-    }
-}
-impl Stream for Receiver {
-    type Item = Value;
-    type Error = Error;
-
-    fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
-        let mut buffer = vec![0u8; 3000];
-        if let Async::Ready(num_bytes_read) = self.rx.poll_read(&mut buffer)? {
-            // capture everything between `{` and `}` as potential JSON
-            let re = Regex::new(r"(?P<json>\{.*\})").expect("Valid hard-coded regex");
-
-            if let Some(cap) = re.captures(&String::from_utf8_lossy(&buffer[..num_bytes_read])) {
-                debug!("{}", &cap["json"]);
-                let json: Value = serde_json::from_str(&cap["json"].to_string().clone())?;
-                return Ok(Async::Ready(Some(json)));
-            }
-            return Ok(Async::NotReady);
-        }
-        Ok(Async::NotReady)
-    }
-}
-impl Drop for Receiver {
-    fn drop(&mut self) {
-        let channel = format!("timeline:{}", self.tl);
-        self.tx
-            .poll_write(RedisCmd::unsubscribe_from_timeline(&channel).as_bytes())
-            .expect("Can unsubscribe from Redis");
-        let open_connections = OPEN_CONNECTIONS.fetch_sub(1, Ordering::Relaxed) - 1;
-        info!("Receiver dropped.  {} connection(s) open", open_connections);
-    }
-}
-
-use futures::sink::Sink;
 use tokio::net::tcp::ConnectFuture;
 struct Socket {
     connect: ConnectFuture,
@@ -111,12 +61,12 @@ impl Future for Socket {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.connect.poll() {
             Ok(Async::Ready(socket)) => {
-                self.tx.clone().try_send(socket);
+                self.tx.clone().try_send(socket).expect("Socket created");
                 Ok(Async::Ready(()))
             }
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(e) => {
-                println!("failed to connect: {}", e);
+                info!("failed to connect: {}", e);
                 Ok(Async::Ready(()))
             }
         }
@@ -126,12 +76,12 @@ impl Future for Socket {
 pub struct PubSub {}
 
 impl PubSub {
-    pub fn from(timeline: impl std::fmt::Display, user: User) -> Receiver {
+    pub fn from(timeline: impl std::fmt::Display, user: &User) -> stream::Receiver {
         while OPEN_CONNECTIONS.load(Ordering::Relaxed) > MAX_CONNECTIONS.load(Ordering::Relaxed) {
             thread::sleep(time::Duration::from_millis(1000));
         }
         let new_connections = OPEN_CONNECTIONS.fetch_add(1, Ordering::Relaxed) + 1;
-        println!("{} connection(s) now open", new_connections);
+        info!("{} connection(s) now open", new_connections);
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(5);
         let socket = Socket::new("127.0.0.1:6379", tx);
@@ -146,7 +96,7 @@ impl PubSub {
         };
 
         let timeline = timeline.to_string();
-        let stream_of_data_from_redis = Receiver::new(socket, timeline, user);
+        let stream_of_data_from_redis = stream::Receiver::new(socket, timeline, user);
         stream_of_data_from_redis
     }
 }
