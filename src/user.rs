@@ -23,17 +23,17 @@ fn conn() -> postgres::Connection {
     )
     .unwrap()
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Filter {
     None,
     Language,
     Notification,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct User {
     pub id: i64,
-    pub langs: Vec<String>,
+    pub langs: Option<Vec<String>>,
     pub logged_in: bool,
     pub filter: Filter,
 }
@@ -56,7 +56,7 @@ impl User {
             ..self
         }
     }
-    pub fn is_authorized_for_list(self, list: i64) -> Result<(i64, User), warp::reject::Rejection> {
+    pub fn is_authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
         let conn = conn();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
@@ -68,7 +68,7 @@ impl User {
         if !rows.is_empty() {
             let id_of_account_that_owns_the_list: i64 = rows.get(0).get(1);
             if id_of_account_that_owns_the_list == self.id {
-                return Ok((list, self));
+                return Ok(list);
             }
         };
 
@@ -77,7 +77,7 @@ impl User {
     pub fn public() -> Self {
         User {
             id: -1,
-            langs: Vec::new(),
+            langs: None,
             logged_in: false,
             filter: Filter::None,
         }
@@ -107,17 +107,19 @@ LIMIT 1",
     if !result.is_empty() {
         let only_row = result.get(0);
         let id: i64 = only_row.get(1);
-        let langs: Vec<String> = only_row.get(2);
+        let langs: Option<Vec<String>> = only_row.get(2);
+        println!("Granting logged-in access");
         Ok(User {
-            id: id,
+            id,
             langs,
             logged_in: true,
             filter: Filter::None,
         })
     } else if let Scope::Public = scope {
+        println!("Granting public access");
         Ok(User {
             id: -1,
-            langs: Vec::new(),
+            langs: None,
             logged_in: false,
             filter: Filter::None,
         })
