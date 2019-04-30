@@ -1,109 +1,66 @@
-mod error;
-mod query;
-mod receiver;
-mod stream;
-mod user;
-mod utils;
+//! Streaming server for Mastodon
+//!
+//!
+//! This server provides live, streaming updates for Mastodon clients.  Specifically, when a server
+//! is running this sever, Mastodon clients can use either Server Sent Events or WebSockets to
+//! connect to the server with the API described [in the public API
+//! documentation](https://docs.joinmastodon.org/api/streaming/)
+//!
+//! # Notes on data flow
+//! * **Client Request → Warp**:
+//! Warp filters for valid requests and parses request data. Based on that data, it repeatedly polls
+//! the StreamManager
+//!
+//! * **Warp → StreamManager**:
+//! The StreamManager consults a hash table to see if there is a currently open PubSub channel. If
+//! there is, it uses that channel; if not, it (synchronously) sends a subscribe command to Redis.
+//! The StreamManager polls the Receiver, providing info about which StreamManager it is that is
+//! doing the polling. The stream manager is also responsible for monitoring the hash table to see
+//! if it should unsubscribe from any channels and, if necessary, sending the unsubscribe command.
+//!
+//! * **StreamManger → Receiver**:
+//! The Receiver receives data from Redis and stores it in a series of queues (one for each
+//! StreamManager). When (asynchronously) polled by the StreamManager, it sends back the  messages
+//! relevant to that StreamManager and removes them from the queue.
+
+pub mod error;
+pub mod query;
+pub mod receiver;
+pub mod stream;
+pub mod timeline;
+pub mod user;
 use futures::stream::Stream;
 use receiver::Receiver;
 use stream::StreamManager;
-use user::{Filter, Scope, User};
-use warp::{path, Filter as WarpFilter};
+use user::{Filter, User};
+use warp::Filter as WarpFilter;
 
 fn main() {
     pretty_env_logger::init();
 
-    // GET /api/v1/streaming/user                                  [private; language filter]
-    let user_timeline = path!("api" / "v1" / "streaming" / "user")
-        .and(path::end())
-        .and(user::get_access_token(Scope::Private))
-        .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|user: User| (user.id.to_string(), user));
-
-    // GET /api/v1/streaming/user/notification                     [private; notification filter]
-    let user_timeline_notifications = path!("api" / "v1" / "streaming" / "user" / "notification")
-        .and(path::end())
-        .and(user::get_access_token(Scope::Private))
-        .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|user: User| (user.id.to_string(), user.with_notification_filter()));
-
-    // GET /api/v1/streaming/public                                [public; language filter]
-    let public_timeline = path!("api" / "v1" / "streaming" / "public")
-        .and(path::end())
-        .and(user::get_access_token(user::Scope::Public))
-        .and_then(|token| user::get_account(token, Scope::Public))
-        .map(|user: User| ("public".to_owned(), user.with_language_filter()));
-
-    // GET /api/v1/streaming/public?only_media=true                [public; language filter]
-    let public_timeline_media = path!("api" / "v1" / "streaming" / "public")
-        .and(path::end())
-        .and(user::get_access_token(user::Scope::Public))
-        .and_then(|token| user::get_account(token, Scope::Public))
-        .and(warp::query())
-        .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-            "1" | "true" => ("public:media".to_owned(), user.with_language_filter()),
-            _ => ("public".to_owned(), user.with_language_filter()),
-        });
-
-    // GET /api/v1/streaming/public/local                          [public; language filter]
-    let local_timeline = path!("api" / "v1" / "streaming" / "public" / "local")
-        .and(path::end())
-        .and(user::get_access_token(user::Scope::Public))
-        .and_then(|token| user::get_account(token, Scope::Public))
-        .map(|user: User| ("public:local".to_owned(), user.with_language_filter()));
-
-    // GET /api/v1/streaming/public/local?only_media=true          [public; language filter]
-    let local_timeline_media = path!("api" / "v1" / "streaming" / "public" / "local")
-        .and(user::get_access_token(user::Scope::Public))
-        .and_then(|token| user::get_account(token, Scope::Public))
-        .and(warp::query())
-        .and(path::end())
-        .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-            "1" | "true" => ("public:local:media".to_owned(), user.with_language_filter()),
-            _ => ("public:local".to_owned(), user.with_language_filter()),
-        });
-
-    // GET /api/v1/streaming/direct                                [private; *no* filter]
-    let direct_timeline = path!("api" / "v1" / "streaming" / "direct")
-        .and(path::end())
-        .and(user::get_access_token(Scope::Private))
-        .and_then(|token| user::get_account(token, Scope::Private))
-        .map(|user: User| (format!("direct:{}", user.id), user.with_no_filter()));
-
-    // GET /api/v1/streaming/hashtag?tag=:hashtag                  [public; no filter]
-    let hashtag_timeline = path!("api" / "v1" / "streaming" / "hashtag")
-        .and(warp::query())
-        .and(path::end())
-        .map(|q: query::Hashtag| (format!("hashtag:{}", q.tag), User::public()));
-
-    // GET /api/v1/streaming/hashtag/local?tag=:hashtag            [public; no filter]
-    let hashtag_timeline_local = path!("api" / "v1" / "streaming" / "hashtag" / "local")
-        .and(warp::query())
-        .and(path::end())
-        .map(|q: query::Hashtag| (format!("hashtag:{}:local", q.tag), User::public()));
-
-    // GET /api/v1/streaming/list?list=:list_id                    [private; no filter]
-    let list_timeline = path!("api" / "v1" / "streaming" / "list")
-        .and(user::get_access_token(Scope::Private))
-        .and_then(|token| user::get_account(token, Scope::Private))
-        .and(warp::query())
-        .and_then(|user: User, q: query::List| (user.is_authorized_for_list(q.list), Ok(user)))
-        .untuple_one()
-        .and(path::end())
-        .map(|list: i64, user: User| (format!("list:{}", list), user.with_no_filter()));
-
     let redis_updates = StreamManager::new(Receiver::new());
-    let routes = or!(
-        user_timeline,
-        user_timeline_notifications,
-        public_timeline_media,
-        public_timeline,
-        local_timeline_media,
-        local_timeline,
-        direct_timeline,
-        hashtag_timeline,
-        hashtag_timeline_local,
-        list_timeline
+
+    let routes = any_of!(
+        // GET /api/v1/streaming/user/notification                     [private; notification filter]
+        timeline::user_notifications(),
+        // GET /api/v1/streaming/user                                  [private; language filter]
+        timeline::user(),
+        // GET /api/v1/streaming/public/local?only_media=true          [public; language filter]
+        timeline::public_local_media(),
+        // GET /api/v1/streaming/public?only_media=true                [public; language filter]
+        timeline::public_media(),
+        // GET /api/v1/streaming/public/local                          [public; language filter]
+        timeline::public_local(),
+        // GET /api/v1/streaming/public                                [public; language filter]
+        timeline::public(),
+        // GET /api/v1/streaming/direct                                [private; *no* filter]
+        timeline::direct(),
+        // GET /api/v1/streaming/hashtag?tag=:hashtag                  [public; no filter]
+        timeline::hashtag(),
+        // GET /api/v1/streaming/hashtag/local?tag=:hashtag            [public; no filter]
+        timeline::hashtag_local(),
+        // GET /api/v1/streaming/list?list=:list_id                    [private; no filter]
+        timeline::list()
     )
     .untuple_one()
     .and(warp::sse())

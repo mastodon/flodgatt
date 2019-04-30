@@ -1,6 +1,8 @@
+//!  Custom Errors and Warp::Rejections
 use serde_derive::Serialize;
+
 #[derive(Serialize)]
-struct ErrorMessage {
+pub struct ErrorMessage {
     error: String,
 }
 impl ErrorMessage {
@@ -11,6 +13,7 @@ impl ErrorMessage {
     }
 }
 
+/// Recover from Errors by sending appropriate Warp::Rejections
 pub fn handle_errors(
     rejection: warp::reject::Rejection,
 ) -> Result<impl warp::Reply, warp::reject::Rejection> {

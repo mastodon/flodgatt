@@ -1,3 +1,4 @@
+//! Manage all existing Redis PubSub connection
 use crate::receiver::Receiver;
 use crate::user::User;
 use futures::stream::Stream;
@@ -9,6 +10,7 @@ use std::time::Instant;
 use tokio::io::Error;
 use uuid::Uuid;
 
+/// Struct for manageing all Redis streams
 #[derive(Clone)]
 pub struct StreamManager {
     receiver: Arc<Mutex<Receiver>>,
@@ -26,11 +28,16 @@ impl StreamManager {
         }
     }
 
+    /// Clone the StreamManager with a new unique id
     pub fn new_copy(&self) -> Self {
         let id = Uuid::new_v4();
         StreamManager { id, ..self.clone() }
     }
 
+    /// Subscribe to a channel if not already subscribed
+    ///
+    ///
+    /// `.add()` also unsubscribes from any channels that no longer have clients
     pub fn add(&mut self, timeline: &str, _user: &User) -> &Self {
         let mut subscriptions = self.subscriptions.lock().expect("No other thread panic");
         let mut receiver = self.receiver.lock().unwrap();

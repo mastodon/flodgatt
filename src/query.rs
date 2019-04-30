@@ -1,3 +1,4 @@
+//! Validate query prarams with type checking
 use serde_derive::Deserialize;
 
 #[derive(Deserialize, Debug)]
