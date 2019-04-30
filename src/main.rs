@@ -1,10 +1,11 @@
 mod error;
-mod pubsub;
 mod query;
+mod receiver;
 mod stream;
 mod user;
 mod utils;
 use futures::stream::Stream;
+use receiver::Receiver;
 use stream::StreamManager;
 use user::{Filter, Scope, User};
 use warp::{path, Filter as WarpFilter};
@@ -91,7 +92,7 @@ fn main() {
         .and(path::end())
         .map(|list: i64, user: User| (format!("list:{}", list), user.with_no_filter()));
 
-    let redis_updates = StreamManager::new();
+    let redis_updates = StreamManager::new(Receiver::new());
     let routes = or!(
         user_timeline,
         user_timeline_notifications,
