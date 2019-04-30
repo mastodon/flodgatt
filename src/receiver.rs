@@ -1,3 +1,4 @@
+//! Interfacing with Redis and stream the results on to the `StreamManager`
 use crate::user::User;
 use futures::stream::Stream;
 use futures::{Async, Poll};
@@ -12,6 +13,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+/// The item that streams from Redis and is polled by the `StreamManger`
 #[derive(Debug)]
 pub struct Receiver {
     stream: TcpStream,
@@ -35,22 +37,25 @@ impl Receiver {
             msg_queue: HashMap::new(),
         }
     }
+    /// Update the `StreamManager` that is currently polling the `Receiver`
     pub fn set_polled_by(&mut self, id: Uuid) -> &Self {
         self.polled_by = id;
         self
     }
+    /// Send a subscribe command to the Redis PubSub
     pub fn subscribe(&mut self, tl: &str) {
         let subscribe_cmd = redis_cmd_from("subscribe", &tl);
         info!("Subscribing to {}", &tl);
         self.stream
-            .write(&subscribe_cmd)
+            .write_all(&subscribe_cmd)
             .expect("Can subscribe to Redis");
     }
+    /// Send an unsubscribe command to the Redis PubSub
     pub fn unsubscribe(&mut self, tl: &str) {
         let unsubscribe_cmd = redis_cmd_from("unsubscribe", &tl);
         info!("Subscribing to {}", &tl);
         self.stream
-            .write(&unsubscribe_cmd)
+            .write_all(&unsubscribe_cmd)
             .expect("Can unsubscribe from Redis");
     }
 }
