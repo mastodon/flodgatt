@@ -142,7 +142,7 @@ pub fn list() -> BoxedFilter<TimelineUser> {
         .and(Scope::Private.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Private))
         .and(warp::query())
-        .and_then(|user: User, q: query::List| (user.is_authorized_for_list(q.list), Ok(user)))
+        .and_then(|user: User, q: query::List| (user.authorized_for_list(q.list), Ok(user)))
         .untuple_one()
         .and(path::end())
         .map(|list: i64, user: User| (format!("list:{}", list), user.with_no_filter()))

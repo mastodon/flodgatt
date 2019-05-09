@@ -25,6 +25,7 @@ pub fn handle_errors(
         None => "Error: Nonexistant endpoint".to_string(),
     };
     let json = warp::reply::json(&ErrorMessage::new(err_txt));
+    println!("REJECTED!");
     Ok(warp::reply::with_status(
         json,
         warp::http::StatusCode::UNAUTHORIZED,

@@ -32,6 +32,7 @@ pub struct User {
 impl User {
     /// Create a user from the access token supplied in the header or query paramaters
     pub fn from_access_token(token: String, scope: Scope) -> Result<Self, warp::reject::Rejection> {
+        println!("Getting user");
         let conn = connect_to_postgres();
         let result = &conn
             .query(
@@ -59,7 +60,7 @@ LIMIT 1",
                 filter: Filter::None,
             })
         } else if let Scope::Public = scope {
-            info!("Granting public access");
+            println!("Granting public access");
             Ok(User {
                 id: -1,
                 langs: None,
@@ -92,7 +93,7 @@ LIMIT 1",
         }
     }
     /// Determine whether the User is authorised for a specified list
-    pub fn is_authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
+    pub fn authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
         let conn = connect_to_postgres();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
@@ -128,9 +129,19 @@ pub enum Scope {
 }
 impl Scope {
     pub fn get_access_token(self) -> warp::filters::BoxedFilter<(String,)> {
-        let token_from_header = warp::header::header::<String>("authorization")
-            .map(|auth: String| auth.split(' ').nth(1).unwrap_or("invalid").to_string());
-        let token_from_query = warp::query().map(|q: query::Auth| q.access_token);
+        println!("Getting access token");
+        let token_from_header =
+            warp::header::header::<String>("authorization").map(|auth: String| {
+                println!(
+                    "Got token_from_header: {}",
+                    auth.split(' ').nth(1).unwrap_or("invalid").to_string()
+                );
+                auth.split(' ').nth(1).unwrap_or("invalid").to_string()
+            });
+        let token_from_query = warp::query().map(|q: query::Auth| {
+            println!("Got token_from_query: {}", &q.access_token);
+            q.access_token
+        });
         let public = warp::any().map(|| "no access token".to_string());
 
         match self {
