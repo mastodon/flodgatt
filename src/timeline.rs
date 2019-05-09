@@ -191,10 +191,10 @@ mod tests {
                 access_token
             ))
             .filter(&user())
-            .unwrap();
+            .expect("in test");
 
         let expected_user =
-            User::from_access_token(access_token.clone(), user::Scope::Private).unwrap();
+            User::from_access_token(access_token.clone(), user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "1");
         assert_eq!(actual_user, expected_user);
@@ -204,9 +204,10 @@ mod tests {
             .path("/api/v1/streaming/user")
             .header("Authorization", format!("Bearer: {}", access_token.clone()))
             .filter(&user())
-            .unwrap();
+            .expect("in test");
 
-        let expected_user = User::from_access_token(access_token, user::Scope::Private).unwrap();
+        let expected_user =
+            User::from_access_token(access_token, user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "1");
         assert_eq!(actual_user, expected_user);
@@ -240,10 +241,10 @@ mod tests {
                 access_token
             ))
             .filter(&user_notifications())
-            .unwrap();
+            .expect("in test");
 
         let expected_user = User::from_access_token(access_token.clone(), user::Scope::Private)
-            .unwrap()
+            .expect("in test")
             .with_notification_filter();
 
         assert_eq!(actual_timeline, "1");
@@ -254,10 +255,10 @@ mod tests {
             .path("/api/v1/streaming/user/notification")
             .header("Authorization", format!("Bearer: {}", access_token.clone()))
             .filter(&user_notifications())
-            .unwrap();
+            .expect("in test");
 
         let expected_user = User::from_access_token(access_token, user::Scope::Private)
-            .unwrap()
+            .expect("in test")
             .with_notification_filter();
 
         assert_eq!(actual_timeline, "1");
@@ -268,7 +269,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public")
             .filter(&public())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -279,7 +280,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public?only_media=true")
             .filter(&public_media())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public:media".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -287,7 +288,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public?only_media=1")
             .filter(&public_media())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public:media".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -298,7 +299,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public/local")
             .filter(&public_local())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public:local".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -309,7 +310,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public/local?only_media=true")
             .filter(&public_local_media())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public:local:media".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -317,7 +318,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/public/local?only_media=1")
             .filter(&public_local_media())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "public:local:media".to_string());
         assert_eq!(value.1, User::public().with_language_filter());
@@ -351,10 +352,10 @@ mod tests {
                 access_token
             ))
             .filter(&direct())
-            .unwrap();
+            .expect("in test");
 
         let expected_user =
-            User::from_access_token(access_token.clone(), user::Scope::Private).unwrap();
+            User::from_access_token(access_token.clone(), user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "direct:1");
         assert_eq!(actual_user, expected_user);
@@ -364,9 +365,10 @@ mod tests {
             .path("/api/v1/streaming/direct")
             .header("Authorization", format!("Bearer: {}", access_token.clone()))
             .filter(&direct())
-            .unwrap();
+            .expect("in test");
 
-        let expected_user = User::from_access_token(access_token, user::Scope::Private).unwrap();
+        let expected_user =
+            User::from_access_token(access_token, user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "direct:1");
         assert_eq!(actual_user, expected_user);
@@ -377,7 +379,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/hashtag?tag=a")
             .filter(&hashtag())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "hashtag:a".to_string());
         assert_eq!(value.1, User::public());
@@ -388,7 +390,7 @@ mod tests {
         let value = warp::test::request()
             .path("/api/v1/streaming/hashtag/local?tag=a")
             .filter(&hashtag_local())
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(value.0, "hashtag:a:local".to_string());
         assert_eq!(value.1, User::public());
@@ -408,10 +410,10 @@ mod tests {
                 access_token, list_id,
             ))
             .filter(&list())
-            .unwrap();
+            .expect("in test");
 
         let expected_user =
-            User::from_access_token(access_token.clone(), user::Scope::Private).unwrap();
+            User::from_access_token(access_token.clone(), user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "list:1");
         assert_eq!(actual_user, expected_user);
@@ -421,9 +423,10 @@ mod tests {
             .path("/api/v1/streaming/list?list=1")
             .header("Authorization", format!("Bearer: {}", access_token.clone()))
             .filter(&list())
-            .unwrap();
+            .expect("in test");
 
-        let expected_user = User::from_access_token(access_token, user::Scope::Private).unwrap();
+        let expected_user =
+            User::from_access_token(access_token, user::Scope::Private).expect("in test");
 
         assert_eq!(actual_timeline, "list:1");
         assert_eq!(actual_user, expected_user);
@@ -452,7 +455,7 @@ mod tests {
                 "SELECT id, account_id FROM lists WHERE id = $1 LIMIT 1",
                 &[&list_number],
             )
-            .unwrap();
+            .expect("in test");
 
         assert_eq!(
             rows.len(),

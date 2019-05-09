@@ -41,13 +41,18 @@ pub struct Receiver {
     msg_queue: HashMap<Uuid, MsgQueue>,
     subscribed_timelines: HashMap<String, i32>,
 }
+impl Default for Receiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Receiver {
     pub fn new() -> Self {
-        let stream = TcpStream::connect("127.0.0.1:6379").unwrap();
+        let stream = TcpStream::connect("127.0.0.1:6379").expect("Can connect to Redis");
 
         stream
             .set_read_timeout(Some(Duration::from_millis(10)))
-            .unwrap();
+            .expect("Can set read timeout for Redis connection");
         Self {
             stream,
             tl: String::new(),
@@ -73,13 +78,11 @@ impl Receiver {
             .or_insert(1);
 
         let mut timelines_with_dropped_clients = Vec::new();
-        self.msg_queue.retain(|id, msg_queue| {
+        self.msg_queue.retain(|_id, msg_queue| {
             if msg_queue.last_polled_at.elapsed() > Duration::from_secs(30) {
                 timelines_with_dropped_clients.push(msg_queue.redis_channel.clone());
-                println!("Dropping: {}", id);
                 false
             } else {
-                println!("Retaining: {}", id);
                 true
             }
         });
@@ -99,7 +102,6 @@ impl Receiver {
         self.stream
             .write_all(&subscribe_cmd)
             .expect("Can subscribe to Redis");
-        println!("Done subscribing");
     }
     /// Send an unsubscribe command to the Redis PubSub
     pub fn unsubscribe(&mut self, tl: &str) {
@@ -137,11 +139,11 @@ impl Stream for Receiver {
                 }
             }
         }
-        dbg!(&self);
+        let timeline = self.tl.clone();
         if let Some(value) = self
             .msg_queue
             .entry(polled_by)
-            .or_insert(MsgQueue::new(self.tl.clone()))
+            .or_insert_with(|| MsgQueue::new(timeline))
             .messages
             .pop_front()
         {

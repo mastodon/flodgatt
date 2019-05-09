@@ -10,7 +10,7 @@ pub struct Media {
 impl Media {
     pub fn to_filter() -> BoxedFilter<(Self,)> {
         warp::query()
-            .or(warp::any().map(|| Self::default()))
+            .or(warp::any().map(Self::default))
             .unify()
             .boxed()
     }
@@ -25,7 +25,7 @@ pub struct Hashtag {
 impl Hashtag {
     pub fn to_filter() -> BoxedFilter<(Self,)> {
         warp::query()
-            .or(warp::any().map(|| Self::default()))
+            .or(warp::any().map(Self::default))
             .unify()
             .boxed()
     }
@@ -37,7 +37,7 @@ pub struct List {
 impl List {
     pub fn to_filter() -> BoxedFilter<(Self,)> {
         warp::query()
-            .or(warp::any().map(|| Self::default()))
+            .or(warp::any().map(Self::default))
             .unify()
             .boxed()
     }

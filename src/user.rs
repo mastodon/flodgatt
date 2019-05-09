@@ -10,7 +10,7 @@ pub fn connect_to_postgres() -> postgres::Connection {
         "postgres://dsock@localhost/mastodon_development",
         postgres::TlsMode::None,
     )
-    .unwrap()
+    .expect("Can connect to local Postgres")
 }
 
 /// The filters that can be applied to toots after they come from Redis
@@ -32,7 +32,6 @@ pub struct User {
 impl User {
     /// Create a user from the access token supplied in the header or query paramaters
     pub fn from_access_token(token: String, scope: Scope) -> Result<Self, warp::reject::Rejection> {
-        println!("Getting user");
         let conn = connect_to_postgres();
         let result = &conn
             .query(
@@ -129,19 +128,9 @@ pub enum Scope {
 }
 impl Scope {
     pub fn get_access_token(self) -> warp::filters::BoxedFilter<(String,)> {
-        println!("Getting access token");
-        let token_from_header =
-            warp::header::header::<String>("authorization").map(|auth: String| {
-                println!(
-                    "Got token_from_header: {}",
-                    auth.split(' ').nth(1).unwrap_or("invalid").to_string()
-                );
-                auth.split(' ').nth(1).unwrap_or("invalid").to_string()
-            });
-        let token_from_query = warp::query().map(|q: query::Auth| {
-            println!("Got token_from_query: {}", &q.access_token);
-            q.access_token
-        });
+        let token_from_header = warp::header::header::<String>("authorization")
+            .map(|auth: String| auth.split(' ').nth(1).unwrap_or("invalid").to_string());
+        let token_from_query = warp::query().map(|q: query::Auth| q.access_token);
         let public = warp::any().map(|| "no access token".to_string());
 
         match self {
