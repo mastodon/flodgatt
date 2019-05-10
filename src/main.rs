@@ -28,11 +28,13 @@
 pub mod error;
 pub mod query;
 pub mod receiver;
+pub mod redis_cmd;
 pub mod stream;
 pub mod timeline;
 pub mod user;
 pub mod ws;
 use futures::stream::Stream;
+use futures::Async;
 use receiver::Receiver;
 use stream::StreamManager;
 use user::{Scope, User};
@@ -43,6 +45,8 @@ fn main() {
     pretty_env_logger::init();
 
     let redis_updates = StreamManager::new(Receiver::new());
+    let redis_updates_sse = redis_updates.blank_copy();
+    let redis_updates_ws = redis_updates.blank_copy();
 
     let routes = any_of!(
         // GET /api/v1/streaming/user/notification                     [private; notification filter]
@@ -68,26 +72,25 @@ fn main() {
     )
     .untuple_one()
     .and(warp::sse())
-    .and(warp::any().map(move || redis_updates.new_copy()))
-    .map(
-        |timeline: String, user: User, sse: warp::sse::Sse, mut event_stream: StreamManager| {
-            dbg!(&event_stream);
-            event_stream.add(&timeline, &user);
-            event_stream.set_user(user.clone());
-            sse.reply(warp::sse::keep(
-                event_stream.filter_map(move |item| {
-                    let payload = item["payload"].clone();
-                    let event = item["event"].clone().to_string();
-                    Some((warp::sse::event(event), warp::sse::data(payload)))
-                }),
-                None,
-            ))
-        },
-    )
+    .map(move |timeline: String, user: User, sse: warp::sse::Sse| {
+        let mut redis_stream = redis_updates_sse.configure_copy(&timeline, user);
+        let event_stream = tokio::timer::Interval::new(
+            std::time::Instant::now(),
+            std::time::Duration::from_millis(100),
+        )
+        .filter_map(move |_| match redis_stream.poll() {
+            Ok(Async::Ready(Some(json_value))) => Some((
+                warp::sse::event(json_value["event"].clone().to_string()),
+                warp::sse::data(json_value["payload"].clone()),
+            )),
+            _ => None,
+        });
+        sse.reply(warp::sse::keep(event_stream, None))
+    })
     .with(warp::reply::with::header("Connection", "keep-alive"))
     .recover(error::handle_errors);
 
-    let redis_updates_ws = StreamManager::new(Receiver::new());
+    //let redis_updates_ws = StreamManager::new(Receiver::new());
     let websocket = path!("api" / "v1" / "streaming")
         .and(Scope::Public.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Public))
@@ -96,15 +99,13 @@ fn main() {
         .and(query::Hashtag::to_filter())
         .and(query::List::to_filter())
         .and(warp::ws2())
-        .and(warp::any().map(move || redis_updates_ws.new_copy()))
         .and_then(
-            |mut user: User,
-             q: query::Stream,
-             m: query::Media,
-             h: query::Hashtag,
-             l: query::List,
-             ws: warp::ws::Ws2,
-             mut stream: StreamManager| {
+            move |mut user: User,
+                  q: query::Stream,
+                  m: query::Media,
+                  h: query::Hashtag,
+                  l: query::List,
+                  ws: warp::ws::Ws2| {
                 let unauthorized = Err(warp::reject::custom("Error: Invalid Access Token"));
                 let timeline = match q.stream.as_ref() {
                     // Public endpoints:
@@ -131,10 +132,9 @@ fn main() {
                     // Other endpoints don't exist:
                     _ => return Err(warp::reject::custom("Error: Nonexistent WebSocket query")),
                 };
+                let stream = redis_updates_ws.configure_copy(&timeline, user);
 
-                stream.add(&timeline, &user);
-                stream.set_user(user);
-                Ok(ws.on_upgrade(move |socket| ws::handle_ws(socket, stream)))
+                Ok(ws.on_upgrade(move |socket| ws::send_replies(socket, stream)))
             },
         );
 

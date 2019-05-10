@@ -1,9 +1,11 @@
+//! WebSocket-specific functionality
 use crate::stream::StreamManager;
 use futures::future::Future;
 use futures::stream::Stream;
 use futures::Async;
 
-pub fn handle_ws(
+/// Send a stream of replies to a WebSocket client
+pub fn send_replies(
     socket: warp::ws::WebSocket,
     mut stream: StreamManager,
 ) -> impl futures::future::Future<Item = (), Error = ()> {

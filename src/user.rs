@@ -59,7 +59,7 @@ LIMIT 1",
                 filter: Filter::None,
             })
         } else if let Scope::Public = scope {
-            println!("Granting public access");
+            info!("Granting public access to non-authenticated client");
             Ok(User {
                 id: -1,
                 langs: None,

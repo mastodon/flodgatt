@@ -1,8 +1,9 @@
 //! Manage all existing Redis PubSub connection
 use crate::receiver::Receiver;
-use crate::user::User;
+use crate::user::{Filter, User};
 use futures::stream::Stream;
 use futures::{Async, Poll};
+use serde_json::json;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tokio::io::Error;
@@ -13,39 +14,37 @@ use uuid::Uuid;
 pub struct StreamManager {
     receiver: Arc<Mutex<Receiver>>,
     id: uuid::Uuid,
+    target_timeline: String,
     current_user: Option<User>,
 }
 impl StreamManager {
     pub fn new(reciever: Receiver) -> Self {
         StreamManager {
             receiver: Arc::new(Mutex::new(reciever)),
-            id: Uuid::new_v4(),
+            id: Uuid::default(),
+            target_timeline: String::new(),
             current_user: None,
         }
     }
 
-    /// Clone the StreamManager with a new unique id
-    pub fn new_copy(&self) -> Self {
+    /// Create a blank StreamManager copy
+    pub fn blank_copy(&self) -> Self {
+        StreamManager { ..self.clone() }
+    }
+    /// Create a StreamManager copy with a new unique id manage subscriptions
+    pub fn configure_copy(&self, timeline: &String, user: User) -> Self {
         let id = Uuid::new_v4();
-        StreamManager { id, ..self.clone() }
-    }
-
-    /// Subscribe to a channel if not already subscribed
-    ///
-    ///
-    /// `.add()` also unsubscribes from any channels that no longer have clients
-    pub fn add(&mut self, timeline: &str, _user: &User) {
         let mut receiver = self.receiver.lock().expect("No panic in other threads");
-        receiver.set_manager_id(self.id);
-        receiver.subscribe(timeline);
-    }
-
-    pub fn set_user(&mut self, user: User) {
-        self.current_user = Some(user);
+        receiver.update(id, timeline);
+        receiver.maybe_subscribe(timeline);
+        StreamManager {
+            id,
+            current_user: Some(user),
+            target_timeline: timeline.clone(),
+            ..self.clone()
+        }
     }
 }
-use crate::user::Filter;
-use serde_json::json;
 
 impl Stream for StreamManager {
     type Item = Value;
@@ -53,7 +52,7 @@ impl Stream for StreamManager {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let mut receiver = self.receiver.lock().expect("No other thread panic");
-        receiver.set_manager_id(self.id);
+        receiver.update(self.id, &self.target_timeline.clone());
         match receiver.poll() {
             Ok(Async::Ready(Some(value))) => {
                 let user = self
@@ -77,7 +76,6 @@ impl Stream for StreamManager {
                     (Filter::Language, Some(ref langs)) if !langs.contains(&toot_lang) => {
                         Ok(Async::NotReady)
                     }
-
                     _ => Ok(Async::Ready(Some(json!(
                         {"event": event,
                          "payload": payload,}
