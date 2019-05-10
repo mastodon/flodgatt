@@ -10,7 +10,7 @@ pub fn connect_to_postgres() -> postgres::Connection {
         "postgres://dsock@localhost/mastodon_development",
         postgres::TlsMode::None,
     )
-    .unwrap()
+    .expect("Can connect to local Postgres")
 }
 
 /// The filters that can be applied to toots after they come from Redis
@@ -59,7 +59,7 @@ LIMIT 1",
                 filter: Filter::None,
             })
         } else if let Scope::Public = scope {
-            info!("Granting public access");
+            info!("Granting public access to non-authenticated client");
             Ok(User {
                 id: -1,
                 langs: None,
@@ -92,7 +92,7 @@ LIMIT 1",
         }
     }
     /// Determine whether the User is authorised for a specified list
-    pub fn is_authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
+    pub fn authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
         let conn = connect_to_postgres();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
