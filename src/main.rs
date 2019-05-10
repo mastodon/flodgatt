@@ -33,9 +33,12 @@ pub mod stream;
 pub mod timeline;
 pub mod user;
 pub mod ws;
+use dotenv::dotenv;
 use futures::stream::Stream;
 use futures::Async;
 use receiver::Receiver;
+use std::env;
+use std::net::SocketAddr;
 use stream::StreamManager;
 use user::{Scope, User};
 use warp::path;
@@ -43,6 +46,7 @@ use warp::Filter as WarpFilter;
 
 fn main() {
     pretty_env_logger::init();
+    dotenv().ok();
 
     let redis_updates = StreamManager::new(Receiver::new());
     let redis_updates_sse = redis_updates.blank_copy();
@@ -138,5 +142,9 @@ fn main() {
             },
         );
 
-    warp::serve(websocket.or(routes)).run(([127, 0, 0, 1], 4000));
+    let address: SocketAddr = env::var("SERVER_ADDR")
+        .unwrap_or("127.0.0.1:4000".to_owned())
+        .parse()
+        .expect("static string");
+    warp::serve(websocket.or(routes)).run(address);
 }

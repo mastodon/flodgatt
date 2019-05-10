@@ -2,15 +2,17 @@
 use crate::{any_of, query};
 use log::info;
 use postgres;
+use std::env;
 use warp::Filter as WarpFilter;
 
 /// (currently hardcoded to localhost)
 pub fn connect_to_postgres() -> postgres::Connection {
-    postgres::Connection::connect(
-        "postgres://dsock@localhost/mastodon_development",
-        postgres::TlsMode::None,
-    )
-    .expect("Can connect to local Postgres")
+    let postgres_addr = env::var("POSTGRESS_ADDR").unwrap_or(format!(
+        "postgres://{}@localhost/mastodon_development",
+        env::var("USER").expect("User env var should exist")
+    ));
+    postgres::Connection::connect(postgres_addr, postgres::TlsMode::None)
+        .expect("Can connect to local Postgres")
 }
 
 /// The filters that can be applied to toots after they come from Redis
