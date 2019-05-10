@@ -1,1 +1,0 @@
-pub const HEARTBEAT_INTERVAL_SECONDS: u64 = 30;
