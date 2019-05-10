@@ -7,6 +7,7 @@ use log::info;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
+use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
@@ -48,12 +49,13 @@ impl Default for Receiver {
 }
 impl Receiver {
     pub fn new() -> Self {
-        let pubsub_connection = TcpStream::connect("127.0.0.1:6379").expect("Can connect to Redis");
+        let redis_addr = env::var("REDIS_ADDR").unwrap_or("127.0.0.1:6379".to_string());
+        let pubsub_connection = TcpStream::connect(&redis_addr).expect("Can connect to Redis");
         pubsub_connection
             .set_read_timeout(Some(Duration::from_millis(10)))
             .expect("Can set read timeout for Redis connection");
         let secondary_redis_connection =
-            TcpStream::connect("127.0.0.1:6379").expect("Can connect to Redis");
+            TcpStream::connect(&redis_addr).expect("Can connect to Redis");
         secondary_redis_connection
             .set_read_timeout(Some(Duration::from_millis(10)))
             .expect("Can set read timeout for Redis connection");
