@@ -28,18 +28,42 @@ pub enum Filter {
 pub struct User {
     pub id: i64,
     pub access_token: String,
+    pub scopes: Vec<OauthScope>,
     pub langs: Option<Vec<String>>,
     pub logged_in: bool,
     pub filter: Filter,
 }
+#[derive(Clone, Debug, PartialEq)]
+pub enum OauthScope {
+    Read,
+    ReadStatuses,
+    ReadNotifications,
+    ReadList,
+    Other,
+}
+impl From<&str> for OauthScope {
+    fn from(scope: &str) -> Self {
+        use OauthScope::*;
+        match scope {
+            "read" => Read,
+            "read:statuses" => ReadStatuses,
+            "read:notifications" => ReadNotifications,
+            "read:lists" => ReadList,
+            _ => Other,
+        }
+    }
+}
 impl User {
     /// Create a user from the access token supplied in the header or query paramaters
-    pub fn from_access_token(token: String, scope: Scope) -> Result<Self, warp::reject::Rejection> {
+    pub fn from_access_token(
+        access_token: String,
+        scope: Scope,
+    ) -> Result<Self, warp::reject::Rejection> {
         let conn = connect_to_postgres();
         let result = &conn
             .query(
                 "
-SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_languages
+SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_languages, oauth_access_tokens.scopes
 FROM
 oauth_access_tokens
 INNER JOIN users ON
@@ -47,17 +71,25 @@ oauth_access_tokens.resource_owner_id = users.id
 WHERE oauth_access_tokens.token = $1
 AND oauth_access_tokens.revoked_at IS NULL
 LIMIT 1",
-                &[&token],
+                &[&access_token],
             )
             .expect("Hard-coded query will return Some([0 or more rows])");
         if !result.is_empty() {
             let only_row = result.get(0);
             let id: i64 = only_row.get(1);
+            let scopes = only_row
+                .get::<_, String>(3)
+                .split(' ')
+                .map(|scope: &str| scope.into())
+                .filter(|scope| scope != &OauthScope::Other)
+                .collect();
+            dbg!(&scopes);
             let langs: Option<Vec<String>> = only_row.get(2);
             info!("Granting logged-in access");
             Ok(User {
                 id,
-                access_token: token,
+                access_token,
+                scopes,
                 langs,
                 logged_in: true,
                 filter: Filter::None,
@@ -66,7 +98,8 @@ LIMIT 1",
             info!("Granting public access to non-authenticated client");
             Ok(User {
                 id: -1,
-                access_token: token,
+                access_token,
+                scopes: Vec::new(),
                 langs: None,
                 logged_in: false,
                 filter: Filter::None,
@@ -120,6 +153,7 @@ LIMIT 1",
         User {
             id: -1,
             access_token: String::new(),
+            scopes: Vec::new(),
             langs: None,
             logged_in: false,
             filter: Filter::None,

@@ -40,7 +40,7 @@ use receiver::Receiver;
 use std::env;
 use std::net::SocketAddr;
 use stream::StreamManager;
-use user::{Scope, User};
+use user::{OauthScope::*, Scope, User};
 use warp::path;
 use warp::Filter as WarpFilter;
 
@@ -110,29 +110,49 @@ fn main() {
                   h: query::Hashtag,
                   l: query::List,
                   ws: warp::ws::Ws2| {
-                let unauthorized = Err(warp::reject::custom("Error: Invalid Access Token"));
+                let scopes = user.scopes.clone();
                 let timeline = match q.stream.as_ref() {
                     // Public endpoints:
                     tl @ "public" | tl @ "public:local" if m.is_truthy() => format!("{}:media", tl),
                     tl @ "public:media" | tl @ "public:local:media" => tl.to_string(),
                     tl @ "public" | tl @ "public:local" => tl.to_string(),
-                    // User
-                    "user" if user.id == -1 => return unauthorized,
-                    "user" => format!("{}", user.id),
-                    "user:notification" => {
-                        user = user.with_notification_filter();
-                        format!("{}", user.id)
-                    }
                     // Hashtag endpoints:
                     // TODO: handle missing query
                     tl @ "hashtag" | tl @ "hashtag:local" => format!("{}:{}", tl, h.tag),
+                    // Private endpoints: User
+                    "user"
+                        if user.id > 0
+                            && (scopes.contains(&Read) || scopes.contains(&ReadStatuses)) =>
+                    {
+                        format!("{}", user.id)
+                    }
+                    "user:notification"
+                        if user.id > 0
+                            && (scopes.contains(&Read) || scopes.contains(&ReadNotifications)) =>
+                    {
+                        user = user.with_notification_filter();
+                        format!("{}", user.id)
+                    }
                     // List endpoint:
                     // TODO: handle missing query
-                    "list" if user.authorized_for_list(l.list).is_err() => return unauthorized,
-                    "list" => format!("list:{}", l.list),
+                    "list"
+                        if user.authorized_for_list(l.list).is_ok()
+                            && (scopes.contains(&Read) || scopes.contains(&ReadList)) =>
+                    {
+                        format!("list:{}", l.list)
+                    }
+
                     // Direct endpoint:
-                    "direct" if user.id == -1 => return unauthorized,
-                    "direct" => "direct".to_string(),
+                    "direct"
+                        if user.id > 0
+                            && (scopes.contains(&Read) || scopes.contains(&ReadStatuses)) =>
+                    {
+                        "direct".to_string()
+                    }
+                    // Reject unathorized access attempts for private endpoints
+                    "user" | "user:notification" | "direct" | "list" => {
+                        return Err(warp::reject::custom("Error: Invalid Access Token"))
+                    }
                     // Other endpoints don't exist:
                     _ => return Err(warp::reject::custom("Error: Nonexistent WebSocket query")),
                 };
