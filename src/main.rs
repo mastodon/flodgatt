@@ -171,5 +171,9 @@ fn main() {
         .unwrap_or("127.0.0.1:4000".to_owned())
         .parse()
         .expect("static string");
-    warp::serve(websocket.or(routes)).run(address);
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "OPTIONS"])
+        .allow_headers(vec!["Authorization", "Accept", "Cache-Control"]);
+    warp::serve(websocket.or(routes).with(cors)).run(address);
 }
