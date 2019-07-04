@@ -40,7 +40,7 @@ use receiver::Receiver;
 use std::env;
 use std::net::SocketAddr;
 use stream::StreamManager;
-use user::{Scope, User};
+use user::{Method, Scope, User};
 use warp::path;
 use warp::Filter as WarpFilter;
 
@@ -96,7 +96,7 @@ fn main() {
 
     //let redis_updates_ws = StreamManager::new(Receiver::new());
     let websocket = path!("api" / "v1" / "streaming")
-        .and(Scope::Public.get_access_token())
+        .and(Scope::Public.get_access_token(Method::WS))
         .and_then(|token| User::from_access_token(token, Scope::Public))
         .and(warp::query())
         .and(query::Media::to_filter())
@@ -140,7 +140,14 @@ fn main() {
 
                 Ok(ws.on_upgrade(move |socket| ws::send_replies(socket, stream)))
             },
-        );
+        )
+        .map(|reply| {
+            warp::reply::with_header(
+                reply,
+                "sec-websocket-protocol",
+                "LhbVOxKckgqyMg3nDLaEu5vgqY6Yzc9Pk1w8_yKQwS8",
+            )
+        });
 
     let address: SocketAddr = env::var("SERVER_ADDR")
         .unwrap_or("127.0.0.1:4000".to_owned())

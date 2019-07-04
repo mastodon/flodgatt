@@ -27,6 +27,7 @@ pub enum Filter {
 #[derive(Clone, Debug, PartialEq)]
 pub struct User {
     pub id: i64,
+    pub access_token: String,
     pub langs: Option<Vec<String>>,
     pub logged_in: bool,
     pub filter: Filter,
@@ -49,6 +50,7 @@ LIMIT 1",
                 &[&token],
             )
             .expect("Hard-coded query will return Some([0 or more rows])");
+        dbg!(&result);
         if !result.is_empty() {
             let only_row = result.get(0);
             let id: i64 = only_row.get(1);
@@ -56,6 +58,7 @@ LIMIT 1",
             info!("Granting logged-in access");
             Ok(User {
                 id,
+                access_token: token,
                 langs,
                 logged_in: true,
                 filter: Filter::None,
@@ -64,6 +67,7 @@ LIMIT 1",
             info!("Granting public access to non-authenticated client");
             Ok(User {
                 id: -1,
+                access_token: token,
                 langs: None,
                 logged_in: false,
                 filter: Filter::None,
@@ -116,6 +120,7 @@ LIMIT 1",
     pub fn public() -> Self {
         User {
             id: -1,
+            access_token: String::new(),
             langs: None,
             logged_in: false,
             filter: Filter::None,
@@ -128,18 +133,41 @@ pub enum Scope {
     Public,
     Private,
 }
+pub enum Method {
+    WS,
+    HttpPush,
+}
 impl Scope {
-    pub fn get_access_token(self) -> warp::filters::BoxedFilter<(String,)> {
-        let token_from_header = warp::header::header::<String>("authorization")
-            .map(|auth: String| auth.split(' ').nth(1).unwrap_or("invalid").to_string());
-        let token_from_query = warp::query().map(|q: query::Auth| q.access_token);
+    pub fn get_access_token(self, method: Method) -> warp::filters::BoxedFilter<(String,)> {
+        let token_from_header_http_push =
+            warp::header::header::<String>("authorization").map(|auth: String| {
+                dbg!(auth.split(' ').nth(1).unwrap_or("invalid").to_string());
+                auth.split(' ').nth(1).unwrap_or("invalid").to_string()
+            });
+        let token_from_header_ws =
+            warp::header::header::<String>("Sec-WebSocket-Protocol").map(|auth: String| {
+                dbg!(&auth);
+                auth
+            });
+        let token_from_query = warp::query().map(|q: query::Auth| {
+            dbg!(&q.access_token);
+            q.access_token
+        });
         let public = warp::any().map(|| "no access token".to_string());
 
-        match self {
+        match (self, method) {
             // if they're trying to access a private scope without an access token, reject the request
-            Scope::Private => any_of!(token_from_query, token_from_header).boxed(),
+            (Scope::Private, Method::HttpPush) => {
+                any_of!(token_from_query, token_from_header_http_push).boxed()
+            }
+            (Scope::Private, Method::WS) => any_of!(token_from_query, token_from_header_ws).boxed(),
             // if they're trying to access a public scope without an access token, proceed
-            Scope::Public => any_of!(token_from_query, token_from_header, public).boxed(),
+            (Scope::Public, Method::HttpPush) => {
+                any_of!(token_from_query, token_from_header_http_push, public).boxed()
+            }
+            (Scope::Public, Method::WS) => {
+                any_of!(token_from_query, token_from_header_ws, public).boxed()
+            }
         }
     }
 }
