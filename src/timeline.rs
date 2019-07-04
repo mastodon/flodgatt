@@ -1,6 +1,6 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
 use crate::query;
-use crate::user::{Method, Scope, User};
+use crate::user::{Scope, User};
 use warp::filters::BoxedFilter;
 use warp::{path, Filter};
 
@@ -14,7 +14,7 @@ type TimelineUser = ((String, User),);
 pub fn user() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "user")
         .and(path::end())
-        .and(Scope::Private.get_access_token(Method::HttpPush))
+        .and(Scope::Private.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Private))
         .map(|user: User| (user.id.to_string(), user))
         .boxed()
@@ -30,7 +30,7 @@ pub fn user() -> BoxedFilter<TimelineUser> {
 pub fn user_notifications() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "user" / "notification")
         .and(path::end())
-        .and(Scope::Private.get_access_token(Method::HttpPush))
+        .and(Scope::Private.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Private))
         .map(|user: User| (user.id.to_string(), user.with_notification_filter()))
         .boxed()
@@ -43,7 +43,7 @@ pub fn user_notifications() -> BoxedFilter<TimelineUser> {
 pub fn public() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "public")
         .and(path::end())
-        .and(Scope::Public.get_access_token(Method::HttpPush))
+        .and(Scope::Public.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Public))
         .map(|user: User| ("public".to_owned(), user.with_language_filter()))
         .boxed()
@@ -56,7 +56,7 @@ pub fn public() -> BoxedFilter<TimelineUser> {
 pub fn public_media() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "public")
         .and(path::end())
-        .and(Scope::Public.get_access_token(Method::HttpPush))
+        .and(Scope::Public.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Public))
         .and(warp::query())
         .map(|user: User, q: query::Media| match q.only_media.as_ref() {
@@ -73,7 +73,7 @@ pub fn public_media() -> BoxedFilter<TimelineUser> {
 pub fn public_local() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "public" / "local")
         .and(path::end())
-        .and(Scope::Public.get_access_token(Method::HttpPush))
+        .and(Scope::Public.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Public))
         .map(|user: User| ("public:local".to_owned(), user.with_language_filter()))
         .boxed()
@@ -85,7 +85,7 @@ pub fn public_local() -> BoxedFilter<TimelineUser> {
 /// **public**.  Filter: `Language`
 pub fn public_local_media() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "public" / "local")
-        .and(Scope::Public.get_access_token(Method::HttpPush))
+        .and(Scope::Public.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Public))
         .and(warp::query())
         .and(path::end())
@@ -103,7 +103,7 @@ pub fn public_local_media() -> BoxedFilter<TimelineUser> {
 pub fn direct() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "direct")
         .and(path::end())
-        .and(Scope::Private.get_access_token(Method::HttpPush))
+        .and(Scope::Private.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Private))
         .map(|user: User| (format!("direct:{}", user.id), user.with_no_filter()))
         .boxed()
@@ -139,7 +139,7 @@ pub fn hashtag_local() -> BoxedFilter<TimelineUser> {
 /// **private**.  Filter: `None`
 pub fn list() -> BoxedFilter<TimelineUser> {
     path!("api" / "v1" / "streaming" / "list")
-        .and(Scope::Private.get_access_token(Method::HttpPush))
+        .and(Scope::Private.get_access_token())
         .and_then(|token| User::from_access_token(token, Scope::Private))
         .and(warp::query())
         .and_then(|user: User, q: query::List| (user.authorized_for_list(q.list), Ok(user)))

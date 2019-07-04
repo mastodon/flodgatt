@@ -50,7 +50,6 @@ LIMIT 1",
                 &[&token],
             )
             .expect("Hard-coded query will return Some([0 or more rows])");
-        dbg!(&result);
         if !result.is_empty() {
             let only_row = result.get(0);
             let id: i64 = only_row.get(1);
@@ -133,41 +132,27 @@ pub enum Scope {
     Public,
     Private,
 }
-pub enum Method {
-    WS,
-    HttpPush,
-}
 impl Scope {
-    pub fn get_access_token(self, method: Method) -> warp::filters::BoxedFilter<(String,)> {
-        let token_from_header_http_push =
-            warp::header::header::<String>("authorization").map(|auth: String| {
-                dbg!(auth.split(' ').nth(1).unwrap_or("invalid").to_string());
-                auth.split(' ').nth(1).unwrap_or("invalid").to_string()
-            });
+    pub fn get_access_token(self) -> warp::filters::BoxedFilter<(String,)> {
+        let token_from_header_http_push = warp::header::header::<String>("authorization")
+            .map(|auth: String| auth.split(' ').nth(1).unwrap_or("invalid").to_string());
         let token_from_header_ws =
-            warp::header::header::<String>("Sec-WebSocket-Protocol").map(|auth: String| {
-                dbg!(&auth);
-                auth
-            });
-        let token_from_query = warp::query().map(|q: query::Auth| {
-            dbg!(&q.access_token);
-            q.access_token
-        });
+            warp::header::header::<String>("Sec-WebSocket-Protocol").map(|auth: String| auth);
+        let token_from_query = warp::query().map(|q: query::Auth| q.access_token);
+
+        let private_scopes = any_of!(
+            token_from_header_http_push,
+            token_from_header_ws,
+            token_from_query
+        );
+
         let public = warp::any().map(|| "no access token".to_string());
 
-        match (self, method) {
+        match self {
             // if they're trying to access a private scope without an access token, reject the request
-            (Scope::Private, Method::HttpPush) => {
-                any_of!(token_from_query, token_from_header_http_push).boxed()
-            }
-            (Scope::Private, Method::WS) => any_of!(token_from_query, token_from_header_ws).boxed(),
+            Scope::Private => private_scopes.boxed(),
             // if they're trying to access a public scope without an access token, proceed
-            (Scope::Public, Method::HttpPush) => {
-                any_of!(token_from_query, token_from_header_http_push, public).boxed()
-            }
-            (Scope::Public, Method::WS) => {
-                any_of!(token_from_query, token_from_header_ws, public).boxed()
-            }
+            Scope::Public => any_of!(private_scopes, public).boxed(),
         }
     }
 }
