@@ -30,3 +30,7 @@ pub fn handle_errors(
         warp::http::StatusCode::UNAUTHORIZED,
     ))
 }
+
+pub fn unauthorized_list() -> warp::reject::Rejection {
+    warp::reject::custom("Error: Access to list not authorized")
+}

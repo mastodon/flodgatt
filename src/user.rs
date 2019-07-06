@@ -1,24 +1,21 @@
-//! Create a User by querying the Postgres database with the user's access_token
-use crate::{any_of, query};
+//! `User` struct and related functionality
+use crate::{postgres, query};
 use log::info;
-use postgres;
-use std::env;
 use warp::Filter as WarpFilter;
 
-/// (currently hardcoded to localhost)
-pub fn connect_to_postgres() -> postgres::Connection {
-    let postgres_addr = env::var("POSTGRESS_ADDR").unwrap_or(format!(
-        "postgres://{}@localhost/mastodon_development",
-        env::var("USER").expect("User env var should exist")
-    ));
-    postgres::Connection::connect(postgres_addr, postgres::TlsMode::None)
-        .expect("Can connect to local Postgres")
+/// Combine multiple routes with the same return type together with
+/// `or()` and `unify()`
+#[macro_export]
+macro_rules! any_of {
+    ($filter:expr, $($other_filter:expr),*) => {
+        $filter$(.or($other_filter).unify())*
+    };
 }
 
 /// The filters that can be applied to toots after they come from Redis
 #[derive(Clone, Debug, PartialEq)]
 pub enum Filter {
-    None,
+    NoFilter,
     Language,
     Notification,
 }
@@ -28,140 +25,99 @@ pub enum Filter {
 pub struct User {
     pub id: i64,
     pub access_token: String,
-    pub scopes: Vec<OauthScope>,
+    pub scopes: OauthScope,
     pub langs: Option<Vec<String>>,
     pub logged_in: bool,
     pub filter: Filter,
 }
-#[derive(Clone, Debug, PartialEq)]
-pub enum OauthScope {
-    Read,
-    ReadStatuses,
-    ReadNotifications,
-    ReadList,
-    Other,
-}
-impl From<&str> for OauthScope {
-    fn from(scope: &str) -> Self {
-        use OauthScope::*;
-        match scope {
-            "read" => Read,
-            "read:statuses" => ReadStatuses,
-            "read:notifications" => ReadNotifications,
-            "read:lists" => ReadList,
-            _ => Other,
-        }
+impl Default for User {
+    fn default() -> Self {
+        User::public()
     }
 }
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OauthScope {
+    pub all: bool,
+    pub statuses: bool,
+    pub notify: bool,
+    pub lists: bool,
+}
+impl From<Vec<String>> for OauthScope {
+    fn from(scope_list: Vec<String>) -> Self {
+        let mut oauth_scope = OauthScope::default();
+        for scope in scope_list {
+            match scope.as_str() {
+                "read" => oauth_scope.all = true,
+                "read:statuses" => oauth_scope.statuses = true,
+                "read:notifications" => oauth_scope.notify = true,
+                "read:lists" => oauth_scope.lists = true,
+                _ => (),
+            }
+        }
+        oauth_scope
+    }
+}
+
+/// Create a user based on the supplied path and access scope for the resource
+#[macro_export]
+macro_rules! user_from_path {
+    ($($path_item:tt) / *, $scope:expr) => (path!("api" / "v1" / $($path_item) / +)
+                                              .and($scope.get_access_token())
+                                              .and_then(|token| User::from_access_token(token, $scope)))
+}
+
 impl User {
     /// Create a user from the access token supplied in the header or query paramaters
     pub fn from_access_token(
         access_token: String,
         scope: Scope,
     ) -> Result<Self, warp::reject::Rejection> {
-        let conn = connect_to_postgres();
-        let result = &conn
-            .query(
-                "
-SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_languages, oauth_access_tokens.scopes
-FROM
-oauth_access_tokens
-INNER JOIN users ON
-oauth_access_tokens.resource_owner_id = users.id
-WHERE oauth_access_tokens.token = $1
-AND oauth_access_tokens.revoked_at IS NULL
-LIMIT 1",
-                &[&access_token],
-            )
-            .expect("Hard-coded query will return Some([0 or more rows])");
-        if !result.is_empty() {
-            let only_row = result.get(0);
-            let id: i64 = only_row.get(1);
-            let scopes = only_row
-                .get::<_, String>(3)
-                .split(' ')
-                .map(|scope: &str| scope.into())
-                .filter(|scope| scope != &OauthScope::Other)
-                .collect();
-            dbg!(&scopes);
-            let langs: Option<Vec<String>> = only_row.get(2);
-            info!("Granting logged-in access");
+        let (id, langs, scope_list) = postgres::query_for_user_data(&access_token);
+        let scopes = OauthScope::from(scope_list);
+        if id != -1 || scope == Scope::Public {
+            let (logged_in, log_msg) = match id {
+                -1 => (false, "Public access to non-authenticated endpoints"),
+                _ => (true, "Granting logged-in access"),
+            };
+            info!("{}", log_msg);
             Ok(User {
                 id,
                 access_token,
                 scopes,
                 langs,
-                logged_in: true,
-                filter: Filter::None,
-            })
-        } else if let Scope::Public = scope {
-            info!("Granting public access to non-authenticated client");
-            Ok(User {
-                id: -1,
-                access_token,
-                scopes: Vec::new(),
-                langs: None,
-                logged_in: false,
-                filter: Filter::None,
+                logged_in,
+                filter: Filter::NoFilter,
             })
         } else {
             Err(warp::reject::custom("Error: Invalid access token"))
         }
     }
-    /// Add a Notification filter
-    pub fn with_notification_filter(self) -> Self {
-        Self {
-            filter: Filter::Notification,
-            ..self
-        }
-    }
-    /// Add a Language filter
-    pub fn with_language_filter(self) -> Self {
-        Self {
-            filter: Filter::Language,
-            ..self
-        }
-    }
-    /// Remove all filters
-    pub fn with_no_filter(self) -> Self {
-        Self {
-            filter: Filter::None,
-            ..self
-        }
+    /// Set the Notification/Language filter
+    pub fn set_filter(self, filter: Filter) -> Self {
+        Self { filter, ..self }
     }
     /// Determine whether the User is authorised for a specified list
-    pub fn authorized_for_list(&self, list: i64) -> Result<i64, warp::reject::Rejection> {
-        let conn = connect_to_postgres();
-        // For the Postgres query, `id` = list number; `account_id` = user.id
-        let rows = &conn
-            .query(
-                " SELECT id, account_id FROM lists WHERE id = $1 LIMIT 1",
-                &[&list],
-            )
-            .expect("Hard-coded query will return Some([0 or more rows])");
-        if !rows.is_empty() {
-            let id_of_account_that_owns_the_list: i64 = rows.get(0).get(1);
-            if id_of_account_that_owns_the_list == self.id {
-                return Ok(list);
-            }
-        };
-
-        Err(warp::reject::custom("Error: Invalid access token"))
+    pub fn owns_list(&self, list: i64) -> bool {
+        match postgres::query_list_owner(list) {
+            Some(i) if i == self.id => true,
+            _ => false,
+        }
     }
     /// A public (non-authenticated) User
     pub fn public() -> Self {
         User {
             id: -1,
-            access_token: String::new(),
-            scopes: Vec::new(),
+            access_token: String::from("no access token"),
+            scopes: OauthScope::default(),
             langs: None,
             logged_in: false,
-            filter: Filter::None,
+            filter: Filter::NoFilter,
         }
     }
 }
 
 /// Whether the endpoint requires authentication or not
+#[derive(PartialEq)]
 pub enum Scope {
     Public,
     Private,
