@@ -1,4 +1,5 @@
 //! Send raw TCP commands to the Redis server
+use log::info;
 use std::fmt::Display;
 
 /// Send a subscribe or unsubscribe to the Redis PubSub channel
@@ -25,6 +26,7 @@ macro_rules! pubsub_cmd {
 pub fn pubsub(command: impl Display, timeline: impl Display) -> Vec<u8> {
     let arg = format!("timeline:{}", timeline);
     let command = command.to_string();
+    info!("Sent {} command", &command);
     format!(
         "*2\r\n${cmd_length}\r\n{cmd}\r\n${arg_length}\r\n{arg}\r\n",
         cmd_length = command.len(),

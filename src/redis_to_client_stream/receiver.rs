@@ -7,11 +7,11 @@ use futures::{Async, Poll};
 use log::info;
 use regex::Regex;
 use serde_json::Value;
-use std::{collections, env, io::Read, io::Write, net, time};
+use std::{collections, io::Read, io::Write, net, time};
 use tokio::io::{AsyncRead, Error};
 use uuid::Uuid;
 
-/// The item that streams from Redis and is polled by the `StreamManager`
+/// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
     pubsub_connection: net::TcpStream,
@@ -53,7 +53,7 @@ impl Receiver {
         self.subscribe_or_unsubscribe_as_needed(timeline);
     }
 
-    /// Set the `Receiver`'s manager_id and target_timeline fields to the approprate
+    /// Set the `Receiver`'s manager_id and target_timeline fields to the appropriate
     /// value to be polled by the current `StreamManager`.
     pub fn configure_for_polling(&mut self, manager_id: Uuid, timeline: &str) {
         self.manager_id = manager_id;
@@ -102,39 +102,10 @@ impl Receiver {
                 });
             // If no clients, unsubscribe from the channel
             if *count_of_subscribed_clients <= 0 {
-                info!("Sent unsubscribe command");
                 pubsub_cmd!("unsubscribe", self, change.timeline.clone());
             }
             if need_to_subscribe {
-                info!("Sent subscribe command");
                 pubsub_cmd!("subscribe", self, change.timeline.clone());
-            }
-        }
-    }
-
-    /// Polls Redis for any new messages and adds them to the `MsgQueue` for
-    /// the appropriate `ClientAgent`.
-    fn poll_redis(&mut self) {
-        let mut buffer = vec![0u8; 3000];
-        // Add any incoming messages to the back of the relevant `msg_queues`
-        // NOTE: This could be more/other than the `msg_queue` currently being polled
-        let mut async_stream = AsyncReadableStream::new(&mut self.pubsub_connection);
-        if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
-            let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-            // capture everything between `{` and `}` as potential JSON
-            let json_regex = Regex::new(r"(?P<json>\{.*\})").expect("Hard-coded");
-            // capture the timeline so we know which queues to add it to
-            let timeline_regex = Regex::new(r"timeline:(?P<timeline>.*?)\r").expect("Hard-codded");
-            if let Some(result) = json_regex.captures(raw_redis_response) {
-                let timeline =
-                    timeline_regex.captures(raw_redis_response).unwrap()["timeline"].to_string();
-
-                let msg: Value = serde_json::from_str(&result["json"].to_string().clone()).unwrap();
-                for msg_queue in self.msg_queues.values_mut() {
-                    if msg_queue.redis_channel == timeline {
-                        msg_queue.messages.push_back(msg.clone());
-                    }
-                }
             }
         }
     }
@@ -152,6 +123,10 @@ impl Receiver {
             }
             _ => log::info!("{} messages waiting in the queue", messages_waiting),
         }
+    }
+
+    fn get_target_msg_queue(&mut self) -> collections::hash_map::Entry<Uuid, MsgQueue> {
+        self.msg_queues.entry(self.manager_id)
     }
 }
 
@@ -175,24 +150,20 @@ impl futures::stream::Stream for Receiver {
     fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
         let timeline = self.timeline.clone();
 
-        let redis_poll_interval = env::var("REDIS_POLL_INTERVAL")
-            .map(|s| s.parse().expect("Valid config"))
-            .unwrap_or(config::DEFAULT_REDIS_POLL_INTERVAL);
-
-        if self.redis_polled_at.elapsed() > time::Duration::from_millis(redis_poll_interval) {
-            self.poll_redis();
+        if self.redis_polled_at.elapsed()
+            > time::Duration::from_millis(*config::REDIS_POLL_INTERVAL)
+        {
+            AsyncReadableStream::poll_redis(self);
             self.redis_polled_at = time::Instant::now();
         }
 
         // Record current time as last polled time
-        self.msg_queues
-            .entry(self.manager_id)
+        self.get_target_msg_queue()
             .and_modify(|msg_queue| msg_queue.last_polled_at = time::Instant::now());
 
         // If the `msg_queue` being polled has any new messages, return the first (oldest) one
         match self
-            .msg_queues
-            .entry(self.manager_id)
+            .get_target_msg_queue()
             .or_insert_with(|| MsgQueue::new(timeline.clone()))
             .messages
             .pop_front()
@@ -214,13 +185,13 @@ impl Drop for Receiver {
 
 #[derive(Debug, Clone)]
 struct MsgQueue {
-    pub messages: collections::VecDeque<Value>,
-    pub last_polled_at: time::Instant,
-    pub redis_channel: String,
+    messages: collections::VecDeque<Value>,
+    last_polled_at: time::Instant,
+    redis_channel: String,
 }
 
 impl MsgQueue {
-    pub fn new(redis_channel: impl std::fmt::Display) -> Self {
+    fn new(redis_channel: impl std::fmt::Display) -> Self {
         let redis_channel = redis_channel.to_string();
         MsgQueue {
             messages: collections::VecDeque::new(),
@@ -232,8 +203,35 @@ impl MsgQueue {
 
 struct AsyncReadableStream<'a>(&'a mut net::TcpStream);
 impl<'a> AsyncReadableStream<'a> {
-    pub fn new(stream: &'a mut net::TcpStream) -> Self {
+    fn new(stream: &'a mut net::TcpStream) -> Self {
         AsyncReadableStream(stream)
+    }
+    /// Polls Redis for any new messages and adds them to the `MsgQueue` for
+    /// the appropriate `ClientAgent`.
+    fn poll_redis(receiver: &mut Receiver) {
+        let mut buffer = vec![0u8; 3000];
+        // Add any incoming messages to the back of the relevant `msg_queues`
+        // NOTE: This could be more/other than the `msg_queue` currently being polled
+
+        let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
+        if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
+            let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
+            // capture everything between `{` and `}` as potential JSON
+            let json_regex = Regex::new(r"(?P<json>\{.*\})").expect("Hard-coded");
+            // capture the timeline so we know which queues to add it to
+            let timeline_regex = Regex::new(r"timeline:(?P<timeline>.*?)\r").expect("Hard-codded");
+            if let Some(result) = json_regex.captures(raw_redis_response) {
+                let timeline =
+                    timeline_regex.captures(raw_redis_response).unwrap()["timeline"].to_string();
+
+                let msg: Value = serde_json::from_str(&result["json"].to_string().clone()).unwrap();
+                for msg_queue in receiver.msg_queues.values_mut() {
+                    if msg_queue.redis_channel == timeline {
+                        msg_queue.messages.push_back(msg.clone());
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -4,7 +4,7 @@
 //! The `ClientAgent`'s interface is very simple.  All you can do with it is:
 //!  * Create a totally new `ClientAgent` with no shared data;
 //!  * Clone an existing `ClientAgent`, sharing the `Receiver`;
-//!  * to manage an new timeline/user pair; or
+//!  * Manage an new timeline/user pair; or
 //!  * Poll an existing `ClientAgent` to see if there are any new messages
 //!    for clients
 //!
@@ -18,6 +18,7 @@
 use super::receiver::Receiver;
 use crate::parse_client_request::user::User;
 use futures::{Async, Poll};
+use log;
 use serde_json::{json, Value};
 use std::{sync, time};
 use tokio::io::Error;
@@ -94,7 +95,7 @@ impl futures::stream::Stream for ClientAgent {
         };
 
         if start_time.elapsed() > time::Duration::from_millis(20) {
-            println!("Polling took: {:?}", start_time.elapsed());
+            log::warn!("Polling took: {:?}", start_time.elapsed());
         }
         match result {
             Ok(Async::Ready(Some(value))) => {

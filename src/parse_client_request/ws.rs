@@ -1,4 +1,4 @@
-//! WebSocket functionality
+//! Filters for the WebSocket endpoint
 use super::{
     query,
     user::{Scope, User},

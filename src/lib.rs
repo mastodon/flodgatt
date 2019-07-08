@@ -6,26 +6,37 @@
 //! connect to the server with the API described [in Mastodon's public API
 //! documentation](https://docs.joinmastodon.org/api/streaming/).
 //!
-//! # Notes on data flow
-//! * **Client Request → Warp**:
-//! Warp filters for valid requests and parses request data. Based on that data, it generates a `User`
-//! representing the client that made the request with data from the client's request and from
-//! Postgres.  The `User` is authenticated, if appropriate.  Warp //! repeatedly polls the
-//! ClientAgent for information relevant to the User.
+//! # Data Flow
+//! * **Parsing the client request**
+//! When the client request first comes in, it is parsed based on the endpoint it targets (for
+//! server sent events), its query parameters, and its headers (for WebSocket).  Based on this
+//! data, we authenticate the user, retrieve relevant user data from Postgres, and determine the
+//! timeline targeted by the request.  Successfully parsing the client request results in generating
+//! a `User` and target `timeline` for the request.  If any requests are invalid/not authorized, we
+//! reject them in this stage.
+//! * **Streaming update from Redis to the client**:
+//! After the user request is parsed, we pass the `User` and `timeline` data on to the
+//! `ClientAgent`.  The `ClientAgent` is responsible for communicating the user's request to the
+//! `Receiver`, polling the `Receiver` for any updates, and then for wording those updates on to the
+//! client.  The `Receiver`, in tern, is responsible for managing the Redis subscriptions,
+//! periodically polling Redis, and sorting the replies from Redis into queues for when it is polled
+//! by the `ClientAgent`.
 //!
-//! * **Warp → ClientAgent**:
-//! A new `ClientAgent` is created for each request.  The `ClientAgent` exists to manage concurrent
-//! access to the (single) `Receiver`, which it can access behind an `Arc<Mutex>`.  The `ClientAgent`
-//! polls the `Receiver` for any updates relevant to the current client.  If there are updates, the
-//! `ClientAgent` filters them with the client's filters and passes any matching updates up to Warp.
-//! The `ClientAgent` is also responsible for sending `subscribe` commands to Redis (via the
-//! `Receiver`) when necessary.
+//! # Concurrency
+//! The `Receiver` is created when the server is first initialized, and there is only one
+//! `Receiver`.  Thus, the `Receiver` is a potential bottleneck.  On the other hand, each
+//! client request results in a new green thread, which spawns its own `ClientAgent`.  Thus,
+//! their will be many `ClientAgent`s polling a single `Receiver`.  Accordingly, it is very
+//! important that polling the `Receiver` remain as fast as possible.  It is less important
+//! that the `Receiver`'s poll of Redis be fast, since there will only ever be one
+//! `Receiver`.
 //!
-//! * **ClientAgent → Receiver**:
-//! The Receiver receives data from Redis and stores it in a series of queues (one for each
-//! ClientAgent). When (asynchronously) polled by the ClientAgent, it sends back the  messages
-//! relevant to that ClientAgent and removes them from the queue.
-
+//! # Configuration
+//! By default, the server uses config values from the `config.rs` module; these values can be
+//! overwritten with environmental variables or in the `.env` file.  The most important settings
+//! for performance control the frequency with which the `ClientAgent` polls the `Receiver` and
+//! the frequency with which the `Receiver` polls Redis.
+//!
 pub mod config;
 pub mod parse_client_request;
 pub mod redis_to_client_stream;

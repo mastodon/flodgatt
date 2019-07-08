@@ -110,7 +110,6 @@ fn main() {
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
 
     let cors = config::cross_origin_resource_sharing();
-    let address = config::socket_address();
 
-    warp::serve(websocket_routes.or(sse_routes).with(cors)).run(address);
+    warp::serve(websocket_routes.or(sse_routes).with(cors)).run(*config::SERVER_ADDR);
 }

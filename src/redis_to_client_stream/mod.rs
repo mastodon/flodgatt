@@ -1,3 +1,4 @@
+//! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 pub mod client_agent;
 pub mod receiver;
 pub mod redis_cmd;
@@ -5,18 +6,17 @@ pub mod redis_cmd;
 use crate::config;
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
-use std::{env, time};
+use log;
+use std::time;
 
+/// Send a stream of replies to a Server Sent Events client.
 pub fn send_updates_to_sse(
     mut client_agent: ClientAgent,
     connection: warp::sse::Sse,
 ) -> impl warp::reply::Reply {
-    let sse_update_interval = env::var("SSE_UPDATE_INTERVAL")
-        .map(|s| s.parse().expect("Valid config"))
-        .unwrap_or(config::DEFAULT_SSE_UPDATE_INTERVAL);
     let event_stream = tokio::timer::Interval::new(
         time::Instant::now(),
-        time::Duration::from_millis(sse_update_interval),
+        time::Duration::from_millis(*config::SSE_UPDATE_INTERVAL),
     )
     .filter_map(move |_| match client_agent.poll() {
         Ok(Async::Ready(Some(json_value))) => Some((
@@ -29,7 +29,7 @@ pub fn send_updates_to_sse(
     connection.reply(warp::sse::keep(event_stream, None))
 }
 
-/// Send a stream of replies to a WebSocket client
+/// Send a stream of replies to a WebSocket client.
 pub fn send_updates_to_ws(
     socket: warp::ws::WebSocket,
     mut stream: ClientAgent,
@@ -49,12 +49,9 @@ pub fn send_updates_to_ws(
     );
 
     // For as long as the client is still connected, yeild a new event every 100 ms
-    let ws_update_interval = env::var("WS_UPDATE_INTERVAL")
-        .map(|s| s.parse().expect("Valid config"))
-        .unwrap_or(config::DEFAULT_WS_UPDATE_INTERVAL);
     let event_stream = tokio::timer::Interval::new(
         time::Instant::now(),
-        time::Duration::from_millis(ws_update_interval),
+        time::Duration::from_millis(*config::WS_UPDATE_INTERVAL),
     )
     .take_while(move |_| match ws_rx.poll() {
         Ok(Async::Ready(None)) => futures::future::ok(false),
@@ -71,5 +68,5 @@ pub fn send_updates_to_ws(
             Ok(())
         })
         .then(|msg| msg)
-        .map_err(|e| println!("{}", e))
+        .map_err(|e| log::error!("{}", e))
 }
