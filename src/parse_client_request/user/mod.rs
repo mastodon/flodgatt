@@ -1,5 +1,6 @@
 //! `User` struct and related functionality
-use crate::{postgres, query};
+mod postgres;
+use crate::parse_client_request::query;
 use log::info;
 use warp::Filter as WarpFilter;
 

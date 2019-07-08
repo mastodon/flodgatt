@@ -1,7 +1,7 @@
 use ragequit::{
     config,
-    timeline::*,
-    user::{Filter::*, Scope, User},
+    parse_client_request::sse::Request,
+    parse_client_request::user::{Filter::*, Scope, User},
 };
 
 #[test]
@@ -10,12 +10,12 @@ fn user_unauthorized() {
         .path(&format!(
             "/api/v1/streaming/user?access_token=BAD_ACCESS_TOKEN&list=1",
         ))
-        .filter(&user());
+        .filter(&Request::user());
     assert!(invalid_access_token(value));
 
     let value = warp::test::request()
         .path(&format!("/api/v1/streaming/user",))
-        .filter(&user());
+        .filter(&Request::user());
     assert!(no_access_token(value));
 }
 
@@ -31,7 +31,7 @@ fn user_auth() {
             "/api/v1/streaming/user?access_token={}",
             access_token
         ))
-        .filter(&user())
+        .filter(&Request::user())
         .expect("in test");
 
     let expected_user =
@@ -44,7 +44,7 @@ fn user_auth() {
     let (actual_timeline, actual_user) = warp::test::request()
         .path("/api/v1/streaming/user")
         .header("Authorization", format!("Bearer: {}", access_token.clone()))
-        .filter(&user())
+        .filter(&Request::user())
         .expect("in test");
 
     let expected_user = User::from_access_token(access_token, Scope::Private).expect("in test");
@@ -59,12 +59,12 @@ fn user_notifications_unauthorized() {
         .path(&format!(
             "/api/v1/streaming/user/notification?access_token=BAD_ACCESS_TOKEN",
         ))
-        .filter(&user_notifications());
+        .filter(&Request::user_notifications());
     assert!(invalid_access_token(value));
 
     let value = warp::test::request()
         .path(&format!("/api/v1/streaming/user/notification",))
-        .filter(&user_notifications());
+        .filter(&Request::user_notifications());
     assert!(no_access_token(value));
 }
 
@@ -80,7 +80,7 @@ fn user_notifications_auth() {
             "/api/v1/streaming/user/notification?access_token={}",
             access_token
         ))
-        .filter(&user_notifications())
+        .filter(&Request::user_notifications())
         .expect("in test");
 
     let expected_user = User::from_access_token(access_token.clone(), Scope::Private)
@@ -94,7 +94,7 @@ fn user_notifications_auth() {
     let (actual_timeline, actual_user) = warp::test::request()
         .path("/api/v1/streaming/user/notification")
         .header("Authorization", format!("Bearer: {}", access_token.clone()))
-        .filter(&user_notifications())
+        .filter(&Request::user_notifications())
         .expect("in test");
 
     let expected_user = User::from_access_token(access_token, Scope::Private)
@@ -108,7 +108,7 @@ fn user_notifications_auth() {
 fn public_timeline() {
     let value = warp::test::request()
         .path("/api/v1/streaming/public")
-        .filter(&public())
+        .filter(&Request::public())
         .expect("in test");
 
     assert_eq!(value.0, "public".to_string());
@@ -119,7 +119,7 @@ fn public_timeline() {
 fn public_media_timeline() {
     let value = warp::test::request()
         .path("/api/v1/streaming/public?only_media=true")
-        .filter(&public_media())
+        .filter(&Request::public_media())
         .expect("in test");
 
     assert_eq!(value.0, "public:media".to_string());
@@ -127,7 +127,7 @@ fn public_media_timeline() {
 
     let value = warp::test::request()
         .path("/api/v1/streaming/public?only_media=1")
-        .filter(&public_media())
+        .filter(&Request::public_media())
         .expect("in test");
 
     assert_eq!(value.0, "public:media".to_string());
@@ -138,7 +138,7 @@ fn public_media_timeline() {
 fn public_local_timeline() {
     let value = warp::test::request()
         .path("/api/v1/streaming/public/local")
-        .filter(&public_local())
+        .filter(&Request::public_local())
         .expect("in test");
 
     assert_eq!(value.0, "public:local".to_string());
@@ -149,7 +149,7 @@ fn public_local_timeline() {
 fn public_local_media_timeline() {
     let value = warp::test::request()
         .path("/api/v1/streaming/public/local?only_media=true")
-        .filter(&public_local_media())
+        .filter(&Request::public_local_media())
         .expect("in test");
 
     assert_eq!(value.0, "public:local:media".to_string());
@@ -157,7 +157,7 @@ fn public_local_media_timeline() {
 
     let value = warp::test::request()
         .path("/api/v1/streaming/public/local?only_media=1")
-        .filter(&public_local_media())
+        .filter(&Request::public_local_media())
         .expect("in test");
 
     assert_eq!(value.0, "public:local:media".to_string());
@@ -170,12 +170,12 @@ fn direct_timeline_unauthorized() {
         .path(&format!(
             "/api/v1/streaming/direct?access_token=BAD_ACCESS_TOKEN",
         ))
-        .filter(&direct());
+        .filter(&Request::direct());
     assert!(invalid_access_token(value));
 
     let value = warp::test::request()
         .path(&format!("/api/v1/streaming/direct",))
-        .filter(&direct());
+        .filter(&Request::direct());
     assert!(no_access_token(value));
 }
 
@@ -191,7 +191,7 @@ fn direct_timeline_auth() {
             "/api/v1/streaming/direct?access_token={}",
             access_token
         ))
-        .filter(&direct())
+        .filter(&Request::direct())
         .expect("in test");
 
     let expected_user =
@@ -204,7 +204,7 @@ fn direct_timeline_auth() {
     let (actual_timeline, actual_user) = warp::test::request()
         .path("/api/v1/streaming/direct")
         .header("Authorization", format!("Bearer: {}", access_token.clone()))
-        .filter(&direct())
+        .filter(&Request::direct())
         .expect("in test");
 
     let expected_user = User::from_access_token(access_token, Scope::Private).expect("in test");
@@ -217,7 +217,7 @@ fn direct_timeline_auth() {
 fn hashtag_timeline() {
     let value = warp::test::request()
         .path("/api/v1/streaming/hashtag?tag=a")
-        .filter(&hashtag())
+        .filter(&Request::hashtag())
         .expect("in test");
 
     assert_eq!(value.0, "hashtag:a".to_string());
@@ -228,7 +228,7 @@ fn hashtag_timeline() {
 fn hashtag_timeline_local() {
     let value = warp::test::request()
         .path("/api/v1/streaming/hashtag/local?tag=a")
-        .filter(&hashtag_local())
+        .filter(&Request::hashtag_local())
         .expect("in test");
 
     assert_eq!(value.0, "hashtag:a:local".to_string());
@@ -248,7 +248,7 @@ fn list_timeline_auth() {
             "/api/v1/streaming/list?access_token={}&list={}",
             access_token, list_id,
         ))
-        .filter(&list())
+        .filter(&Request::list())
         .expect("in test");
 
     let expected_user =
@@ -261,7 +261,7 @@ fn list_timeline_auth() {
     let (actual_timeline, actual_user) = warp::test::request()
         .path("/api/v1/streaming/list?list=1")
         .header("Authorization", format!("Bearer: {}", access_token.clone()))
-        .filter(&list())
+        .filter(&Request::list())
         .expect("in test");
 
     let expected_user = User::from_access_token(access_token, Scope::Private).expect("in test");
@@ -276,12 +276,12 @@ fn list_timeline_unauthorized() {
         .path(&format!(
             "/api/v1/streaming/list?access_token=BAD_ACCESS_TOKEN&list=1",
         ))
-        .filter(&list());
+        .filter(&Request::list());
     assert!(invalid_access_token(value));
 
     let value = warp::test::request()
         .path(&format!("/api/v1/streaming/list?list=1",))
-        .filter(&list());
+        .filter(&Request::list());
     assert!(no_access_token(value));
 }
 

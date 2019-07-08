@@ -1,14 +1,26 @@
-//! Configuration settings for servers and databases
+//! Configuration settings and custom errors for servers and databases
 use dotenv::dotenv;
 use log::warn;
+use serde_derive::Serialize;
 use std::{env, net, time};
+
+const CORS_ALLOWED_METHODS: [&str; 2] = ["GET", "OPTIONS"];
+const CORS_ALLOWED_HEADERS: [&str; 3] = ["Authorization", "Accept", "Cache-Control"];
+const DEFAULT_POSTGRES_ADDR: &str = "postgres://@localhost/mastodon_development";
+const DEFAULT_REDIS_ADDR: &str = "127.0.0.1:6379";
+const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:4000";
+
+/// The frequency with which the StreamAgent will poll for updates to send via SSE
+pub const DEFAULT_SSE_UPDATE_INTERVAL: u64 = 100;
+pub const DEFAULT_WS_UPDATE_INTERVAL: u64 = 100;
+pub const DEFAULT_REDIS_POLL_INTERVAL: u64 = 100;
 
 /// Configure CORS for the API server
 pub fn cross_origin_resource_sharing() -> warp::filters::cors::Cors {
     warp::cors()
         .allow_any_origin()
-        .allow_methods(vec!["GET", "OPTIONS"])
-        .allow_headers(vec!["Authorization", "Accept", "Cache-Control"])
+        .allow_methods(CORS_ALLOWED_METHODS.to_vec())
+        .allow_headers(CORS_ALLOWED_HEADERS.to_vec())
 }
 
 /// Initialize logging and read values from `src/.env`
@@ -20,20 +32,22 @@ pub fn logging_and_env() {
 /// Configure Postgres and return a connection
 pub fn postgres() -> postgres::Connection {
     let postgres_addr = env::var("POSTGRESS_ADDR").unwrap_or_else(|_| {
-        format!(
-            "postgres://{}@localhost/mastodon_development",
-            env::var("USER").unwrap_or_else(|_| {
-                warn!("No USER env variable set.  Connecting to Postgress with default `postgres` user");
-                "postgres".to_owned()
-            })
-        )
+        let mut postgres_addr = DEFAULT_POSTGRES_ADDR.to_string();
+        postgres_addr.insert_str(11, 
+             &env::var("USER").unwrap_or_else(|_| {
+                 warn!("No USER env variable set.  Connecting to Postgress with default `postgres` user");
+                 "postgres".to_string()
+             }).as_str()
+        );
+        postgres_addr
     });
     postgres::Connection::connect(postgres_addr, postgres::TlsMode::None)
         .expect("Can connect to local Postgres")
 }
 
+/// Configure Redis
 pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
-    let redis_addr = env::var("REDIS_ADDR").unwrap_or_else(|_| "127.0.0.1:6379".to_string());
+    let redis_addr = env::var("REDIS_ADDR").unwrap_or_else(|_| DEFAULT_REDIS_ADDR.to_owned());
     let pubsub_connection = net::TcpStream::connect(&redis_addr).expect("Can connect to Redis");
     pubsub_connection
         .set_read_timeout(Some(time::Duration::from_millis(10)))
@@ -48,7 +62,45 @@ pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
 
 pub fn socket_address() -> net::SocketAddr {
     env::var("SERVER_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:4000".to_owned())
+        .unwrap_or_else(|_| DEFAULT_SERVER_ADDR.to_owned())
         .parse()
         .expect("static string")
+}
+
+#[derive(Serialize)]
+pub struct ErrorMessage {
+    error: String,
+}
+impl ErrorMessage {
+    fn new(msg: impl std::fmt::Display) -> Self {
+        Self {
+            error: msg.to_string(),
+        }
+    }
+}
+
+/// Recover from Errors by sending appropriate Warp::Rejections
+pub fn handle_errors(
+    rejection: warp::reject::Rejection,
+) -> Result<impl warp::Reply, warp::reject::Rejection> {
+    let err_txt = match rejection.cause() {
+        Some(text) if text.to_string() == "Missing request header 'authorization'" => {
+            "Error: Missing access token".to_string()
+        }
+        Some(text) => text.to_string(),
+        None => "Error: Nonexistant endpoint".to_string(),
+    };
+    let json = warp::reply::json(&ErrorMessage::new(err_txt));
+    Ok(warp::reply::with_status(
+        json,
+        warp::http::StatusCode::UNAUTHORIZED,
+    ))
+}
+
+pub struct CustomError {}
+
+impl CustomError {
+    pub fn unauthorized_list() -> warp::reject::Rejection {
+        warp::reject::custom("Error: Access to list not authorized")
+    }
 }
