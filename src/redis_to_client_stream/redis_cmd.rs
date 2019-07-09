@@ -1,10 +1,32 @@
 //! Send raw TCP commands to the Redis server
+use log::info;
 use std::fmt::Display;
 
+/// Send a subscribe or unsubscribe to the Redis PubSub channel
+#[macro_export]
+macro_rules! pubsub_cmd {
+    ($cmd:expr, $self:expr, $tl:expr) => {{
+        info!("Sending {} command to {}", $cmd, $tl);
+        $self
+            .pubsub_connection
+            .write_all(&redis_cmd::pubsub($cmd, $tl))
+            .expect("Can send command to Redis");
+        let new_value = if $cmd == "subscribe" { "1" } else { "0" };
+        $self
+            .secondary_redis_connection
+            .write_all(&redis_cmd::set(
+                format!("subscribed:timeline:{}", $tl),
+                new_value,
+            ))
+            .expect("Can set Redis");
+        info!("Now subscribed to: {:#?}", $self.msg_queues);
+    }};
+}
 /// Send a `SUBSCRIBE` or `UNSUBSCRIBE` command to a specific timeline
 pub fn pubsub(command: impl Display, timeline: impl Display) -> Vec<u8> {
     let arg = format!("timeline:{}", timeline);
     let command = command.to_string();
+    info!("Sent {} command", &command);
     format!(
         "*2\r\n${cmd_length}\r\n{cmd}\r\n${arg_length}\r\n{arg}\r\n",
         cmd_length = command.len(),
