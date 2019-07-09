@@ -51,7 +51,10 @@ impl Stream for StreamManager {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let mut receiver = self.receiver.lock().expect("No other thread panic");
+        let mut receiver = self
+            .receiver
+            .lock()
+            .expect("StreamManager: No other thread panic");
         receiver.update(self.id, &self.target_timeline.clone());
         match receiver.poll() {
             Ok(Async::Ready(Some(value))) => {
@@ -61,19 +64,19 @@ impl Stream for StreamManager {
                     .expect("Previously set current user");
 
                 let user_langs = user.langs.clone();
-                let copy = value.clone();
-                let event = copy["event"].as_str().expect("Redis string");
-                let copy = value.clone();
-                let payload = copy["payload"].to_string();
-                let copy = value.clone();
-                let toot_lang = copy["payload"]["language"]
-                    .as_str()
-                    .expect("redis str")
-                    .to_string();
+                let event = value["event"].as_str().expect("Redis string");
+                let payload = value["payload"].to_string();
 
                 match (&user.filter, user_langs) {
                     (Filter::Notification, _) if event != "notification" => Ok(Async::NotReady),
-                    (Filter::Language, Some(ref langs)) if !langs.contains(&toot_lang) => {
+                    (Filter::Language, Some(ref user_langs))
+                        if !user_langs.contains(
+                            &value["payload"]["language"]
+                                .as_str()
+                                .expect("Redis str")
+                                .to_string(),
+                        ) =>
+                    {
                         Ok(Async::NotReady)
                     }
                     _ => Ok(Async::Ready(Some(json!(
