@@ -1,3 +1,4 @@
+use log::{log_enabled, Level};
 use ragequit::{
     any_of, config,
     parse_client_request::{sse, user, ws},
@@ -11,6 +12,10 @@ fn main() {
     config::logging_and_env();
     let client_agent_sse = ClientAgent::blank();
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
+
+    if log_enabled!(Level::Warn) {
+        println!("Streaming server initialized and ready to accept connections");
+    };
 
     // Server Sent Events
     //

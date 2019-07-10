@@ -18,15 +18,21 @@ const DEFAULT_WS_UPDATE_INTERVAL: u64 = 100;
 const DEFAULT_REDIS_POLL_INTERVAL: u64 = 100;
 
 lazy_static! {
-    static ref POSTGRES_ADDR: String = env::var("POSTGRESS_ADDR").unwrap_or_else(|_| {
-        let mut postgres_addr = DEFAULT_POSTGRES_ADDR.to_string();
-        postgres_addr.insert_str(11,
-             &env::var("USER").unwrap_or_else(|_| {
-                 warn!("No USER env variable set.  Connecting to Postgress with default `postgres` user");
-                 "postgres".to_string()
-             }).as_str()
-        );
-        postgres_addr
+    static ref POSTGRES_ADDR: String = env::var("POSTGRES_ADDR").unwrap_or_else(|_| {
+        warn!("No POSTGRES_ADDR env variable set; using default postgres address.");
+        match &env::var("USER") {
+            Err(_) => {
+                let addr = DEFAULT_POSTGRES_ADDR.replace("@", format!("{}@", "postgres").as_str());
+                warn!("No USER env variable set; using default `postgres` user.\n Using postgres address:  {}\n", addr);
+                addr
+            },
+            Ok(user) => {
+                let addr = DEFAULT_POSTGRES_ADDR.replace("@", format!("{}@", user).as_str());
+                warn!("Connecting to postgres with current user.\n Using postgres address:  {}\n", addr);
+                addr
+            }
+        }
+
     });
 
     static ref REDIS_ADDR: String = env::var("REDIS_ADDR").unwrap_or_else(|_| DEFAULT_REDIS_ADDR.to_owned());
@@ -64,8 +70,9 @@ pub fn cross_origin_resource_sharing() -> warp::filters::cors::Cors {
 
 /// Initialize logging and read values from `src/.env`
 pub fn logging_and_env() {
-    pretty_env_logger::init();
     dotenv().ok();
+    pretty_env_logger::init();
+    POSTGRES_ADDR.to_string();
 }
 
 /// Configure Postgres and return a connection
