@@ -1,5 +1,5 @@
 //! Provides an interface between the `Warp` filters and the underlying
-//! mechanics of talking with Redis/managing multiple threads.  
+//! mechanics of talking with Redis/managing multiple threads.
 //!
 //! The `ClientAgent`'s interface is very simple.  All you can do with it is:
 //!  * Create a totally new `ClientAgent` with no shared data;

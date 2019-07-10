@@ -3,6 +3,7 @@ use crate::config;
 
 pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
     let conn = config::postgres();
+
     let query_result = conn
             .query(
                 "
