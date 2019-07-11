@@ -4,7 +4,7 @@
 use super::redis_cmd;
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
-use log::info;
+use log::{info, warn};
 use regex::Regex;
 use serde_json::Value;
 use std::{collections, io::Read, io::Write, net, time};
@@ -217,8 +217,10 @@ impl<'a> AsyncReadableStream<'a> {
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
             let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
 
-            if !raw_redis_response.contains("*3\r\n$9\r\nsubscribe\r\n")
-                && !raw_redis_response.contains("*3\r\n$11\r\nunsubscribe\r\n")
+            warn!("redis:  {}", &raw_redis_response);
+            if raw_redis_response
+                .to_ascii_lowercase()
+                .starts_with("$7\r\nmessage\r\n")
             {
                 let regex =
                     Regex::new(r"timeline:(?P<timeline>.*?)\r\n\$\d+\r\n(?P<value>.*?)\r\n")
@@ -226,12 +228,12 @@ impl<'a> AsyncReadableStream<'a> {
 
                 let timeline = regex
                     .captures(raw_redis_response)
-                    .expect("Hard-coded regex")["timeline"]
+                    .expect("Hard-coded timeline regex")["timeline"]
                     .to_string();
                 let redis_msg: Value = serde_json::from_str(
                     &regex
                         .captures(raw_redis_response)
-                        .expect("Hard-coded regex")["value"],
+                        .expect("Hard-coded value regex")["value"],
                 )
                 .expect("Valid json");
                 for msg_queue in receiver.msg_queues.values_mut() {
