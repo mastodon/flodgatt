@@ -113,19 +113,23 @@ impl futures::stream::Stream for ClientAgent {
 struct Toot {
     category: String,
     payload: String,
-    language: String,
+    language: Option<String>,
 }
 
 impl Toot {
     /// Construct a `Toot` from well-formed JSON.
     fn from_json(value: Value) -> Self {
+        let category = value["event"].as_str().expect("Redis string").to_owned();
+        let language = if category == "update" {
+            Some(value["payload"]["language"].to_string())
+        } else {
+            None
+        };
+
         Self {
-            category: value["event"].as_str().expect("Redis string").to_owned(),
+            category,
             payload: value["payload"].to_string(),
-            language: value["payload"]["language"]
-                .as_str()
-                .expect("Redis str")
-                .to_string(),
+            language,
         }
     }
 
@@ -146,16 +150,23 @@ impl Toot {
             Ok(Async::NotReady),
         );
 
-        use crate::parse_client_request::user::Filter;
-        match &user.filter {
-            Filter::NoFilter => send_msg,
-            Filter::Notification if toot.category == "notification" => send_msg,
-            // If not, skip it
-            Filter::Notification => skip_msg,
-            Filter::Language if user.langs.is_none() => send_msg,
-            Filter::Language if user.langs.clone().expect("").contains(&toot.language) => send_msg,
-            // If not, skip it
-            Filter::Language => skip_msg,
+        if toot.category == "update" {
+            use crate::parse_client_request::user::Filter;
+            let toot_language = &toot.language.clone().expect("Valid lanugage");
+            match &user.filter {
+                Filter::NoFilter => send_msg,
+                Filter::Notification if toot.category == "notification" => send_msg,
+                // If not, skip it
+                Filter::Notification => skip_msg,
+                Filter::Language if user.langs.is_none() => send_msg,
+                Filter::Language if user.langs.clone().expect("").contains(toot_language) => {
+                    send_msg
+                }
+                // If not, skip it
+                Filter::Language => skip_msg,
+            }
+        } else {
+            send_msg
         }
     }
 }
