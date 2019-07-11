@@ -216,18 +216,27 @@ impl<'a> AsyncReadableStream<'a> {
         let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
             let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-            // capture everything between `{` and `}` as potential JSON
-            let json_regex = Regex::new(r"(?P<json>\{.*\})").expect("Hard-coded");
-            // capture the timeline so we know which queues to add it to
-            let timeline_regex = Regex::new(r"timeline:(?P<timeline>.*?)\r").expect("Hard-codded");
-            if let Some(result) = json_regex.captures(raw_redis_response) {
-                let timeline =
-                    timeline_regex.captures(raw_redis_response).unwrap()["timeline"].to_string();
 
-                let msg: Value = serde_json::from_str(&result["json"].to_string().clone()).unwrap();
+            if !raw_redis_response.contains("*3\r\n$9\r\nsubscribe\r\n")
+                && !raw_redis_response.contains("*3\r\n$11\r\nunsubscribe\r\n")
+            {
+                let regex =
+                    Regex::new(r"timeline:(?P<timeline>.*?)\r\n\$\d+\r\n(?P<value>.*?)\r\n")
+                        .expect("Hard-codded");
+
+                let timeline = regex
+                    .captures(raw_redis_response)
+                    .expect("Hard-coded regex")["timeline"]
+                    .to_string();
+                let redis_msg: Value = serde_json::from_str(
+                    &regex
+                        .captures(raw_redis_response)
+                        .expect("Hard-coded regex")["value"],
+                )
+                .expect("Valid json");
                 for msg_queue in receiver.msg_queues.values_mut() {
                     if msg_queue.redis_channel == timeline {
-                        msg_queue.messages.push_back(msg.clone());
+                        msg_queue.messages.push_back(redis_msg.clone());
                     }
                 }
             }
