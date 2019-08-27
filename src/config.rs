@@ -9,7 +9,10 @@ use std::{env, net, time};
 
 const CORS_ALLOWED_METHODS: [&str; 2] = ["GET", "OPTIONS"];
 const CORS_ALLOWED_HEADERS: [&str; 3] = ["Authorization", "Accept", "Cache-Control"];
-const DEFAULT_POSTGRES_ADDR: &str = "postgres://@localhost/mastodon_development";
+const DEFAULT_DB_HOST: &str = "localhost";
+const DEFAULT_DB_USER: &str = "postgres";
+const DEFAULT_DB_NAME: &str = "mastodon_development";
+const DEFAULT_DB_PORT: &str = "5432";
 const DEFAULT_REDIS_ADDR: &str = "127.0.0.1:6379";
 const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:4000";
 
@@ -17,23 +20,47 @@ const DEFAULT_SSE_UPDATE_INTERVAL: u64 = 100;
 const DEFAULT_WS_UPDATE_INTERVAL: u64 = 100;
 const DEFAULT_REDIS_POLL_INTERVAL: u64 = 100;
 
+fn env_var_or_default(var: &str, default_var: &str) -> String {
+    env::var(var)
+        .unwrap_or_else(|_| {
+            warn!(
+                "No {} env variable set for Postgres. Using default value: {}",
+                var, default_var
+            );
+            default_var.to_string()
+        })
+        .to_string()
+}
+
 lazy_static! {
-    static ref POSTGRES_ADDR: String = env::var("POSTGRES_ADDR").unwrap_or_else(|_| {
-        warn!("No POSTGRES_ADDR env variable set; using default postgres address.");
-        match &env::var("USER") {
-            Err(_) => {
-                let addr = DEFAULT_POSTGRES_ADDR.replace("@", format!("{}@", "postgres").as_str());
-                warn!("No USER env variable set; using default `postgres` user.\n Using postgres address:  {}\n", addr);
-                addr
-            },
-            Ok(user) => {
-                let addr = DEFAULT_POSTGRES_ADDR.replace("@", format!("{}@", user).as_str());
-                warn!("Connecting to postgres with current user.\n Using postgres address:  {}\n", addr);
-                addr
+
+    static ref POSTGRES_ADDR: String = match &env::var("POSTGRESS_ADDR") {
+        Ok(url) => {
+            warn!("DATABASE_URL env variable set.  Trying to connect to Postgres with that URL instead of any values set in DB_HOST, DB_USER, DB_NAME, DB_PASS, or DB_PORT.");
+            url.to_string()
+        }
+        Err(_) => {
+            let user = &env::var("DB_USER").unwrap_or_else(|_| {
+                match &env::var("USER") {
+                    Err(_) => env_var_or_default("DB_USER", DEFAULT_DB_USER),
+                    Ok(user) => env_var_or_default("DB_USER", user)
+                }
+            });
+            let host = &env::var("DB_HOST").unwrap_or_else(|_| env_var_or_default("DB_HOST", DEFAULT_DB_HOST));
+            let db_name = &env::var("DB_NAME").unwrap_or_else(|_| env_var_or_default("DB_NAME", DEFAULT_DB_NAME));
+            let port = &env::var("DB_PORT").unwrap_or_else(|_| env_var_or_default("DB_PORT", DEFAULT_DB_PORT));
+
+            match &env::var("DB_PASS") {
+                Ok(password) => format!("postgres://{user}:{password}@{host}:{port}/{db_name}",
+                                        user = user, password = password, host = host, port = port, db_name = db_name),
+                Err(_) => {
+                    warn!("No DB_PASSWORD set.  Attempting to connect to Postgres without a password.  (This is correct if you are using the `ident` method.)");
+                    format!("postgres://{user}@{host}:{port}/{db_name}",
+                            user = user, host = host, port = port, db_name = db_name)
+                },
             }
         }
-
-    });
+    };
 
     static ref REDIS_ADDR: String = env::var("REDIS_ADDR").unwrap_or_else(|_| DEFAULT_REDIS_ADDR.to_owned());
 
