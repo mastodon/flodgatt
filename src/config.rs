@@ -9,10 +9,13 @@ use std::{env, net, time};
 
 const CORS_ALLOWED_METHODS: [&str; 2] = ["GET", "OPTIONS"];
 const CORS_ALLOWED_HEADERS: [&str; 3] = ["Authorization", "Accept", "Cache-Control"];
+// Postgres
 const DEFAULT_DB_HOST: &str = "localhost";
 const DEFAULT_DB_USER: &str = "postgres";
 const DEFAULT_DB_NAME: &str = "mastodon_development";
 const DEFAULT_DB_PORT: &str = "5432";
+const DEFAULT_DB_SSLMODE: &str = "perfer";
+// Redis
 const DEFAULT_REDIS_ADDR: &str = "127.0.0.1:6379";
 const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:4000";
 
@@ -49,14 +52,15 @@ lazy_static! {
             let host = &env::var("DB_HOST").unwrap_or_else(|_| env_var_or_default("DB_HOST", DEFAULT_DB_HOST));
             let db_name = &env::var("DB_NAME").unwrap_or_else(|_| env_var_or_default("DB_NAME", DEFAULT_DB_NAME));
             let port = &env::var("DB_PORT").unwrap_or_else(|_| env_var_or_default("DB_PORT", DEFAULT_DB_PORT));
+            let ssl_mode = &env::var("DB_SSLMODE").unwrap_or_else(|_| env_var_or_default("DB_SSLMODE", DEFAULT_DB_SSLMODE));
 
             match &env::var("DB_PASS") {
-                Ok(password) => format!("postgres://{user}:{password}@{host}:{port}/{db_name}",
-                                        user = user, password = password, host = host, port = port, db_name = db_name),
+                Ok(password) => format!("postgres://{user}:{password}@{host}:{port}/{db_name}?sslmode={ssl_mode}",
+                                        user = user, password = password, host = host, port = port, db_name = db_name, ssl_mode = ssl_mode),
                 Err(_) => {
                     warn!("No DB_PASSWORD set.  Attempting to connect to Postgres without a password.  (This is correct if you are using the `ident` method.)");
-                    format!("postgres://{user}@{host}:{port}/{db_name}",
-                            user = user, host = host, port = port, db_name = db_name)
+                    format!("postgres://{user}@{host}:{port}/{db_name}?sslmode={ssl_mode}",
+                            user = user, host = host, port = port, db_name = db_name, ssl_mode = ssl_mode)
                 },
             }
         }
