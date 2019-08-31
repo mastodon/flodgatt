@@ -2,7 +2,7 @@
 use crate::config;
 
 pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let conn = config::postgres();
+    let mut conn = config::postgres();
 
     let query_result = conn
             .query(
@@ -19,7 +19,7 @@ LIMIT 1",
             )
             .expect("Hard-coded query will return Some([0 or more rows])");
     if !query_result.is_empty() {
-        let only_row = query_result.get(0);
+        let only_row: &postgres::Row = query_result.get(0).unwrap();
         let id: i64 = only_row.get(1);
         let scopes = only_row
             .get::<_, String>(3)
@@ -34,7 +34,7 @@ LIMIT 1",
 }
 
 pub fn query_list_owner(list_id: i64) -> Option<i64> {
-    let conn = config::postgres();
+    let mut conn = config::postgres();
     // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
         .query(
@@ -49,6 +49,6 @@ LIMIT 1",
     if rows.is_empty() {
         None
     } else {
-        Some(rows.get(0).get(1))
+        Some(rows.get(0).unwrap().get(1))
     }
 }

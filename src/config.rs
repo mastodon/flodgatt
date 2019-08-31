@@ -14,7 +14,7 @@ const DEFAULT_DB_HOST: &str = "localhost";
 const DEFAULT_DB_USER: &str = "postgres";
 const DEFAULT_DB_NAME: &str = "mastodon_development";
 const DEFAULT_DB_PORT: &str = "5432";
-const DEFAULT_DB_SSLMODE: &str = "perfer";
+const DEFAULT_DB_SSLMODE: &str = "prefer";
 // Redis
 const DEFAULT_REDIS_ADDR: &str = "127.0.0.1:6379";
 const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:4000";
@@ -107,8 +107,8 @@ pub fn logging_and_env() {
 }
 
 /// Configure Postgres and return a connection
-pub fn postgres() -> postgres::Connection {
-    postgres::Connection::connect(POSTGRES_ADDR.to_string(), postgres::TlsMode::None)
+pub fn postgres() -> postgres::Client {
+    postgres::Client::connect(&POSTGRES_ADDR.to_string(), postgres::NoTls)
         .expect("Can connect to local Postgres")
 }
 
