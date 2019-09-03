@@ -40,7 +40,6 @@ fn default(var: &str, default_var: &str) -> String {
 }
 
 lazy_static! {
-
     static ref POSTGRES_ADDR: String = match &env::var("POSTGRESS_ADDR") {
         Ok(url) => {
             warn!("DATABASE_URL env variable set.  Trying to connect to Postgres with that URL instead of any values set in DB_HOST, DB_USER, DB_NAME, DB_PASS, or DB_PORT.");
@@ -53,14 +52,15 @@ lazy_static! {
                     Ok(user) => default("DB_USER", user)
                 }
             });
-            let host = &env::var("DB_HOST").unwrap_or(default("DB_HOST", DEFAULT_DB_HOST));
-          //      .unwrap_or_else(|_| default("DB_HOST", DEFAULT_DB_HOST));
+            let host = &env::var("DB_HOST")
+                .unwrap_or_else(|_| default("DB_HOST", DEFAULT_DB_HOST));
             let db_name = &env::var("DB_NAME")
                 .unwrap_or_else(|_| default("DB_NAME", DEFAULT_DB_NAME));
             let port = &env::var("DB_PORT")
                 .unwrap_or_else(|_| default("DB_PORT", DEFAULT_DB_PORT));
             let ssl_mode = &env::var("DB_SSLMODE")
                 .unwrap_or_else(|_| default("DB_SSLMODE", DEFAULT_DB_SSLMODE));
+
 
             match &env::var("DB_PASS") {
                 Ok(password) => {
@@ -113,7 +113,12 @@ pub fn logging_and_env() {
 
 /// Configure Postgres and return a connection
 pub fn postgres() -> postgres::Client {
-    postgres::Client::connect(&POSTGRES_ADDR.to_string(), postgres::NoTls)
+    use openssl::ssl::{SslConnector, SslMethod};
+    use postgres_openssl::MakeTlsConnector;
+    let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
+    builder.set_ca_file("/etc/ssl/cert.pem").unwrap();
+    let connector = MakeTlsConnector::new(builder.build());
+    postgres::Client::connect(&POSTGRES_ADDR.to_string(), connector)
         .expect("Can connect to local Postgres")
 }
 
