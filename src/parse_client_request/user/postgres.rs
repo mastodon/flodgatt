@@ -3,11 +3,6 @@ use crate::config;
 
 #[cfg(not(test))]
 pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
-    if cfg!(test) {
-        println!("==============TESTING=================");
-    } else {
-        println!("+++++++++++++++++++NOT testing+++++++++++++");
-    }
     let mut conn = config::postgres();
 
     let query_result = conn
