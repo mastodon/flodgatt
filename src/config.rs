@@ -14,16 +14,20 @@ const DEFAULT_DB_HOST: &str = "localhost";
 const DEFAULT_DB_USER: &str = "postgres";
 const DEFAULT_DB_NAME: &str = "mastodon_development";
 const DEFAULT_DB_PORT: &str = "5432";
-const DEFAULT_DB_SSLMODE: &str = "perfer";
+const DEFAULT_DB_SSLMODE: &str = "prefer";
 // Redis
 const DEFAULT_REDIS_ADDR: &str = "127.0.0.1:6379";
 const DEFAULT_SERVER_ADDR: &str = "127.0.0.1:4000";
 
 const DEFAULT_SSE_UPDATE_INTERVAL: u64 = 100;
 const DEFAULT_WS_UPDATE_INTERVAL: u64 = 100;
+/// **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver`
+///            (on the order of 10ms rather than 50μs).  Thus, changing this setting
+///            would be a good place to start for performance improvements at the cost
+///            of delaying all updates.
 const DEFAULT_REDIS_POLL_INTERVAL: u64 = 100;
 
-fn env_var_or_default(var: &str, default_var: &str) -> String {
+fn default(var: &str, default_var: &str) -> String {
     env::var(var)
         .unwrap_or_else(|_| {
             warn!(
@@ -36,7 +40,6 @@ fn env_var_or_default(var: &str, default_var: &str) -> String {
 }
 
 lazy_static! {
-
     static ref POSTGRES_ADDR: String = match &env::var("POSTGRESS_ADDR") {
         Ok(url) => {
             warn!("DATABASE_URL env variable set.  Trying to connect to Postgres with that URL instead of any values set in DB_HOST, DB_USER, DB_NAME, DB_PASS, or DB_PORT.");
@@ -45,47 +48,49 @@ lazy_static! {
         Err(_) => {
             let user = &env::var("DB_USER").unwrap_or_else(|_| {
                 match &env::var("USER") {
-                    Err(_) => env_var_or_default("DB_USER", DEFAULT_DB_USER),
-                    Ok(user) => env_var_or_default("DB_USER", user)
+                    Err(_) => default("DB_USER", DEFAULT_DB_USER),
+                    Ok(user) => default("DB_USER", user)
                 }
             });
-            let host = &env::var("DB_HOST").unwrap_or_else(|_| env_var_or_default("DB_HOST", DEFAULT_DB_HOST));
-            let db_name = &env::var("DB_NAME").unwrap_or_else(|_| env_var_or_default("DB_NAME", DEFAULT_DB_NAME));
-            let port = &env::var("DB_PORT").unwrap_or_else(|_| env_var_or_default("DB_PORT", DEFAULT_DB_PORT));
-            let ssl_mode = &env::var("DB_SSLMODE").unwrap_or_else(|_| env_var_or_default("DB_SSLMODE", DEFAULT_DB_SSLMODE));
+            let host = &env::var("DB_HOST")
+                .unwrap_or_else(|_| default("DB_HOST", DEFAULT_DB_HOST));
+            let db_name = &env::var("DB_NAME")
+                .unwrap_or_else(|_| default("DB_NAME", DEFAULT_DB_NAME));
+            let port = &env::var("DB_PORT")
+                .unwrap_or_else(|_| default("DB_PORT", DEFAULT_DB_PORT));
+            let ssl_mode = &env::var("DB_SSLMODE")
+                .unwrap_or_else(|_| default("DB_SSLMODE", DEFAULT_DB_SSLMODE));
+
 
             match &env::var("DB_PASS") {
-                Ok(password) => format!("postgres://{user}:{password}@{host}:{port}/{db_name}?sslmode={ssl_mode}",
-                                        user = user, password = password, host = host, port = port, db_name = db_name, ssl_mode = ssl_mode),
+                Ok(password) => {
+                    format!("postgres://{}:{}@{}:{}/{}?sslmode={}",
+                            user, password, host, port, db_name, ssl_mode)},
                 Err(_) => {
                     warn!("No DB_PASSWORD set.  Attempting to connect to Postgres without a password.  (This is correct if you are using the `ident` method.)");
-                    format!("postgres://{user}@{host}:{port}/{db_name}?sslmode={ssl_mode}",
-                            user = user, host = host, port = port, db_name = db_name, ssl_mode = ssl_mode)
+                    format!("postgres://{}@{}:{}/{}?sslmode={}",
+                            user, host, port, db_name, ssl_mode)
                 },
             }
         }
     };
-
-    static ref REDIS_ADDR: String = env::var("REDIS_ADDR").unwrap_or_else(|_| DEFAULT_REDIS_ADDR.to_owned());
+    static ref REDIS_ADDR: String = env::var("REDIS_ADDR")
+        .unwrap_or_else(|_| DEFAULT_REDIS_ADDR.to_owned());
 
     pub static ref SERVER_ADDR: net::SocketAddr = env::var("SERVER_ADDR")
         .unwrap_or_else(|_| DEFAULT_SERVER_ADDR.to_owned())
         .parse()
         .expect("static string");
 
-    /// Interval, in ms, at which the `ClientAgent` polls the `Receiver` for updates to send via SSE.
+    /// Interval, in ms, at which `ClientAgent` polls `Receiver` for updates to send via SSE.
     pub static ref SSE_UPDATE_INTERVAL: u64 = env::var("SSE_UPDATE_INTERVAL")
         .map(|s| s.parse().expect("Valid config"))
         .unwrap_or(DEFAULT_SSE_UPDATE_INTERVAL);
-    /// Interval, in ms, at which the `ClientAgent` polls the `Receiver` for updates to send via WS.
+    /// Interval, in ms, at which `ClientAgent` polls `Receiver` for updates to send via WS.
     pub static ref WS_UPDATE_INTERVAL: u64 = env::var("WS_UPDATE_INTERVAL")
         .map(|s| s.parse().expect("Valid config"))
         .unwrap_or(DEFAULT_WS_UPDATE_INTERVAL);
     /// Interval, in ms, at which the `Receiver` polls Redis.
-    /// **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver`
-    ///            (on the order of 10ms rather than 50μs).  Thus, changing this setting
-    ///            would be a good place to start for performance improvements at the cost
-    ///            of delaying all updates.
     pub static ref REDIS_POLL_INTERVAL: u64 = env::var("REDIS_POLL_INTERVAL")
             .map(|s| s.parse().expect("Valid config"))
             .unwrap_or(DEFAULT_REDIS_POLL_INTERVAL);
@@ -107,8 +112,13 @@ pub fn logging_and_env() {
 }
 
 /// Configure Postgres and return a connection
-pub fn postgres() -> postgres::Connection {
-    postgres::Connection::connect(POSTGRES_ADDR.to_string(), postgres::TlsMode::None)
+pub fn postgres() -> postgres::Client {
+    use openssl::ssl::{SslConnector, SslMethod};
+    use postgres_openssl::MakeTlsConnector;
+    let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
+    builder.set_ca_file("/etc/ssl/cert.pem").unwrap();
+    let connector = MakeTlsConnector::new(builder.build());
+    postgres::Client::connect(&POSTGRES_ADDR.to_string(), connector)
         .expect("Can connect to local Postgres")
 }
 

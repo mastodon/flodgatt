@@ -288,7 +288,7 @@ fn list_timeline_unauthorized() {
 // Helper functions for tests
 fn get_list_owner(list_number: i32) -> i64 {
     let list_number: i64 = list_number.into();
-    let conn = config::postgres();
+    let mut conn = config::postgres();
     let rows = &conn
         .query(
             "SELECT id, account_id FROM lists WHERE id = $1 LIMIT 1",
@@ -302,18 +302,18 @@ fn get_list_owner(list_number: i32) -> i64 {
         "Test database must contain at least one user with a list to run this test."
     );
 
-    rows.get(0).get(1)
+    rows.get(0).unwrap().get(1)
 }
 
 fn get_access_token(user_id: i64) -> String {
-    let conn = config::postgres();
+    let mut conn = config::postgres();
     let rows = &conn
         .query(
             "SELECT token FROM oauth_access_tokens WHERE resource_owner_id = $1",
             &[&user_id],
         )
         .expect("Can get access token from id");
-    rows.get(0).get(0)
+    rows.get(0).unwrap().get(0)
 }
 
 fn invalid_access_token(value: Result<(String, User), warp::reject::Rejection>) -> bool {

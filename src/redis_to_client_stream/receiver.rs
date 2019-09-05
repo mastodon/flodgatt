@@ -37,6 +37,8 @@ impl Receiver {
             manager_id: Uuid::default(),
             msg_queues: collections::HashMap::new(),
             clients_per_timeline: collections::HashMap::new(),
+            /// The unprocessed message from Redis, consisting of 0 or more
+            /// actual `messages` in the sense of updates to send.
             incoming_raw_msg: String::new(),
         }
     }
