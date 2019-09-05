@@ -1,11 +1,10 @@
 use log::{log_enabled, Level};
 use ragequit::{
-    any_of, config,
+    config,
     parse_client_request::{sse, user, ws},
     redis_to_client_stream,
     redis_to_client_stream::ClientAgent,
 };
-
 use warp::{ws::Ws2, Filter as WarpFilter};
 
 fn main() {
@@ -22,42 +21,20 @@ fn main() {
     // For SSE, the API requires users to use different endpoints, so we first filter based on
     // the endpoint.  Using that endpoint determine the `timeline` the user is requesting,
     // the scope for that `timeline`, and authenticate the `User` if they provided a token.
-    let sse_routes = any_of!(
-        // GET /api/v1/streaming/user/notification                     [private; notification filter]
-        sse::Request::user_notifications(),
-        // GET /api/v1/streaming/user                                  [private; language filter]
-        sse::Request::user(),
-        // GET /api/v1/streaming/public/local?only_media=true          [public; language filter]
-        sse::Request::public_local_media(),
-        // GET /api/v1/streaming/public?only_media=true                [public; language filter]
-        sse::Request::public_media(),
-        // GET /api/v1/streaming/public/local                          [public; language filter]
-        sse::Request::public_local(),
-        // GET /api/v1/streaming/public                                [public; language filter]
-        sse::Request::public(),
-        // GET /api/v1/streaming/direct                                [private; *no* filter]
-        sse::Request::direct(),
-        // GET /api/v1/streaming/hashtag?tag=:hashtag                  [public; no filter]
-        sse::Request::hashtag(),
-        // GET /api/v1/streaming/hashtag/local?tag=:hashtag            [public; no filter]
-        sse::Request::hashtag_local(),
-        // GET /api/v1/streaming/list?list=:list_id                    [private; no filter]
-        sse::Request::list()
-    )
-    .untuple_one()
-    .and(warp::sse())
-    .map(
-        move |timeline: String, user: user::User, sse_connection_to_client: warp::sse::Sse| {
-            // Create a new ClientAgent
-            let mut client_agent = client_agent_sse.clone_with_shared_receiver();
-            // Assign that agent to generate a stream of updates for the user/timeline pair
-            client_agent.init_for_user(&timeline, user);
-            // send the updates through the SSE connection
-            redis_to_client_stream::send_updates_to_sse(client_agent, sse_connection_to_client)
-        },
-    )
-    .with(warp::reply::with::header("Connection", "keep-alive"))
-    .recover(config::handle_errors);
+    let sse_routes = sse::filter_incomming_request()
+        .and(warp::sse())
+        .map(
+            move |timeline: String, user: user::User, sse_connection_to_client: warp::sse::Sse| {
+                // Create a new ClientAgent
+                let mut client_agent = client_agent_sse.clone_with_shared_receiver();
+                // Assign that agent to generate a stream of updates for the user/timeline pair
+                client_agent.init_for_user(&timeline, user);
+                // send the updates through the SSE connection
+                redis_to_client_stream::send_updates_to_sse(client_agent, sse_connection_to_client)
+            },
+        )
+        .with(warp::reply::with::header("Connection", "keep-alive"))
+        .recover(config::handle_errors);
 
     // WebSocket
     //
