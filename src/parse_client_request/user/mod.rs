@@ -1,12 +1,15 @@
 //! `User` struct and related functionality
+#[cfg(test)]
+mod mock_postgres;
+#[cfg(test)]
+use mock_postgres as postgres;
+#[cfg(not(test))]
 mod postgres;
 use crate::parse_client_request::query;
 use log::info;
+use warp::reject::Rejection;
 use warp::Filter as WarpFilter;
 
-/// Combine multiple routes with the same return type together with
-/// `or()` and `unify()`
-#[macro_export]
 macro_rules! any_of {
     ($filter:expr, $($other_filter:expr),*) => {
         $filter$(.or($other_filter).unify())*
@@ -68,6 +71,34 @@ macro_rules! user_from_path {
 }
 
 impl User {
+    pub fn from_access_token_or_reject(token: Option<String>) -> Result<Self, Rejection> {
+        match token {
+            None => Err(warp::reject::custom("Error: Missing access token")),
+            Some(token) => {
+                let (id, langs, scope_list) = postgres::query_for_user_data(&token);
+                if id == -1 {
+                    return Err(warp::reject::custom("Error: Invalid access token"));
+                }
+                let scopes = OauthScope::from(scope_list);
+
+                Ok(User {
+                    id,
+                    access_token: token,
+                    scopes,
+                    langs,
+                    logged_in: true,
+                    filter: Filter::NoFilter,
+                })
+            }
+        }
+    }
+
+    pub fn from_access_token_or_public_user(token: Option<String>) -> Result<Self, Rejection> {
+        match token {
+            None => Ok(User::public()),
+            Some(_) => User::from_access_token_or_reject(token),
+        }
+    }
     /// Create a user from the access token supplied in the header or query paramaters
     pub fn from_access_token(
         access_token: String,
@@ -104,6 +135,18 @@ impl User {
             _ => false,
         }
     }
+    pub fn public2() -> warp::filters::BoxedFilter<(User,)> {
+        warp::any()
+            .map(|| User {
+                id: -1,
+                access_token: String::from("no access token"),
+                scopes: OauthScope::default(),
+                langs: None,
+                logged_in: false,
+                filter: Filter::NoFilter,
+            })
+            .boxed()
+    }
     /// A public (non-authenticated) User
     pub fn public() -> Self {
         User {
@@ -114,6 +157,23 @@ impl User {
             logged_in: false,
             filter: Filter::NoFilter,
         }
+    }
+}
+
+pub struct OptionalAccessToken;
+
+impl OptionalAccessToken {
+    pub fn from_header_or_query() -> warp::filters::BoxedFilter<(Option<String>,)> {
+        let from_header = warp::header::header::<String>("authorization").map(|auth: String| {
+            match auth.split(' ').nth(1) {
+                Some(s) => Some(s.to_string()),
+                None => None,
+            }
+        });
+        let from_query = warp::query().map(|q: query::Auth| Some(q.access_token));
+        let no_token = warp::any().map(|| None);
+
+        any_of!(from_header, from_query, no_token).boxed()
     }
 }
 

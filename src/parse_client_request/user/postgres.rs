@@ -1,6 +1,7 @@
 //! Postgres queries
 use crate::config;
 
+#[cfg(not(test))]
 pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
     let mut conn = config::postgres();
 
@@ -33,6 +34,25 @@ LIMIT 1",
     }
 }
 
+#[cfg(test)]
+pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
+    let (user_id, lang, scopes) = if access_token == "TEST_USER" {
+        (
+            1,
+            None,
+            vec![
+                "read".to_string(),
+                "write".to_string(),
+                "follow".to_string(),
+            ],
+        )
+    } else {
+        (-1, None, Vec::new())
+    };
+    (user_id, lang, scopes)
+}
+
+#[cfg(not(test))]
 pub fn query_list_owner(list_id: i64) -> Option<i64> {
     let mut conn = config::postgres();
     // For the Postgres query, `id` = list number; `account_id` = user.id
@@ -51,4 +71,9 @@ LIMIT 1",
     } else {
         Some(rows.get(0).unwrap().get(1))
     }
+}
+
+#[cfg(test)]
+pub fn query_list_owner(_list_id: i64) -> Option<i64> {
+    Some(1)
 }
