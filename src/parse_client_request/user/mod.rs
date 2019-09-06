@@ -27,6 +27,7 @@ pub enum Filter {
 /// The User (with data read from Postgres)
 #[derive(Clone, Debug, PartialEq)]
 pub struct User {
+    pub target_timeline: String,
     pub id: i64,
     pub access_token: String,
     pub scopes: OauthScope,
@@ -70,7 +71,76 @@ macro_rules! user_from_path {
                                               .and_then(|token| User::from_access_token(token, $scope)))
 }
 
+use super::Query;
 impl User {
+    pub fn from_query(q: Query) -> Result<Self, Rejection> {
+        let mut user = match q.access_token.clone() {
+            None => User {
+                target_timeline: q.stream.clone(),
+                id: -1,
+                access_token: "no access token".to_string(),
+                scopes: OauthScope::default(),
+                langs: None,
+                logged_in: false,
+                filter: Filter::Language,
+            },
+            Some(token) => {
+                let (id, langs, scope_list) = postgres::query_for_user_data(&token);
+                if id == -1 {
+                    return Err(warp::reject::custom("Error: Invalid access token"));
+                }
+                let scopes = OauthScope::from(scope_list);
+
+                User {
+                    target_timeline: q.stream.clone(),
+                    id,
+                    access_token: token,
+                    scopes,
+                    langs,
+                    logged_in: true,
+                    filter: Filter::Language,
+                }
+            }
+        };
+
+        let read_scope = user.scopes.clone();
+        let timeline = match q.stream.as_ref() {
+            // Public endpoints:
+            tl @ "public" | tl @ "public:local" if q.media => format!("{}:media", tl),
+            tl @ "public:media" | tl @ "public:local:media" => tl.to_string(),
+            tl @ "public" | tl @ "public:local" => tl.to_string(),
+            // Hashtag endpoints:
+            tl @ "hashtag" | tl @ "hashtag:local" => format!("{}:{}", tl, q.hashtag),
+            // Private endpoints: User
+            "user" if user.logged_in && (read_scope.all || read_scope.statuses) => {
+                user = user.set_filter(Filter::NoFilter);
+                format!("{}", user.id)
+            }
+            "user:notification" if user.logged_in && (read_scope.all || read_scope.notify) => {
+                user = user.set_filter(Filter::Notification);
+                format!("{}", user.id)
+            }
+            // List endpoint:
+            "list" if user.owns_list(q.list) && (read_scope.all || read_scope.lists) => {
+                user = user.set_filter(Filter::NoFilter);
+                format!("list:{}", q.list)
+            }
+            // Direct endpoint:
+            "direct" if user.logged_in && (read_scope.all || read_scope.statuses) => {
+                user = user.set_filter(Filter::NoFilter);
+                "direct".to_string()
+            }
+            // Reject unathorized access attempts for private endpoints
+            "user" | "user:notification" | "direct" | "list" => {
+                return Err(warp::reject::custom("Error: Missing access token"))
+            }
+            // Other endpoints don't exist:
+            _ => return Err(warp::reject::custom("Error: Nonexistent endpoint")),
+        };
+        user.target_timeline = timeline;
+        Ok(user)
+    }
+
     pub fn from_access_token_or_reject(token: Option<String>) -> Result<Self, Rejection> {
         match token {
             None => Err(warp::reject::custom("Error: Missing access token")),
@@ -82,6 +152,7 @@ impl User {
                 let scopes = OauthScope::from(scope_list);
 
                 Ok(User {
+                    target_timeline: String::from("public"),
                     id,
                     access_token: token,
                     scopes,
@@ -99,7 +170,7 @@ impl User {
             Some(_) => User::from_access_token_or_reject(token),
         }
     }
-    /// Create a user from the access token supplied in the header or query paramaters
+    /// Create a user from the access token supplied in the header or query parameters
     pub fn from_access_token(
         access_token: String,
         scope: Scope,
@@ -113,6 +184,7 @@ impl User {
             };
             info!("{}", log_msg);
             Ok(User {
+                target_timeline: String::from("public"),
                 id,
                 access_token,
                 scopes,
@@ -138,6 +210,7 @@ impl User {
     pub fn public2() -> warp::filters::BoxedFilter<(User,)> {
         warp::any()
             .map(|| User {
+                target_timeline: String::from("public"),
                 id: -1,
                 access_token: String::from("no access token"),
                 scopes: OauthScope::default(),
@@ -150,6 +223,7 @@ impl User {
     /// A public (non-authenticated) User
     pub fn public() -> Self {
         User {
+            target_timeline: String::from("public"),
             id: -1,
             access_token: String::from("no access token"),
             scopes: OauthScope::default(),
@@ -163,6 +237,17 @@ impl User {
 pub struct OptionalAccessToken;
 
 impl OptionalAccessToken {
+    pub fn from_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
+        let from_header = warp::header::header::<String>("authorization").map(|auth: String| {
+            match auth.split(' ').nth(1) {
+                Some(s) => Some(s.to_string()),
+                None => None,
+            }
+        });
+        let no_token = warp::any().map(|| None);
+
+        any_of!(from_header, no_token).boxed()
+    }
     pub fn from_header_or_query() -> warp::filters::BoxedFilter<(Option<String>,)> {
         let from_header = warp::header::header::<String>("authorization").map(|auth: String| {
             match auth.split(' ').nth(1) {

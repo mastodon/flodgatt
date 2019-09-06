@@ -61,12 +61,12 @@ impl ClientAgent {
     /// a different user, the `Receiver` is responsible for figuring
     /// that out and avoiding duplicated connections.  Thus, it is safe to
     /// use this method for each new client connection.
-    pub fn init_for_user(&mut self, target_timeline: &str, user: User) {
+    pub fn init_for_user(&mut self, user: User) {
         self.id = Uuid::new_v4();
-        self.target_timeline = target_timeline.to_owned();
+        self.target_timeline = user.target_timeline.to_owned();
         self.current_user = user;
         let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
-        receiver.manage_new_timeline(self.id, target_timeline);
+        receiver.manage_new_timeline(self.id, &self.target_timeline);
     }
 }
 
