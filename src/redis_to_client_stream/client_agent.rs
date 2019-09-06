@@ -40,7 +40,7 @@ impl ClientAgent {
             receiver: sync::Arc::new(sync::Mutex::new(Receiver::new())),
             id: Uuid::default(),
             target_timeline: String::new(),
-            current_user: User::public(),
+            current_user: User::default(),
         }
     }
 

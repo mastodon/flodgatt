@@ -33,11 +33,9 @@ fn main() {
         .recover(config::handle_errors);
 
     // WebSocket
-    let websocket_routes = ws::parse_query()
-        .and_then(ws::generate_timeline_and_update_user)
-        .untuple_one()
+    let websocket_routes = ws::extract_user_or_reject()
         .and(warp::ws::ws2())
-        .and_then(move |timeline: String, user: user::User, ws: Ws2| {
+        .and_then(move |user: user::User, ws: Ws2| {
             let token = user.access_token.clone();
 
             // Create a new ClientAgent

@@ -1,9 +1,5 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
-use super::{
-    query,
-    user::{OptionalAccessToken, User},
-    Query,
-};
+use super::{query, query::Query, user::User};
 use warp::{filters::BoxedFilter, path, Filter};
 
 #[allow(dead_code)]
@@ -74,7 +70,7 @@ pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
     )
     // because SSE requests place their `access_token` in the header instead of in a query
     // parameter, we need to update our Query if the header has a token
-    .and(OptionalAccessToken::from_header())
+    .and(query::OptionalAccessToken::from_header())
     .and_then(Query::update_access_token)
     .and_then(User::from_query)
     .boxed()
@@ -88,7 +84,6 @@ mod test {
     macro_rules! test_public_endpoint {
         ($name:ident {
             endpoint: $path:expr,
-            timeline: $timeline:expr,
             user: $user:expr,
         }) => {
             #[test]
@@ -106,7 +101,6 @@ mod test {
         ($name:ident {
             endpoint: $path:expr,
             $(query: $query:expr,)*
-            timeline: $timeline:expr,
             user: $user:expr,
         }) => {
             #[test]
@@ -187,7 +181,6 @@ mod test {
 
     test_public_endpoint!(public_media_true {
         endpoint: "/api/v1/streaming/public?only_media=true",
-        timeline: "public:media",
         user: User {
             target_timeline: "public:media".to_string(),
             id: -1,
@@ -205,7 +198,6 @@ mod test {
     });
     test_public_endpoint!(public_media_1 {
         endpoint: "/api/v1/streaming/public?only_media=1",
-        timeline: "public:media",
         user: User {
             target_timeline: "public:media".to_string(),
             id: -1,
@@ -224,7 +216,6 @@ mod test {
 
     test_public_endpoint!(public_local {
         endpoint: "/api/v1/streaming/public/local",
-        timeline: "public:local",
         user: User {
             target_timeline: "public:local".to_string(),
             id: -1,
@@ -243,7 +234,6 @@ mod test {
 
     test_public_endpoint!(public_local_media_true {
         endpoint: "/api/v1/streaming/public/local?only_media=true",
-        timeline: "public:local:media",
         user: User {
             target_timeline: "public:local:media".to_string(),
             id: -1,
@@ -261,7 +251,6 @@ mod test {
     });
     test_public_endpoint!(public_local_media_1 {
         endpoint: "/api/v1/streaming/public/local?only_media=1",
-        timeline: "public:local:media",
         user: User {
             target_timeline: "public:local:media".to_string(),
             id: -1,
@@ -279,7 +268,6 @@ mod test {
     });
     test_public_endpoint!(hashtag {
         endpoint: "/api/v1/streaming/hashtag?tag=a",
-        timeline: "hashtag:a",
         user: User {
             target_timeline: "hashtag:a".to_string(),
             id: -1,
@@ -297,7 +285,6 @@ mod test {
     });
     test_public_endpoint!(hashtag_local {
         endpoint: "/api/v1/streaming/hashtag/local?tag=a",
-        timeline: "hashtag:local:a",
         user: User {
             target_timeline: "hashtag:local:a".to_string(),
             id: -1,
@@ -316,7 +303,6 @@ mod test {
 
     test_private_endpoint!(user {
         endpoint: "/api/v1/streaming/user",
-        timeline: "1",
         user: User {
             target_timeline: "1".to_string(),
             id: 1,
@@ -335,7 +321,6 @@ mod test {
 
     test_private_endpoint!(user_notification {
         endpoint: "/api/v1/streaming/user/notification",
-        timeline: "1",
         user: User {
             target_timeline: "1".to_string(),
             id: 1,
@@ -354,7 +339,6 @@ mod test {
 
     test_private_endpoint!(direct {
         endpoint: "/api/v1/streaming/direct",
-        timeline: "direct",
         user: User {
             target_timeline: "direct".to_string(),
             id: 1,
@@ -374,7 +358,6 @@ mod test {
     test_private_endpoint!(list_valid_list {
         endpoint: "/api/v1/streaming/list",
         query: "list=1",
-        timeline: "list:1",
         user: User {
             target_timeline: "list:1".to_string(),
             id: 1,
