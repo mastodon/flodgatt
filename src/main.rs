@@ -1,10 +1,10 @@
-use log::{log_enabled, Level};
-use ragequit::{
+use flodgatt::{
     config,
     parse_client_request::{sse, user, ws},
     redis_to_client_stream,
     redis_to_client_stream::ClientAgent,
 };
+use log::{log_enabled, Level};
 use warp::{ws::Ws2, Filter as WarpFilter};
 
 fn main() {
@@ -37,7 +37,6 @@ fn main() {
         .and(warp::ws::ws2())
         .and_then(move |user: user::User, ws: Ws2| {
             let token = user.access_token.clone();
-
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
             // Assign that agent to generate a stream of updates for the user/timeline pair
