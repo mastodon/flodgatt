@@ -17,18 +17,13 @@ fn parse_query() -> BoxedFilter<(Query,)> {
              media: query::Media,
              hashtag: query::Hashtag,
              list: query::List| {
-                let query = Query {
-                    access_token: if auth.access_token.len() > 0 {
-                        Some(auth.access_token)
-                    } else {
-                        None
-                    },
+                Query {
+                    access_token: auth.access_token,
                     stream: stream.stream,
                     media: media.is_truthy(),
                     hashtag: hashtag.tag,
                     list: list.list,
-                };
-                query
+                }
             },
         )
         .boxed()
@@ -84,13 +79,13 @@ mod test {
     macro_rules! test_bad_auth_token_in_query {
         ($name: ident {
             endpoint: $path:expr,
-            
+
         }) => {
             #[test]
             #[should_panic(expected = "Error: Invalid access token")]
 
             fn $name() {
-                let  path = format!("{}&access_token=INVALID", $path);
+                let path = format!("{}&access_token=INVALID", $path);
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject())
@@ -100,7 +95,7 @@ mod test {
     }
     macro_rules! test_missing_auth {
         ($name: ident {
-            endpoint: $path:expr,            
+            endpoint: $path:expr,
         }) => {
             #[test]
             #[should_panic(expected = "Error: Missing access token")]
@@ -113,7 +108,7 @@ mod test {
             }
         };
     }
-    
+
     test_public_endpoint!(public_media {
         endpoint: "/api/v1/streaming?stream=public:media",
         user: User {
@@ -199,7 +194,7 @@ mod test {
             filter: Filter::Language,
         },
     });
-    
+
     test_private_endpoint!(user {
         endpoint: "/api/v1/streaming?stream=user",
         user: User {
@@ -268,19 +263,18 @@ mod test {
             filter: Filter::NoFilter,
         },
     });
-    
+
     test_bad_auth_token_in_query!(public_media_true_bad_auth {
-        endpoint: "/api/v1/streaming?stream=public:media",        
+        endpoint: "/api/v1/streaming?stream=public:media",
     });
     test_bad_auth_token_in_query!(public_local_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=public:local",
     });
     test_bad_auth_token_in_query!(public_local_media_timeline_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=public:local:media",
-        
     });
     test_bad_auth_token_in_query!(hashtag_bad_auth_in_query {
-        endpoint: "/api/v1/streaming?stream=hashtag&tag=a",        
+        endpoint: "/api/v1/streaming?stream=hashtag&tag=a",
     });
     test_bad_auth_token_in_query!(user_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=user",
@@ -301,10 +295,10 @@ mod test {
         endpoint: "/api/v1/streaming?stream=direct",
     });
     test_bad_auth_token_in_query!(list_bad_auth_in_query {
-        endpoint: "/api/v1/streaming?stream=list&list=1",        
+        endpoint: "/api/v1/streaming?stream=list&list=1",
     });
     test_missing_auth!(list_missing_auth_token {
-        endpoint: "/api/v1/streaming?stream=list&list=1",        
+        endpoint: "/api/v1/streaming?stream=list&list=1",
     });
 
     #[test]

@@ -28,7 +28,7 @@ impl Query {
 }
 
 macro_rules! make_query_type {
-    ($name:tt => $parameter:tt:$type:tt) => {
+    ($name:tt => $parameter:tt:$type:ty) => {
         #[derive(Deserialize, Debug, Default)]
         pub struct $name {
             pub $parameter: $type,
@@ -51,7 +51,7 @@ impl Media {
 }
 make_query_type!(Hashtag => tag: String);
 make_query_type!(List => list: i64);
-make_query_type!(Auth => access_token: String);
+make_query_type!(Auth => access_token: Option<String>);
 make_query_type!(Stream => stream: String);
 impl ToString for Stream {
     fn to_string(&self) -> String {

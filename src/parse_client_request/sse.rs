@@ -24,24 +24,17 @@ macro_rules! parse_query {
                 |auth: query::Auth,
                  media: query::Media,
                  hashtag: query::Hashtag,
-                list: query::List| {
-                    let access_token = match auth.access_token.len() {
-                        0 => None,
-                        _ => Some(auth.access_token),
-                    };
-                    let query = Query {
-                        access_token,
+                 list: query::List| {
+                    Query {
+                        access_token: auth.access_token,
                         stream: $endpoint.to_string(),
                         media: media.is_truthy(),
                         hashtag: hashtag.tag,
                         list: list.list,
-                    };
-                    query
-                },
-
+                    }
+                 },
             )
             .boxed()
-
     };
 }
 pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
