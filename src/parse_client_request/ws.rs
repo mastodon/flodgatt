@@ -5,6 +5,7 @@ use warp::{filters::BoxedFilter, path, Filter};
 /// WebSocket filters
 fn parse_query() -> BoxedFilter<(Query,)> {
     path!("api" / "v1" / "streaming")
+        .and(path::end())
         .and(warp::query())
         .and(query::Auth::to_filter())
         .and(query::Media::to_filter())
@@ -60,7 +61,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_private_endpoint {
         ($name:ident {
             endpoint: $path:expr,
@@ -81,7 +81,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_bad_auth_token_in_query {
         ($name: ident {
             endpoint: $path:expr,
@@ -99,7 +98,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_missing_auth {
         ($name: ident {
             endpoint: $path:expr,            
@@ -115,7 +113,7 @@ mod test {
             }
         };
     }
-
+    
     test_public_endpoint!(public_media {
         endpoint: "/api/v1/streaming?stream=public:media",
         user: User {
@@ -133,7 +131,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(public_local {
         endpoint: "/api/v1/streaming?stream=public:local",
         user: User {
@@ -151,7 +148,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(public_local_media {
         endpoint: "/api/v1/streaming?stream=public:local:media",
         user: User {
@@ -169,7 +165,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(hashtag {
         endpoint: "/api/v1/streaming?stream=hashtag&tag=a",
         user: User {
@@ -187,7 +182,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(hashtag_local {
         endpoint: "/api/v1/streaming?stream=hashtag:local&tag=a",
         user: User {
@@ -205,7 +199,7 @@ mod test {
             filter: Filter::Language,
         },
     });
-
+    
     test_private_endpoint!(user {
         endpoint: "/api/v1/streaming?stream=user",
         user: User {
@@ -223,7 +217,6 @@ mod test {
             filter: Filter::NoFilter,
         },
     });
-
     test_private_endpoint!(user_notification {
         endpoint: "/api/v1/streaming?stream=user:notification",
         user: User {
@@ -241,7 +234,6 @@ mod test {
             filter: Filter::Notification,
         },
     });
-
     test_private_endpoint!(direct {
         endpoint: "/api/v1/streaming?stream=direct",
         user: User {
@@ -259,7 +251,6 @@ mod test {
             filter: Filter::NoFilter,
         },
     });
-
     test_private_endpoint!(list_valid_list {
         endpoint: "/api/v1/streaming?stream=list&list=1",
         user: User {
@@ -277,51 +268,55 @@ mod test {
             filter: Filter::NoFilter,
         },
     });
-
-           test_bad_auth_token_in_query!(public_media_true_bad_auth {
+    
+    test_bad_auth_token_in_query!(public_media_true_bad_auth {
         endpoint: "/api/v1/streaming?stream=public:media",        
     });
     test_bad_auth_token_in_query!(public_local_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=public:local",
     });
-
-test_bad_auth_token_in_query!(public_local_media_timeline_bad_auth_in_query {
+    test_bad_auth_token_in_query!(public_local_media_timeline_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=public:local:media",
         
     });
     test_bad_auth_token_in_query!(hashtag_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=hashtag&tag=a",        
     });
-
-test_bad_auth_token_in_query!(user_bad_auth_in_query {
+    test_bad_auth_token_in_query!(user_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=user",
     });
-
-test_missing_auth!(user_missing_auth_token {
+    test_missing_auth!(user_missing_auth_token {
         endpoint: "/api/v1/streaming?stream=user",
     });
-
-test_bad_auth_token_in_query!(user_notification_bad_auth_in_query {
+    test_bad_auth_token_in_query!(user_notification_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=user:notification",
     });
-
-test_missing_auth!(user_notification_missing_auth_token {
+    test_missing_auth!(user_notification_missing_auth_token {
         endpoint: "/api/v1/streaming?stream=user:notification",
     });
-
-test_bad_auth_token_in_query!(direct_bad_auth_in_query {
+    test_bad_auth_token_in_query!(direct_bad_auth_in_query {
         endpoint: "/api/v1/streaming?stream=direct",
     });
-
-test_missing_auth!(direct_missing_auth_token {
+    test_missing_auth!(direct_missing_auth_token {
         endpoint: "/api/v1/streaming?stream=direct",
     });
-
-test_bad_auth_token_in_query!(list_bad_auth_in_query {
+    test_bad_auth_token_in_query!(list_bad_auth_in_query {
+        endpoint: "/api/v1/streaming?stream=list&list=1",        
+    });
+    test_missing_auth!(list_missing_auth_token {
         endpoint: "/api/v1/streaming?stream=list&list=1",        
     });
 
-test_missing_auth!(list_missing_auth_token {
-        endpoint: "/api/v1/streaming?stream=list&list=1",        
-    });
+    #[test]
+    #[should_panic(expected = "NotFound")]
+    fn nonexistant_endpoint() {
+        warp::test::request()
+            .path("/api/v1/streaming/DOES_NOT_EXIST")
+            .header("connection", "upgrade")
+            .header("upgrade", "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .filter(&extract_user_or_reject())
+            .expect("in test");
+    }
 }

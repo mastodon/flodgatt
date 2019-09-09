@@ -96,7 +96,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_private_endpoint {
         ($name:ident {
             endpoint: $path:expr,
@@ -121,7 +120,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_bad_auth_token_in_query {
         ($name: ident {
             endpoint: $path:expr,
@@ -129,7 +127,6 @@ mod test {
         }) => {
             #[test]
             #[should_panic(expected = "Error: Invalid access token")]
-
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
@@ -141,7 +138,6 @@ mod test {
             }
         };
     }
-
     macro_rules! test_bad_auth_token_in_header {
         ($name: ident {
             endpoint: $path:expr,
@@ -213,7 +209,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(public_local {
         endpoint: "/api/v1/streaming/public/local",
         user: User {
@@ -231,7 +226,6 @@ mod test {
             filter: Filter::Language,
         },
     });
-
     test_public_endpoint!(public_local_media_true {
         endpoint: "/api/v1/streaming/public/local?only_media=true",
         user: User {
@@ -318,7 +312,6 @@ mod test {
             filter: Filter::NoFilter,
         },
     });
-
     test_private_endpoint!(user_notification {
         endpoint: "/api/v1/streaming/user/notification",
         user: User {
@@ -336,7 +329,6 @@ mod test {
             filter: Filter::Notification,
         },
     });
-
     test_private_endpoint!(direct {
         endpoint: "/api/v1/streaming/direct",
         user: User {
@@ -387,7 +379,6 @@ mod test {
     test_bad_auth_token_in_header!(public_local_bad_auth_in_header {
         endpoint: "/api/v1/streaming/public/local",
     });
-
     test_bad_auth_token_in_query!(public_local_media_timeline_bad_auth_in_query {
         endpoint: "/api/v1/streaming/public/local",
         query: "only_media=1",
@@ -404,7 +395,6 @@ mod test {
         endpoint: "/api/v1/streaming/hashtag",
         query: "tag=a",
     });
-
     test_bad_auth_token_in_query!(user_bad_auth_in_query {
         endpoint: "/api/v1/streaming/user",
     });
@@ -414,7 +404,6 @@ mod test {
     test_missing_auth!(user_missing_auth_token {
         endpoint: "/api/v1/streaming/user",
     });
-
     test_bad_auth_token_in_query!(user_notification_bad_auth_in_query {
         endpoint: "/api/v1/streaming/user/notification",
     });
@@ -424,7 +413,6 @@ mod test {
     test_missing_auth!(user_notification_missing_auth_token {
         endpoint: "/api/v1/streaming/user/notification",
     });
-
     test_bad_auth_token_in_query!(direct_bad_auth_in_query {
         endpoint: "/api/v1/streaming/direct",
     });
@@ -434,7 +422,6 @@ mod test {
     test_missing_auth!(direct_missing_auth_token {
         endpoint: "/api/v1/streaming/direct",
     });
-
     test_bad_auth_token_in_query!(list_bad_auth_in_query {
         endpoint: "/api/v1/streaming/list",
         query: "list=1",
@@ -447,5 +434,14 @@ mod test {
         endpoint: "/api/v1/streaming/list",
         query: "list=1",
     });
+
+    #[test]
+    #[should_panic(expected = "NotFound")]
+    fn nonexistant_endpoint() {
+        warp::test::request()
+            .path("/api/v1/streaming/DOES_NOT_EXIST")
+            .filter(&extract_user_or_reject())
+            .expect("in test");
+    }
 
 }
