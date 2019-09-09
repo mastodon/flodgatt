@@ -1,9 +1,5 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
-use super::{
-    query,
-    user::{Filter::*, OptionalAccessToken, User},
-};
-use crate::config::CustomError;
+use super::{query, query::Query, user::User};
 use warp::{filters::BoxedFilter, path, Filter};
 
 #[allow(dead_code)]
@@ -12,140 +8,111 @@ type TimelineUser = ((String, User),);
 /// Helper macro to match on the first of any of the provided filters
 macro_rules! any_of {
     ($filter:expr, $($other_filter:expr),*) => {
-        $filter$(.or($other_filter).unify())*
+        $filter$(.or($other_filter).unify())*.boxed()
     };
 }
 
-pub fn filter_incomming_request() -> BoxedFilter<(String, User)> {
+macro_rules! parse_query {
+    (path => $start:tt $(/ $next:tt)*
+     endpoint => $endpoint:expr) => {
+        path!($start $(/ $next)*)
+            .and(query::Auth::to_filter())
+            .and(query::Media::to_filter())
+            .and(query::Hashtag::to_filter())
+            .and(query::List::to_filter())
+            .map(
+                |auth: query::Auth,
+                 media: query::Media,
+                 hashtag: query::Hashtag,
+                 list: query::List| {
+                    Query {
+                        access_token: auth.access_token,
+                        stream: $endpoint.to_string(),
+                        media: media.is_truthy(),
+                        hashtag: hashtag.tag,
+                        list: list.list,
+                    }
+                 },
+            )
+            .boxed()
+    };
+}
+pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
     any_of!(
-        path!("api" / "v1" / "streaming" / "user" / "notification")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_reject)
-            .map(|user: User| (user.id.to_string(), user.set_filter(Notification))),
-        // **NOTE**: This endpoint was present in the node.js server, but not in the
-        // [public API docs](https://docs.joinmastodon.org/api/streaming/#get-api-v1-streaming-public-local).
-        // Should it be publicly documented?
-        path!("api" / "v1" / "streaming" / "user")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_reject)
-            .map(|user: User| (user.id.to_string(), user)),
-        path!("api" / "v1" / "streaming" / "public" / "local")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .and(warp::query())
-            .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-                "1" | "true" => ("public:local:media".to_owned(), user.set_filter(Language)),
-                _ => ("public:local".to_owned(), user.set_filter(Language)),
-            }),
-        path!("api" / "v1" / "streaming" / "public")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .and(warp::query())
-            .map(|user: User, q: query::Media| match q.only_media.as_ref() {
-                "1" | "true" => ("public:media".to_owned(), user.set_filter(Language)),
-                _ => ("public".to_owned(), user.set_filter(Language)),
-            }),
-        path!("api" / "v1" / "streaming" / "public" / "local")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .map(|user: User| ("public:local".to_owned(), user.set_filter(Language))),
-        path!("api" / "v1" / "streaming" / "public")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .map(|user: User| ("public".to_owned(), user.set_filter(Language))),
-        path!("api" / "v1" / "streaming" / "direct")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_reject)
-            .map(|user: User| (format!("direct:{}", user.id), user.set_filter(NoFilter))),
-        // **Note**: Hashtags are *not* filtered on language, right?
-        path!("api" / "v1" / "streaming" / "hashtag" / "local")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .and(warp::query())
-            .map(|_, q: query::Hashtag| (format!("hashtag:{}:local", q.tag), User::public())),
-        path!("api" / "v1" / "streaming" / "hashtag")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_public_user)
-            .and(warp::query())
-            .map(|_, q: query::Hashtag| (format!("hashtag:{}", q.tag), User::public())),
-        path!("api" / "v1" / "streaming" / "list")
-            .and(OptionalAccessToken::from_header_or_query())
-            .and_then(User::from_access_token_or_reject)
-            .and(warp::query())
-            .and_then(|user: User, q: query::List| {
-                if user.owns_list(q.list) {
-                    (Ok(q.list), Ok(user))
-                } else {
-                    (Err(CustomError::unauthorized_list()), Ok(user))
-                }
-            })
-            .untuple_one()
-            .map(|list: i64, user: User| (format!("list:{}", list), user.set_filter(NoFilter)))
+        parse_query!(
+            path => "api" / "v1" / "streaming" / "user" / "notification"
+            endpoint => "user:notification" ),
+        parse_query!(
+            path => "api" / "v1" / "streaming" / "user"
+            endpoint => "user"),
+        parse_query!(
+            path => "api" / "v1" / "streaming" / "public" / "local"
+            endpoint => "public:local"),
+        parse_query!(
+            path => "api" / "v1" / "streaming" / "public"
+            endpoint => "public"),
+        parse_query!(
+            path => "api" / "v1" / "streaming" / "direct"
+            endpoint => "direct"),
+        parse_query!(path => "api" / "v1" / "streaming" / "hashtag" / "local"
+                     endpoint => "hashtag:local"),
+        parse_query!(path => "api" / "v1" / "streaming" / "hashtag"
+                     endpoint => "hashtag"),
+        parse_query!(path => "api" / "v1" / "streaming" / "list"
+                endpoint => "list")
     )
-    .untuple_one()
+    // because SSE requests place their `access_token` in the header instead of in a query
+    // parameter, we need to update our Query if the header has a token
+    .and(query::OptionalAccessToken::from_header())
+    .and_then(Query::update_access_token)
+    .and_then(User::from_query)
     .boxed()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-
-    struct TestUser;
-    impl TestUser {
-        fn logged_in() -> User {
-            User::from_access_token_or_reject(Some("TEST_USER".to_string())).expect("in test")
-        }
-        fn public() -> User {
-            User::from_access_token_or_public_user(None).expect("in test")
-        }
-    }
+    use crate::parse_client_request::user::{Filter, OauthScope};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
             endpoint: $path:expr,
-            timeline: $timeline:expr,
             user: $user:expr,
         }) => {
             #[test]
             fn $name() {
-                let (timeline, user) = warp::test::request()
+                let user = warp::test::request()
                     .path($path)
-                    .filter(&filter_incomming_request())
+                    .filter(&extract_user_or_reject())
                     .expect("in test");
-                assert_eq!(&timeline, $timeline);
                 assert_eq!(user, $user);
             }
         };
     }
-
     macro_rules! test_private_endpoint {
         ($name:ident {
             endpoint: $path:expr,
             $(query: $query:expr,)*
-            timeline: $timeline:expr,
             user: $user:expr,
         }) => {
             #[test]
             fn $name() {
                 let  path = format!("{}?access_token=TEST_USER", $path);
                 $(let path = format!("{}&{}", path, $query);)*
-                    let (timeline, user) = warp::test::request()
+                    let  user = warp::test::request()
                     .path(&path)
-                    .filter(&filter_incomming_request())
+                    .filter(&extract_user_or_reject())
                     .expect("in test");
-                assert_eq!(&timeline, $timeline);
                 assert_eq!(user, $user);
-                let (timeline, user) = warp::test::request()
+                let user = warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: TEST_USER")
-                    .filter(&filter_incomming_request())
+                    .filter(&extract_user_or_reject())
                     .expect("in test");
-                assert_eq!(&timeline, $timeline);
                 assert_eq!(user, $user);
             }
         };
     }
-
     macro_rules! test_bad_auth_token_in_query {
         ($name: ident {
             endpoint: $path:expr,
@@ -153,19 +120,17 @@ mod test {
         }) => {
             #[test]
             #[should_panic(expected = "Error: Invalid access token")]
-
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
                     dbg!(&path);
                     warp::test::request()
                         .path(&path)
-                        .filter(&filter_incomming_request())
+                        .filter(&extract_user_or_reject())
                         .expect("in test");
             }
         };
     }
-
     macro_rules! test_bad_auth_token_in_header {
         ($name: ident {
             endpoint: $path:expr,
@@ -180,7 +145,7 @@ mod test {
                     warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: INVALID")
-                    .filter(&filter_incomming_request())
+                    .filter(&extract_user_or_reject())
                     .expect("in test");
             }
         };
@@ -197,7 +162,7 @@ mod test {
                 $(let path = format!("{}?{}", path, $query);)*
                 warp::test::request()
                     .path(&path)
-                    .filter(&filter_incomming_request())
+                    .filter(&extract_user_or_reject())
                     .expect("in test");
             }
         };
@@ -205,13 +170,193 @@ mod test {
 
     test_public_endpoint!(public_media_true {
         endpoint: "/api/v1/streaming/public?only_media=true",
-        timeline: "public:media",
-        user: TestUser::public().set_filter(Language),
+        user: User {
+            target_timeline: "public:media".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
     });
     test_public_endpoint!(public_media_1 {
         endpoint: "/api/v1/streaming/public?only_media=1",
-        timeline: "public:media",
-        user: TestUser::public().set_filter(Language),
+        user: User {
+            target_timeline: "public:media".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+    test_public_endpoint!(public_local {
+        endpoint: "/api/v1/streaming/public/local",
+        user: User {
+            target_timeline: "public:local".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+    test_public_endpoint!(public_local_media_true {
+        endpoint: "/api/v1/streaming/public/local?only_media=true",
+        user: User {
+            target_timeline: "public:local:media".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+    test_public_endpoint!(public_local_media_1 {
+        endpoint: "/api/v1/streaming/public/local?only_media=1",
+        user: User {
+            target_timeline: "public:local:media".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+    test_public_endpoint!(hashtag {
+        endpoint: "/api/v1/streaming/hashtag?tag=a",
+        user: User {
+            target_timeline: "hashtag:a".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+    test_public_endpoint!(hashtag_local {
+        endpoint: "/api/v1/streaming/hashtag/local?tag=a",
+        user: User {
+            target_timeline: "hashtag:local:a".to_string(),
+            id: -1,
+            access_token: "no access token".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: false,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: false,
+            filter: Filter::Language,
+        },
+    });
+
+    test_private_endpoint!(user {
+        endpoint: "/api/v1/streaming/user",
+        user: User {
+            target_timeline: "1".to_string(),
+            id: 1,
+            access_token: "TEST_USER".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: true,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: true,
+            filter: Filter::NoFilter,
+        },
+    });
+    test_private_endpoint!(user_notification {
+        endpoint: "/api/v1/streaming/user/notification",
+        user: User {
+            target_timeline: "1".to_string(),
+            id: 1,
+            access_token: "TEST_USER".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: true,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: true,
+            filter: Filter::Notification,
+        },
+    });
+    test_private_endpoint!(direct {
+        endpoint: "/api/v1/streaming/direct",
+        user: User {
+            target_timeline: "direct".to_string(),
+            id: 1,
+            access_token: "TEST_USER".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: true,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: true,
+            filter: Filter::NoFilter,
+        },
+    });
+
+    test_private_endpoint!(list_valid_list {
+        endpoint: "/api/v1/streaming/list",
+        query: "list=1",
+        user: User {
+            target_timeline: "list:1".to_string(),
+            id: 1,
+            access_token: "TEST_USER".to_string(),
+            langs: None,
+            scopes: OauthScope {
+                all: true,
+                statuses: false,
+                notify: false,
+                lists: false,
+            },
+            logged_in: true,
+            filter: Filter::NoFilter,
+        },
     });
     test_bad_auth_token_in_query!(public_media_true_bad_auth {
         endpoint: "/api/v1/streaming/public",
@@ -221,28 +366,11 @@ mod test {
         endpoint: "/api/v1/streaming/public",
         query: "only_media=1",
     });
-
-    test_public_endpoint!(public_local {
-        endpoint: "/api/v1/streaming/public/local",
-        timeline: "public:local",
-        user: TestUser::public().set_filter(Language),
-    });
     test_bad_auth_token_in_query!(public_local_bad_auth_in_query {
         endpoint: "/api/v1/streaming/public/local",
     });
     test_bad_auth_token_in_header!(public_local_bad_auth_in_header {
         endpoint: "/api/v1/streaming/public/local",
-    });
-
-    test_public_endpoint!(public_local_media_true {
-        endpoint: "/api/v1/streaming/public/local?only_media=true",
-        timeline: "public:local:media",
-        user: TestUser::public().set_filter(Language),
-    });
-    test_public_endpoint!(public_local_media_1 {
-        endpoint: "/api/v1/streaming/public/local?only_media=1",
-        timeline: "public:local:media",
-        user: TestUser::public().set_filter(Language),
     });
     test_bad_auth_token_in_query!(public_local_media_timeline_bad_auth_in_query {
         endpoint: "/api/v1/streaming/public/local",
@@ -252,12 +380,6 @@ mod test {
         endpoint: "/api/v1/streaming/public/local",
         query: "only_media=true",
     });
-
-    test_public_endpoint!(hashtag {
-        endpoint: "/api/v1/streaming/hashtag?tag=a",
-        timeline: "hashtag:a",
-        user: TestUser::public(),
-    });
     test_bad_auth_token_in_query!(hashtag_bad_auth_in_query {
         endpoint: "/api/v1/streaming/hashtag",
         query: "tag=a",
@@ -265,26 +387,6 @@ mod test {
     test_bad_auth_token_in_header!(hashtag_bad_auth_in_header {
         endpoint: "/api/v1/streaming/hashtag",
         query: "tag=a",
-    });
-
-    test_public_endpoint!(hashtag_local {
-        endpoint: "/api/v1/streaming/hashtag/local?tag=a",
-        timeline: "hashtag:a:local",
-        user: TestUser::public(),
-    });
-    test_bad_auth_token_in_query!(hashtag_local_bad_auth_in_query {
-        endpoint: "/api/v1/streaming/hashtag/local",
-        query: "tag=a",
-    });
-    test_bad_auth_token_in_header!(hashtag_local_bad_auth_in_header {
-        endpoint: "/api/v1/streaming/hashtag/local",
-        query: "tag=a",
-    });
-
-    test_private_endpoint!(user {
-        endpoint: "/api/v1/streaming/user",
-        timeline: "1",
-        user: TestUser::logged_in(),
     });
     test_bad_auth_token_in_query!(user_bad_auth_in_query {
         endpoint: "/api/v1/streaming/user",
@@ -295,12 +397,6 @@ mod test {
     test_missing_auth!(user_missing_auth_token {
         endpoint: "/api/v1/streaming/user",
     });
-
-    test_private_endpoint!(user_notification {
-        endpoint: "/api/v1/streaming/user/notification",
-        timeline: "1",
-        user: TestUser::logged_in().set_filter(Notification),
-    });
     test_bad_auth_token_in_query!(user_notification_bad_auth_in_query {
         endpoint: "/api/v1/streaming/user/notification",
     });
@@ -310,12 +406,6 @@ mod test {
     test_missing_auth!(user_notification_missing_auth_token {
         endpoint: "/api/v1/streaming/user/notification",
     });
-
-    test_private_endpoint!(direct {
-        endpoint: "/api/v1/streaming/direct",
-        timeline: "direct:1",
-        user: TestUser::logged_in(),
-    });
     test_bad_auth_token_in_query!(direct_bad_auth_in_query {
         endpoint: "/api/v1/streaming/direct",
     });
@@ -324,13 +414,6 @@ mod test {
     });
     test_missing_auth!(direct_missing_auth_token {
         endpoint: "/api/v1/streaming/direct",
-    });
-
-    test_private_endpoint!(list_valid_list {
-        endpoint: "/api/v1/streaming/list",
-        query: "list=1",
-        timeline: "list:1",
-        user: TestUser::logged_in(),
     });
     test_bad_auth_token_in_query!(list_bad_auth_in_query {
         endpoint: "/api/v1/streaming/list",
@@ -344,5 +427,14 @@ mod test {
         endpoint: "/api/v1/streaming/list",
         query: "list=1",
     });
+
+    #[test]
+    #[should_panic(expected = "NotFound")]
+    fn nonexistant_endpoint() {
+        warp::test::request()
+            .path("/api/v1/streaming/DOES_NOT_EXIST")
+            .filter(&extract_user_or_reject())
+            .expect("in test");
+    }
 
 }
