@@ -63,7 +63,6 @@ pub fn send_updates_to_ws(
         .for_each(move |_json_value| {
             if let Ok(Async::Ready(Some(json_value))) = stream.poll() {
                 let msg = warp::ws::Message::text(json_value.to_string());
-                //                dbg!(&msg);
                 tx.unbounded_send(msg).expect("No send error");
             };
             Ok(())

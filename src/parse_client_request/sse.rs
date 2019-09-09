@@ -123,11 +123,10 @@ mod test {
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
-                    dbg!(&path);
-                    warp::test::request()
-                        .path(&path)
-                        .filter(&extract_user_or_reject())
-                        .expect("in test");
+                warp::test::request()
+                    .path(&path)
+                    .filter(&extract_user_or_reject())
+                    .expect("in test");
             }
         };
     }
@@ -141,8 +140,7 @@ mod test {
             fn $name() {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
-                    dbg!(&path);
-                    warp::test::request()
+                warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: INVALID")
                     .filter(&extract_user_or_reject())
