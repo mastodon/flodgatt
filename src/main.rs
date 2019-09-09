@@ -4,7 +4,7 @@ use flodgatt::{
     redis_to_client_stream,
     redis_to_client_stream::ClientAgent,
 };
-use log::{log_enabled, Level};
+use log::warn;
 use warp::{ws::Ws2, Filter as WarpFilter};
 
 fn main() {
@@ -12,9 +12,7 @@ fn main() {
     let client_agent_sse = ClientAgent::blank();
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
 
-    if log_enabled!(Level::Warn) {
-        println!("Streaming server initialized and ready to accept connections");
-    };
+    warn!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
     let sse_routes = sse::extract_user_or_reject()
