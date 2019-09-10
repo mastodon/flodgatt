@@ -63,7 +63,7 @@ pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
     )
     // because SSE requests place their `access_token` in the header instead of in a query
     // parameter, we need to update our Query if the header has a token
-    .and(query::OptionalAccessToken::from_header())
+    .and(query::OptionalAccessToken::from_sse_header())
     .and_then(Query::update_access_token)
     .and_then(User::from_query)
     .boxed()

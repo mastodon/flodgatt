@@ -71,13 +71,20 @@ pub fn optional_media_query() -> BoxedFilter<(Media,)> {
 pub struct OptionalAccessToken;
 
 impl OptionalAccessToken {
-    pub fn from_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
+    pub fn from_sse_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
         let from_header = warp::header::header::<String>("authorization").map(|auth: String| {
             match auth.split(' ').nth(1) {
                 Some(s) => Some(s.to_string()),
                 None => None,
             }
         });
+        let no_token = warp::any().map(|| None);
+
+        from_header.or(no_token).unify().boxed()
+    }
+    pub fn from_ws_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
+        let from_header =
+            warp::header::header::<String>("Sec-Websocket-Protocol").map(|auth: String| Some(auth));
         let no_token = warp::any().map(|| None);
 
         from_header.or(no_token).unify().boxed()

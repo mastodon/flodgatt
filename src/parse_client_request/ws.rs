@@ -30,7 +30,11 @@ fn parse_query() -> BoxedFilter<(Query,)> {
 }
 
 pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
-    parse_query().and_then(User::from_query).boxed()
+    parse_query()
+        .and(query::OptionalAccessToken::from_ws_header())
+        .and_then(Query::update_access_token)
+        .and_then(User::from_query)
+        .boxed()
 }
 #[cfg(test)]
 mod test {
