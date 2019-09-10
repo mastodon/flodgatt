@@ -9,23 +9,31 @@ A blazingly fast drop-in replacement for the Mastodon streaming API server.
 
 ## Installation
 
-Installing from source requires the Rust toolchain. Clone this repository and run `cargo build` (to build the server), or `cargo build --release` (to build the server with release optimizations).
+Starting from version 0.3, Flóðgátt can be installed for Linux by installing the pre-built binaries released on GitHub.  Simply download the binary (extracting it if necessary), set it to executable (`chmod +x`) and run it.  Note that you will likely need to configure the Postgres connection before you can successfully connect.
 
 ### Configuring
 
-The streaming server uses the same environment variables as the rest of Mastodon, which can either be passed to the process the standard way or through a `.env` file.
+The streaming server will eventually uses the same environment variables as the rest of Mastodon, and currently uses a subset of those variables.  Supported variables are listed in `/src/config.rs`.  Supported environmental variables either be passed to Flóðgátt at runtime or through a `.env` file.
 
-### Running
+Note that the default values for the `postgres` connection do not correspond to those typically used in production.  Thus, you will need to configure the connection either env vars or a `.env` file if you intend to connect Flóðgátt to a production database.
+
+Additionally, note that connecting Flóðgátt to Postgres with the `ident` method requires running Flóðgátt as the user who owns the mastodon database (typically `mastodon`).
+
+## Building from source
+
+Installing from source requires the Rust toolchain. Clone this repository and run `cargo build` (to build the server), or `cargo build --release` (to build the server with release optimizations).
+
+### Running the built server
 
 You can run the server with `cargo run`. Alternatively, if you built the sever using `cargo build` or `cargo build --release`, you can run the executable produced in the `target/build/debug` folder or the `target/build/release` folder.
 
-## Documentation
+### Building documentation 
 
 Build documentation with `cargo doc --open`, which will build the Markdown docs and open them in your browser. Please consult those docs for a detailed description of the code structure/organization. The documentation also contains additional notes about data flow and options for configuration.
 
-## Unit and (limited) integration tests
+### Testing
 
-You can run basic unit test of the public Server Sent Event endpoints with `cargo test`. You can run integration tests of the authenticated SSE endpoints (which require a PostgreSQL connection) with `cargo test -- --ignored`.
+You can run basic unit tests with `cargo test`.
 
 ### Manual testing
 
@@ -38,3 +46,8 @@ Note that memory usage is higher when running the development version of the str
 ### Load testing
 
 I have not yet found a good way to test the streaming server under load. I have experimented with using `artillery` or other load-testing utilities. However, every utility I am familiar with or have found is built around either HTTP requests or WebSocket connections in which the client sends messages. I have not found a good solution to test receiving SSEs or WebSocket connections where the client does not transmit data after establishing the connection. If you are aware of a good way to do load testing, please let me know.
+
+
+## Contributing
+
+Issues and pull requests are welcome. Flóðgátt is governed by the same Code of Conduct as Mastodon as a whole. 
