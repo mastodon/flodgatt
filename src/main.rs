@@ -33,7 +33,7 @@ fn main() {
     // WebSocket
     let websocket_routes = ws::extract_user_or_reject()
         .and(warp::ws::ws2())
-        .and_then(move |user: user::User, ws: Ws2| {
+        .map(move |user: user::User, ws: Ws2| {
             let token = user.access_token.clone();
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
@@ -41,12 +41,13 @@ fn main() {
             client_agent.init_for_user(user);
             // send the updates through the WS connection (along with the User's access_token
             // which is sent for security)
-            Ok::<_, warp::Rejection>((
+
+            (
                 ws.on_upgrade(move |socket| {
                     redis_to_client_stream::send_updates_to_ws(socket, client_agent)
                 }),
                 token,
-            ))
+            )
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
 
