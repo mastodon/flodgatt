@@ -44,29 +44,41 @@ pub fn send_updates_to_ws(
     warp::spawn(
         rx.map_err(|()| -> warp::Error { unreachable!() })
             .forward(ws_tx)
-            .map_err(|_| ())
-            .map(|_r| ()),
+            .map(|_r| ())
+            .map_err(|e| eprintln!("websocket send error: {}", e)),
     );
 
-    // For as long as the client is still connected, yeild a new event every 100 ms
+    // Yield new events for as long as the client is still connected
     let event_stream = tokio::timer::Interval::new(
         time::Instant::now(),
         time::Duration::from_millis(*config::WS_UPDATE_INTERVAL),
     )
     .take_while(move |_| match ws_rx.poll() {
-        Ok(Async::Ready(None)) => futures::future::ok(false),
-        _ => futures::future::ok(true),
+        Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
+        Ok(Async::Ready(None)) => {
+            // TODO: consider whether we should manually drop closed connections here
+            log::info!("Client closed WebSocket connection");
+            futures::future::ok(false)
+        }
+        Err(e) => {
+            log::warn!("{}", e);
+            futures::future::ok(false)
+        }
     });
 
     // Every time you get an event from that stream, send it through the pipe
     event_stream
-        .for_each(move |_json_value| {
+        .for_each(move |_instant| {
             if let Ok(Async::Ready(Some(json_value))) = stream.poll() {
                 let msg = warp::ws::Message::text(json_value.to_string());
                 tx.unbounded_send(msg).expect("No send error");
             };
             Ok(())
         })
-        .then(|msg| msg)
-        .map_err(|e| log::error!("{}", e))
+        .then(move |result| {
+            // TODO: consider whether we should manually drop closed connections here
+            log::info!("WebSocket connection closed.");
+            result
+        })
+        .map_err(move |e| log::error!("{}", e))
 }
