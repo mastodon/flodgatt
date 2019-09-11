@@ -218,7 +218,7 @@ impl<'a> AsyncReadableStream<'a> {
         let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
             let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-
+            dbg!(&raw_redis_response);
             receiver.incoming_raw_msg.push_str(raw_redis_response);
             // Text comes in from redis as a raw stream, which could be more than one message
             // and is not guaranteed to end on a message boundary.  We need to break it down
