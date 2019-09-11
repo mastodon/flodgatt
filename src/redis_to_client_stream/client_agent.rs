@@ -86,17 +86,21 @@ impl futures::stream::Stream for ClientAgent {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let start_time = time::Instant::now();
         let result = {
+            let before_locking_receiver = time::Instant::now();
             let mut receiver = self
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
+            let before_configuring_receiver = time::Instant::now();
             receiver.configure_for_polling(self.id, &self.target_timeline.clone());
-            receiver.poll()
+            let before_polling_receiver = time::Instant::now();
+            let result = receiver.poll();
+            if start_time.elapsed() > time::Duration::from_millis(20) {
+                log::warn!("Polling TOTAL time: {:?}\n since poll function: {:?}\n since configuring: {:?}\n since locking: {:?}", start_time.elapsed(), before_polling_receiver.elapsed(), before_configuring_receiver.elapsed(), before_locking_receiver.elapsed());
+            }
+            result
         };
 
-        if start_time.elapsed() > time::Duration::from_millis(20) {
-            log::warn!("Polling took: {:?}", start_time.elapsed());
-        }
         match result {
             Ok(Async::Ready(Some(value))) => {
                 let user = &self.current_user;

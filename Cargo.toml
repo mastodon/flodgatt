@@ -21,6 +21,18 @@ dotenv = "0.14.0"
 lazy_static = "1.3.0"
 postgres-openssl = { git = "https://github.com/sfackler/rust-postgres.git"}
 
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "parse_redis"
+harness = false
+
+[[bench]]
+name = "read_time"
+harness = false
+
+
 [features]
 default = [ "production" ]
 production = []
