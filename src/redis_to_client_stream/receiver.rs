@@ -5,7 +5,6 @@ use super::redis_cmd;
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
 use log::info;
-use regex::Regex;
 use serde_json::Value;
 use std::{collections, io::Read, io::Write, net, time};
 use tokio::io::{AsyncRead, Error};
@@ -213,45 +212,71 @@ impl<'a> AsyncReadableStream<'a> {
     /// Polls Redis for any new messages and adds them to the `MsgQueue` for
     /// the appropriate `ClientAgent`.
     fn poll_redis(receiver: &mut Receiver) {
+        // TODO: Clean this up and shorten it.  Also, test on DO
         let mut buffer = vec![0u8; 3000];
 
         let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
             let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-            dbg!(&raw_redis_response);
             receiver.incoming_raw_msg.push_str(raw_redis_response);
             // Text comes in from redis as a raw stream, which could be more than one message
             // and is not guaranteed to end on a message boundary.  We need to break it down
             // into messages.  First, start by only acting if we end on a valid message boundary
-            if receiver.incoming_raw_msg.ends_with("}\r\n") {
-                // Every valid message is tagged with the string `message`.  This means 3 things:
-                //   1) We can discard everything before the first `message` (with `skip(1)`)
-                //   2) We can split into separate messages by splitting on `message`
-                //   3) We can use a regex that discards everything after the *first* valid
-                //      message (since the next message will have a new `message` tag)
-                let messages = receiver.incoming_raw_msg.as_str().split("message").skip(1);
-                let regex =
-                    Regex::new(r"timeline:(?P<timeline>.*?)\r\n\$\d+\r\n(?P<value>.*?)\r\n")
-                        .expect("Hard-codded");
-                for message in messages {
-                    let timeline = regex.captures(message).expect("Hard-coded timeline regex")
-                        ["timeline"]
-                        .to_string();
 
-                    let redis_msg: Value = serde_json::from_str(
-                        &regex.captures(message).expect("Hard-coded value regex")["value"],
-                    )
-                    .expect("Valid json");
+            // Incoming messages are guaranteed to be RESP arrays, https://redis.io/topics/protocol
 
+            // this means that the fifth byte will always be either a 7 (for a message),
+            // a 9 (for a subscribe command), or an 11 (for an unsubscribe command)
+            fn take_number_at(start: usize, slice: &str) -> &str {
+                let mut end = start + 1;
+
+                let mut chars = slice.chars();
+                chars.nth(start);
+                while chars.next().expect("still in str").is_digit(10) {
+                    end += 1;
+                }
+                &slice[start..end]
+            }
+
+            let input = &receiver.incoming_raw_msg;
+            let mut cursor = "*3\r\n$".len(); // 5
+            let command_len = take_number_at(cursor, &input);
+
+            cursor += command_len.len()
+                + "\r\n".len()
+                + command_len.parse::<usize>().unwrap()
+                + "\r\n$".len();
+            let timeline_len = take_number_at(cursor, &input);
+            cursor += timeline_len.len() + "\r\n".len();
+            let mut end = cursor + timeline_len.parse::<usize>().unwrap();
+            let timeline = &input[cursor..end];
+
+            cursor += timeline_len.parse::<usize>().unwrap() + "\r\n$".len();
+            dbg!(cursor);
+            let msg_len = take_number_at(cursor, &input);
+
+            cursor += msg_len.len() + "\r\n".len();
+            dbg!(cursor);
+
+            match command_len {
+                "9" | "11" => {
+                    end = cursor;
+                }
+                "7" => {
+                    end = cursor + msg_len.parse::<usize>().unwrap();
+                    let message = &input[cursor..end];
+                    let (timeline, message): (_, Value) =
+                        (timeline.to_string(), serde_json::from_str(message).unwrap());
                     for msg_queue in receiver.msg_queues.values_mut() {
                         if msg_queue.redis_channel == timeline {
-                            msg_queue.messages.push_back(redis_msg.clone());
+                            msg_queue.messages.push_back(message.clone());
                         }
                     }
+                    end += "\r\n".len();
                 }
-                // We've processed this raw msg and can safely discard it
-                receiver.incoming_raw_msg.clear();
-            }
+                _ => panic!("Invariant violation: bad Redis input"),
+            };
+            receiver.incoming_raw_msg = input[end..].to_string();
         }
     }
 }
