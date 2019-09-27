@@ -2,6 +2,7 @@
 pub mod client_agent;
 pub mod receiver;
 pub mod redis_cmd;
+pub mod redis_stream;
 
 use crate::config;
 pub use client_agent::ClientAgent;

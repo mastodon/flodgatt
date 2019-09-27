@@ -1,26 +1,26 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
-use super::redis_cmd;
+use super::{redis_cmd, redis_stream};
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
 use log::info;
 use serde_json::Value;
-use std::{collections, io::Read, io::Write, net, time};
-use tokio::io::{AsyncRead, Error};
+use std::{collections, io::Write, net, time};
+use tokio::io::Error;
 use uuid::Uuid;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
-    pubsub_connection: net::TcpStream,
+    pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
-    msg_queues: collections::HashMap<Uuid, MsgQueue>,
+    pub msg_queues: collections::HashMap<Uuid, MsgQueue>,
     clients_per_timeline: collections::HashMap<String, i32>,
-    incoming_raw_msg: String,
+    pub incoming_raw_msg: String,
 }
 
 impl Receiver {
@@ -156,7 +156,7 @@ impl futures::stream::Stream for Receiver {
         if self.redis_polled_at.elapsed()
             > time::Duration::from_millis(*config::REDIS_POLL_INTERVAL)
         {
-            AsyncReadableStream::poll_redis(self);
+            redis_stream::AsyncReadableStream::poll_redis(self);
             self.redis_polled_at = time::Instant::now();
         }
 
@@ -187,10 +187,10 @@ impl Drop for Receiver {
 }
 
 #[derive(Debug, Clone)]
-struct MsgQueue {
-    messages: collections::VecDeque<Value>,
+pub struct MsgQueue {
+    pub messages: collections::VecDeque<Value>,
     last_polled_at: time::Instant,
-    redis_channel: String,
+    pub redis_channel: String,
 }
 
 impl MsgQueue {
@@ -200,98 +200,6 @@ impl MsgQueue {
             messages: collections::VecDeque::new(),
             last_polled_at: time::Instant::now(),
             redis_channel,
-        }
-    }
-}
-
-struct AsyncReadableStream<'a>(&'a mut net::TcpStream);
-impl<'a> AsyncReadableStream<'a> {
-    fn new(stream: &'a mut net::TcpStream) -> Self {
-        AsyncReadableStream(stream)
-    }
-    /// Polls Redis for any new messages and adds them to the `MsgQueue` for
-    /// the appropriate `ClientAgent`.
-    fn poll_redis(receiver: &mut Receiver) {
-        // TODO: Clean this up and shorten it.  Also, test on DO
-        let mut buffer = vec![0u8; 3000];
-
-        let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
-        if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
-            let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-            receiver.incoming_raw_msg.push_str(raw_redis_response);
-            // Text comes in from redis as a raw stream, which could be more than one message
-            // and is not guaranteed to end on a message boundary.  We need to break it down
-            // into messages.  First, start by only acting if we end on a valid message boundary
-
-            // Incoming messages are guaranteed to be RESP arrays, https://redis.io/topics/protocol
-
-            // this means that the fifth byte will always be either a 7 (for a message),
-            // a 9 (for a subscribe command), or an 11 (for an unsubscribe command)
-            fn take_number_at(start: usize, slice: &str) -> &str {
-                let mut end = start + 1;
-
-                let mut chars = slice.chars();
-                chars.nth(start);
-                while chars.next().expect("still in str").is_digit(10) {
-                    end += 1;
-                }
-                &slice[start..end]
-            }
-
-            let input = &receiver.incoming_raw_msg;
-            let mut cursor = "*3\r\n$".len(); // 5
-            let command_len = take_number_at(cursor, &input);
-
-            cursor += command_len.len()
-                + "\r\n".len()
-                + command_len.parse::<usize>().unwrap()
-                + "\r\n$".len();
-            let timeline_len = take_number_at(cursor, &input);
-            cursor += timeline_len.len() + "\r\n".len();
-            let mut end = cursor + timeline_len.parse::<usize>().unwrap();
-            let timeline = &input[cursor..end];
-
-            cursor += timeline_len.parse::<usize>().unwrap() + "\r\n$".len();
-            dbg!(cursor);
-            let msg_len = take_number_at(cursor, &input);
-
-            cursor += msg_len.len() + "\r\n".len();
-            dbg!(cursor);
-
-            match command_len {
-                "9" | "11" => {
-                    end = cursor;
-                }
-                "7" => {
-                    end = cursor + msg_len.parse::<usize>().unwrap();
-                    let message = &input[cursor..end];
-                    let (timeline, message): (_, Value) =
-                        (timeline.to_string(), serde_json::from_str(message).unwrap());
-                    for msg_queue in receiver.msg_queues.values_mut() {
-                        if msg_queue.redis_channel == timeline {
-                            msg_queue.messages.push_back(message.clone());
-                        }
-                    }
-                    end += "\r\n".len();
-                }
-                _ => panic!("Invariant violation: bad Redis input"),
-            };
-            receiver.incoming_raw_msg = input[end..].to_string();
-        }
-    }
-}
-
-impl<'a> Read for AsyncReadableStream<'a> {
-    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.0.read(buffer)
-    }
-}
-
-impl<'a> AsyncRead for AsyncReadableStream<'a> {
-    fn poll_read(&mut self, buf: &mut [u8]) -> Poll<usize, std::io::Error> {
-        match self.read(buf) {
-            Ok(t) => Ok(Async::Ready(t)),
-            Err(_) => Ok(Async::NotReady),
         }
     }
 }
