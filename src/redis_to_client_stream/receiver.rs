@@ -1,27 +1,26 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
-use super::redis_cmd;
+use super::{redis_cmd, redis_stream};
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
 use log::info;
-use regex::Regex;
 use serde_json::Value;
-use std::{collections, io::Read, io::Write, net, time};
-use tokio::io::{AsyncRead, Error};
+use std::{collections, io::Write, net, time};
+use tokio::io::Error;
 use uuid::Uuid;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
-    pubsub_connection: net::TcpStream,
+    pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
-    msg_queues: collections::HashMap<Uuid, MsgQueue>,
+    pub msg_queues: collections::HashMap<Uuid, MsgQueue>,
     clients_per_timeline: collections::HashMap<String, i32>,
-    incoming_raw_msg: String,
+    pub incoming_raw_msg: String,
 }
 
 impl Receiver {
@@ -157,7 +156,7 @@ impl futures::stream::Stream for Receiver {
         if self.redis_polled_at.elapsed()
             > time::Duration::from_millis(*config::REDIS_POLL_INTERVAL)
         {
-            AsyncReadableStream::poll_redis(self);
+            redis_stream::AsyncReadableStream::poll_redis(self);
             self.redis_polled_at = time::Instant::now();
         }
 
@@ -188,10 +187,10 @@ impl Drop for Receiver {
 }
 
 #[derive(Debug, Clone)]
-struct MsgQueue {
-    messages: collections::VecDeque<Value>,
+pub struct MsgQueue {
+    pub messages: collections::VecDeque<Value>,
     last_polled_at: time::Instant,
-    redis_channel: String,
+    pub redis_channel: String,
 }
 
 impl MsgQueue {
@@ -201,72 +200,6 @@ impl MsgQueue {
             messages: collections::VecDeque::new(),
             last_polled_at: time::Instant::now(),
             redis_channel,
-        }
-    }
-}
-
-struct AsyncReadableStream<'a>(&'a mut net::TcpStream);
-impl<'a> AsyncReadableStream<'a> {
-    fn new(stream: &'a mut net::TcpStream) -> Self {
-        AsyncReadableStream(stream)
-    }
-    /// Polls Redis for any new messages and adds them to the `MsgQueue` for
-    /// the appropriate `ClientAgent`.
-    fn poll_redis(receiver: &mut Receiver) {
-        let mut buffer = vec![0u8; 3000];
-
-        let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
-        if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
-            let raw_redis_response = &String::from_utf8_lossy(&buffer[..num_bytes_read]);
-            dbg!(&raw_redis_response);
-            receiver.incoming_raw_msg.push_str(raw_redis_response);
-            // Text comes in from redis as a raw stream, which could be more than one message
-            // and is not guaranteed to end on a message boundary.  We need to break it down
-            // into messages.  First, start by only acting if we end on a valid message boundary
-            if receiver.incoming_raw_msg.ends_with("}\r\n") {
-                // Every valid message is tagged with the string `message`.  This means 3 things:
-                //   1) We can discard everything before the first `message` (with `skip(1)`)
-                //   2) We can split into separate messages by splitting on `message`
-                //   3) We can use a regex that discards everything after the *first* valid
-                //      message (since the next message will have a new `message` tag)
-                let messages = receiver.incoming_raw_msg.as_str().split("message").skip(1);
-                let regex =
-                    Regex::new(r"timeline:(?P<timeline>.*?)\r\n\$\d+\r\n(?P<value>.*?)\r\n")
-                        .expect("Hard-codded");
-                for message in messages {
-                    let timeline = regex.captures(message).expect("Hard-coded timeline regex")
-                        ["timeline"]
-                        .to_string();
-
-                    let redis_msg: Value = serde_json::from_str(
-                        &regex.captures(message).expect("Hard-coded value regex")["value"],
-                    )
-                    .expect("Valid json");
-
-                    for msg_queue in receiver.msg_queues.values_mut() {
-                        if msg_queue.redis_channel == timeline {
-                            msg_queue.messages.push_back(redis_msg.clone());
-                        }
-                    }
-                }
-                // We've processed this raw msg and can safely discard it
-                receiver.incoming_raw_msg.clear();
-            }
-        }
-    }
-}
-
-impl<'a> Read for AsyncReadableStream<'a> {
-    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.0.read(buffer)
-    }
-}
-
-impl<'a> AsyncRead for AsyncReadableStream<'a> {
-    fn poll_read(&mut self, buf: &mut [u8]) -> Poll<usize, std::io::Error> {
-        match self.read(buf) {
-            Ok(t) => Ok(Async::Ready(t)),
-            Err(_) => Ok(Async::NotReady),
         }
     }
 }
