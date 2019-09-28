@@ -130,6 +130,9 @@ pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
     pubsub_connection
         .set_read_timeout(Some(time::Duration::from_millis(10)))
         .expect("Can set read timeout for Redis connection");
+    pubsub_connection
+        .set_nonblocking(true)
+        .expect("set_nonblocking call failed");
     let secondary_redis_connection =
         net::TcpStream::connect(&REDIS_ADDR.to_string()).expect("Can connect to Redis");
     secondary_redis_connection
