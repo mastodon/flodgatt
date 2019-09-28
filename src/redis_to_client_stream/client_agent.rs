@@ -83,6 +83,7 @@ impl futures::stream::Stream for ClientAgent {
     /// replies with `Ok(NotReady)`.  The `ClientAgent` bubles up any
     /// errors from the underlying data structures.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let start_time = std::time::Instant::now();
         let result = {
             let mut receiver = self
                 .receiver
@@ -90,6 +91,9 @@ impl futures::stream::Stream for ClientAgent {
                 .expect("ClientAgent: No other thread panic");
             receiver.configure_for_polling(self.id, &self.target_timeline.clone());
             receiver.poll()
+        };
+        if start_time.elapsed().as_millis() > 1 {
+            log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
         match result {

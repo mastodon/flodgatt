@@ -67,6 +67,7 @@ impl Receiver {
     /// that there's a subscription to the current one.  If there isn't, then
     /// subscribe to it.
     fn subscribe_or_unsubscribe_as_needed(&mut self, timeline: &str) {
+        let start_time = std::time::Instant::now();
         let mut timelines_to_modify = Vec::new();
         struct Change {
             timeline: String,
@@ -111,6 +112,9 @@ impl Receiver {
                 pubsub_cmd!("subscribe", self, change.timeline.clone());
             }
         }
+        if start_time.elapsed().as_millis() > 1 {
+            log::warn!("Sending cmd to Redis took: {:?}", start_time.elapsed());
+        };
     }
 
     fn get_target_msg_queue(&mut self) -> collections::hash_map::Entry<Uuid, MsgQueue> {
