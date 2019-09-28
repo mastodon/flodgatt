@@ -67,6 +67,7 @@ impl Receiver {
     /// that there's a subscription to the current one.  If there isn't, then
     /// subscribe to it.
     fn subscribe_or_unsubscribe_as_needed(&mut self, timeline: &str) {
+        let start_time = std::time::Instant::now();
         let mut timelines_to_modify = Vec::new();
         struct Change {
             timeline: String,
@@ -111,21 +112,9 @@ impl Receiver {
                 pubsub_cmd!("subscribe", self, change.timeline.clone());
             }
         }
-    }
-
-    fn log_number_of_msgs_in_queue(&self) {
-        let messages_waiting = self
-            .msg_queues
-            .get(&self.manager_id)
-            .expect("Guaranteed by match block")
-            .messages
-            .len();
-        match messages_waiting {
-            number if number > 10 => {
-                log::error!("{} messages waiting in the queue", messages_waiting)
-            }
-            _ => log::info!("{} messages waiting in the queue", messages_waiting),
-        }
+        if start_time.elapsed().as_millis() > 1 {
+            log::warn!("Sending cmd to Redis took: {:?}", start_time.elapsed());
+        };
     }
 
     fn get_target_msg_queue(&mut self) -> collections::hash_map::Entry<Uuid, MsgQueue> {
@@ -152,7 +141,6 @@ impl futures::stream::Stream for Receiver {
     /// been polled lately.
     fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
         let timeline = self.timeline.clone();
-
         if self.redis_polled_at.elapsed()
             > time::Duration::from_millis(*config::REDIS_POLL_INTERVAL)
         {
@@ -171,10 +159,7 @@ impl futures::stream::Stream for Receiver {
             .messages
             .pop_front()
         {
-            Some(value) => {
-                self.log_number_of_msgs_in_queue();
-                Ok(Async::Ready(Some(value)))
-            }
+            Some(value) => Ok(Async::Ready(Some(value))),
             _ => Ok(Async::NotReady),
         }
     }

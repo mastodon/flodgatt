@@ -18,9 +18,8 @@
 use super::receiver::Receiver;
 use crate::parse_client_request::user::User;
 use futures::{Async, Poll};
-use log;
 use serde_json::{json, Value};
-use std::{sync, time};
+use std::sync;
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -84,21 +83,17 @@ impl futures::stream::Stream for ClientAgent {
     /// replies with `Ok(NotReady)`.  The `ClientAgent` bubles up any
     /// errors from the underlying data structures.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let start_time = time::Instant::now();
+        let start_time = std::time::Instant::now();
         let result = {
-            let before_locking_receiver = time::Instant::now();
             let mut receiver = self
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
-            let before_configuring_receiver = time::Instant::now();
             receiver.configure_for_polling(self.id, &self.target_timeline.clone());
-            let before_polling_receiver = time::Instant::now();
-            let result = receiver.poll();
-            if start_time.elapsed() > time::Duration::from_millis(20) {
-                log::warn!("Polling TOTAL time: {:?}\n since poll function: {:?}\n since configuring: {:?}\n since locking: {:?}", start_time.elapsed(), before_polling_receiver.elapsed(), before_configuring_receiver.elapsed(), before_locking_receiver.elapsed());
-            }
-            result
+            receiver.poll()
+        };
+        if start_time.elapsed().as_millis() > 1 {
+            log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
         match result {
