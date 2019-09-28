@@ -34,7 +34,6 @@ impl<'a> AsyncReadableStream<'a> {
                 match command.as_str() {
                     "message" => {
                         let timeline = msg.get_next_item()["timeline:".len()..].to_string();
-
                         let message: Value = serde_json::from_str(&msg.get_next_item()).unwrap();
                         for msg_queue in receiver.msg_queues.values_mut() {
                             if msg_queue.redis_channel == timeline {
@@ -77,12 +76,12 @@ impl<'a> AsyncRead for AsyncReadableStream<'a> {
 }
 
 #[derive(Default)]
-struct RedisMsg {
-    raw: String,
-    cursor: usize,
+pub struct RedisMsg {
+    pub raw: String,
+    pub cursor: usize,
 }
 impl RedisMsg {
-    fn from_raw(raw: String) -> Self {
+    pub fn from_raw(raw: String) -> Self {
         Self {
             raw,
             cursor: "*3\r\n".len(), //length of intro header
@@ -90,7 +89,7 @@ impl RedisMsg {
         }
     }
     /// Move the cursor from the beginning of a number through its end and return the number
-    fn process_number(&mut self) -> usize {
+    pub fn process_number(&mut self) -> usize {
         let mut selection_end = self.cursor + 1;
         let mut chars = self.raw.chars();
         chars.nth(self.cursor);
@@ -106,7 +105,7 @@ impl RedisMsg {
     /// In a pubsub reply from Redis, an item can be either the name of the subscribed channel
     /// or the msg payload.  Either way, it follows the same format:
     /// `$[LENGTH_OF_ITEM_BODY]\r\n[ITEM_BODY]\r\n`
-    fn get_next_item(&mut self) -> String {
+    pub fn get_next_item(&mut self) -> String {
         self.cursor += "$".len();
         let item_len = self.process_number();
         self.cursor += "\r\n".len();
