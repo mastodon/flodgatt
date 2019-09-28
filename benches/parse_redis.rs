@@ -64,23 +64,23 @@ fn print_next_str(mut end: usize, input: &str) -> (usize, String) {
     (end, string.to_string())
 }
 
-fn parse_with_stuct(input: String) -> Vec<(String, Value)> {
+fn parse_with_stuct(input: &str) -> Vec<(String, Value)> {
     let mut output = Vec::new();
     let mut incoming_raw_msg = input;
 
     while incoming_raw_msg.len() > 0 {
-        let mut msg = RedisMsg::from_raw(incoming_raw_msg.clone());
-        let command = msg.get_next_item();
+        let mut msg = RedisMsg::from_raw(incoming_raw_msg);
+        let command = msg.next_item();
         match command.as_str() {
             "message" => {
-                let timeline = msg.get_next_item()["timeline:".len()..].to_string();
-                let message: Value = serde_json::from_str(&msg.get_next_item()).unwrap();
+                let timeline = msg.next_item()["timeline:".len()..].to_string();
+                let message: Value = serde_json::from_str(&msg.next_item()).unwrap();
                 output.push((timeline, message));
             }
             "subscribe" | "unsubscribe" => {
                 // This returns a confirmation.  We don't need to do anything with it,
                 // but we do need to advance the cursor past it
-                msg.get_next_item(); // name of channel (un)subscribed
+                msg.next_item(); // name of channel (un)subscribed
                 msg.cursor += ":".len();
                 msg.process_number(); // The number of active subscriptions
                 msg.cursor += "\r\n".len();
@@ -90,7 +90,7 @@ fn parse_with_stuct(input: String) -> Vec<(String, Value)> {
                 cmd
             ),
         }
-        incoming_raw_msg = msg.raw[msg.cursor..].to_string();
+        incoming_raw_msg = &msg.raw[msg.cursor..];
     }
     output
 }
@@ -106,7 +106,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| hand_parse(black_box(input.clone())))
     });
     group.bench_function("stuct parse", |b| {
-        b.iter(|| parse_with_stuct(black_box(input.clone())))
+        b.iter(|| parse_with_stuct(black_box(&input)))
     });
 }
 
