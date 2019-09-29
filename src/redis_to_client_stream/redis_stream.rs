@@ -35,7 +35,10 @@ impl<'a> AsyncReadableStream<'a> {
                     "message" => {
                         let timeline = &msg.next_item()["timeline:".len()..];
                         let msg_txt = &msg.next_item();
-                        let msg_value: Value = serde_json::from_str(msg_txt).expect("Redis json");
+                        let msg_value: Value = match serde_json::from_str(msg_txt) {
+                            Ok(v) => v,
+                            Err(e) => panic!("Unparseable json {}\n\n{}", msg_txt, e),
+                        };
                         for msg_queue in receiver.msg_queues.values_mut() {
                             if msg_queue.redis_channel == timeline {
                                 msg_queue.messages.push_back(msg_value.clone());
