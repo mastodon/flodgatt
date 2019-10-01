@@ -70,17 +70,17 @@ fn parse_with_stuct(input: &str) -> Vec<(String, Value)> {
 
     while incoming_raw_msg.len() > 0 {
         let mut msg = RedisMsg::from_raw(incoming_raw_msg);
-        let command = msg.next_item();
+        let command = msg.next_field();
         match command.as_str() {
             "message" => {
-                let timeline = msg.next_item()["timeline:".len()..].to_string();
-                let message: Value = serde_json::from_str(&msg.next_item()).unwrap();
+                let timeline = msg.next_field()["timeline:".len()..].to_string();
+                let message: Value = serde_json::from_str(&msg.next_field()).unwrap();
                 output.push((timeline, message));
             }
             "subscribe" | "unsubscribe" => {
                 // This returns a confirmation.  We don't need to do anything with it,
                 // but we do need to advance the cursor past it
-                msg.next_item(); // name of channel (un)subscribed
+                msg.next_field(); // name of channel (un)subscribed
                 msg.cursor += ":".len();
                 msg.process_number(); // The number of active subscriptions
                 msg.cursor += "\r\n".len();
