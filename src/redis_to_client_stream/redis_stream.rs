@@ -1,4 +1,5 @@
 use super::receiver::Receiver;
+use crate::config;
 use futures::{Async, Poll};
 use serde_json::Value;
 use std::io::Read;
@@ -40,16 +41,22 @@ If so, set it with the REDIS_PASSWORD environmental variable"
             };
             let mut msg = RedisMsg::from_raw(&receiver.incoming_raw_msg);
 
+            let prefix_to_skip = match &*config::REDIS_NAMESPACE {
+                Some(namespace) => format!("{}:timeline:", namespace),
+                None => "timeline:".to_string(),
+            };
+
             while !msg.raw.is_empty() {
                 let command = msg.next_field();
                 match command.as_str() {
                     "message" => {
-                        let timeline = &msg.next_field()["timeline:".len()..];
+                        let timeline = &msg.next_field()[prefix_to_skip.len()..];
                         let msg_txt = &msg.next_field();
                         let msg_value: Value = match serde_json::from_str(msg_txt) {
                             Ok(v) => v,
                             Err(e) => panic!("Unparseable json {}\n\n{}", msg_txt, e),
                         };
+                        dbg!(&timeline);
                         for msg_queue in receiver.msg_queues.values_mut() {
                             if msg_queue.redis_channel == timeline {
                                 msg_queue.messages.push_back(msg_value.clone());

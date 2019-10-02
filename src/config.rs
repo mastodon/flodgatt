@@ -126,6 +126,13 @@ lazy_static! {
             }
         }
     };
+    pub static ref REDIS_NAMESPACE: Option<String> = match env::var("REDIS_NAMESPACE") {
+        Ok(ns) => {
+            log::warn!("Using `{}:` as a Redis namespace.", ns);
+            Some(ns)
+        },
+        _ => None
+    };
 
 
     pub static ref SERVER_ADDR: net::SocketAddr = env::var("SERVER_ADDR")

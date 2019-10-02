@@ -1,4 +1,5 @@
 //! Send raw TCP commands to the Redis server
+use crate::config;
 use std::fmt::Display;
 
 /// Send a subscribe or unsubscribe to the Redis PubSub channel
@@ -12,26 +13,36 @@ macro_rules! pubsub_cmd {
             .write_all(&redis_cmd::pubsub($cmd, $tl))
             .expect("Can send command to Redis");
         // Because we keep track of the number of clients subscribed to a channel on our end,
-        // we need to manually tell Redis when 0 clients are subscribed (this avoids the need
-        // to unsubscribe *every* time a client disconnects)
-        if $cmd == "unsubscribe" {
-            $self
-                .secondary_redis_connection
-                .write_all(&redis_cmd::set(format!("subscribed:timeline:{}", $tl), "0"))
-                .expect("Can set Redis");
-        }
+        // we need to manually tell Redis when we have subscribed or unsubscribed
+        let subscription_new_number = match $cmd {
+            "unsubscribe" => "0",
+            "subscribe" => "1",
+            _ => panic!("Given unacceptable PUBSUB command"),
+        };
+        $self
+            .secondary_redis_connection
+            .write_all(&redis_cmd::set(
+                format!("subscribed:timeline:{}", $tl),
+                subscription_new_number,
+            ))
+            .expect("Can set Redis");
 
         log::info!("Now subscribed to: {:#?}", $self.msg_queues);
     }};
 }
 /// Send a `SUBSCRIBE` or `UNSUBSCRIBE` command to a specific timeline
 pub fn pubsub(command: impl Display, timeline: impl Display) -> Vec<u8> {
-    let arg = format!("timeline:{}", timeline);
+    let arg = match &*config::REDIS_NAMESPACE {
+        Some(namespace) => format!("{}:timeline:{}", namespace, timeline),
+        None => format!("timeline:{}", timeline),
+    };
     cmd(command, arg)
 }
+
+/// Send a generic two-item command to Redis
 pub fn cmd(command: impl Display, arg: impl Display) -> Vec<u8> {
     let (command, arg) = (command.to_string(), arg.to_string());
-    log::warn!("Sent {} command", &command);
+    log::info!("Sent {} command", &command);
     format!(
         "*2\r\n${cmd_length}\r\n{cmd}\r\n${arg_length}\r\n{arg}\r\n",
         cmd_length = command.len(),
@@ -45,13 +56,18 @@ pub fn cmd(command: impl Display, arg: impl Display) -> Vec<u8> {
 
 /// Send a `SET` command (used to manually unsubscribe from Redis)
 pub fn set(key: impl Display, value: impl Display) -> Vec<u8> {
-    let (key, value) = (key.to_string(), value.to_string());
-    let res = format!(
+    let key = match &*config::REDIS_NAMESPACE {
+        Some(namespace) => format!("{}:{}", namespace, key),
+        None => key.to_string(),
+    };
+    let value = value.to_string();
+    format!(
         "*3\r\n$3\r\nSET\r\n${key_length}\r\n{key}\r\n${value_length}\r\n{value}\r\n",
         key_length = key.len(),
         key = key,
         value_length = value.len(),
         value = value
-    );
-    res.as_bytes().to_owned()
+    )
+    .as_bytes()
+    .to_owned()
 }
