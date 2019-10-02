@@ -83,8 +83,7 @@ impl OptionalAccessToken {
         from_header.or(no_token).unify().boxed()
     }
     pub fn from_ws_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
-        let from_header =
-            warp::header::header::<String>("Sec-Websocket-Protocol").map(|auth: String| Some(auth));
+        let from_header = warp::header::header::<String>("Sec-Websocket-Protocol").map(Some);
         let no_token = warp::any().map(|| None);
 
         from_header.or(no_token).unify().boxed()

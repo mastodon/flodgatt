@@ -23,7 +23,7 @@ impl<'a> AsyncReadableStream<'a> {
         let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
 
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
-            let raw_redis_response = async_stream.to_utf8(buffer, num_bytes_read);
+            let raw_redis_response = async_stream.as_utf8(buffer, num_bytes_read);
             if raw_redis_response.starts_with("-NOAUTH") {
                 eprintln!(
                     r"Invalid authentication for Redis.
@@ -78,12 +78,12 @@ If so, set it with the REDIS_PASSWORD environmental variable"
         }
     }
 
-    fn to_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {
+    fn as_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {
         String::from_utf8(cur_buffer[..size].to_vec()).unwrap_or_else(|_| {
             let mut new_buffer = vec![0u8; 1];
             self.poll_read(&mut new_buffer).unwrap();
             let buffer = ([cur_buffer, new_buffer]).concat();
-            self.to_utf8(buffer, size + 1)
+            self.as_utf8(buffer, size + 1)
         })
     }
 }
