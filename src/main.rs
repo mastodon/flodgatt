@@ -1,5 +1,5 @@
 use flodgatt::{
-    config,
+    config, err,
     parse_client_request::{sse, user, ws},
     redis_to_client_stream,
     redis_to_client_stream::ClientAgent,
@@ -28,7 +28,7 @@ fn main() {
             },
         )
         .with(warp::reply::with::header("Connection", "keep-alive"))
-        .recover(config::handle_errors);
+        .recover(err::handle_errors);
 
     // WebSocket
     let websocket_routes = ws::extract_user_or_reject()

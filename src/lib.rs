@@ -35,5 +35,6 @@
 //! polls the `Receiver` and the frequency with which the `Receiver` polls Redis.
 //!
 pub mod config;
+pub mod err;
 pub mod parse_client_request;
 pub mod redis_to_client_stream;

@@ -23,6 +23,15 @@ impl<'a> AsyncReadableStream<'a> {
 
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
             let raw_redis_response = async_stream.to_utf8(buffer, num_bytes_read);
+            if raw_redis_response.starts_with("-NOAUTH") {
+                eprintln!(
+                    r"Invalid authentication for Redis.
+Do you need a password?
+If so, set it with the REDIS_PASSWORD environmental variable"
+                );
+                std::process::exit(1);
+            }
+
             receiver.incoming_raw_msg.push_str(&raw_redis_response);
 
             // Only act if we have a full message (end on a msg boundary)
