@@ -4,9 +4,8 @@
 use super::{redis_cmd, redis_stream};
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
-use log::info;
 use serde_json::Value;
-use std::{collections, io::Write, net, time};
+use std::{collections, net, time};
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -71,12 +70,12 @@ impl Receiver {
         let mut timelines_to_modify = Vec::new();
         struct Change {
             timeline: String,
-            change_in_subscriber_number: i32,
+            in_subscriber_number: i32,
         }
 
         timelines_to_modify.push(Change {
             timeline: timeline.to_owned(),
-            change_in_subscriber_number: 1,
+            in_subscriber_number: 1,
         });
 
         // Keep only message queues that have been polled recently
@@ -87,7 +86,7 @@ impl Receiver {
                 let timeline = &msg_queue.redis_channel;
                 timelines_to_modify.push(Change {
                     timeline: timeline.to_owned(),
-                    change_in_subscriber_number: -1,
+                    in_subscriber_number: -1,
                 });
                 false
             }
@@ -95,20 +94,15 @@ impl Receiver {
 
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
-            let mut need_to_subscribe = false;
             let count_of_subscribed_clients = self
                 .clients_per_timeline
                 .entry(change.timeline.clone())
-                .and_modify(|n| *n += change.change_in_subscriber_number)
-                .or_insert_with(|| {
-                    need_to_subscribe = true;
-                    1
-                });
+                .and_modify(|n| *n += change.in_subscriber_number)
+                .or_insert_with(|| 1);
             // If no clients, unsubscribe from the channel
             if *count_of_subscribed_clients <= 0 {
                 pubsub_cmd!("unsubscribe", self, change.timeline.clone());
-            }
-            if need_to_subscribe {
+            } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
                 pubsub_cmd!("subscribe", self, change.timeline.clone());
             }
         }

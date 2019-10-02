@@ -1,4 +1,5 @@
 use super::receiver::Receiver;
+use crate::config;
 use futures::{Async, Poll};
 use serde_json::Value;
 use std::io::Read;
@@ -22,7 +23,16 @@ impl<'a> AsyncReadableStream<'a> {
         let mut async_stream = AsyncReadableStream::new(&mut receiver.pubsub_connection);
 
         if let Async::Ready(num_bytes_read) = async_stream.poll_read(&mut buffer).unwrap() {
-            let raw_redis_response = async_stream.to_utf8(buffer, num_bytes_read);
+            let raw_redis_response = async_stream.as_utf8(buffer, num_bytes_read);
+            if raw_redis_response.starts_with("-NOAUTH") {
+                eprintln!(
+                    r"Invalid authentication for Redis.
+Do you need a password?
+If so, set it with the REDIS_PASSWORD environmental variable"
+                );
+                std::process::exit(1);
+            }
+
             receiver.incoming_raw_msg.push_str(&raw_redis_response);
 
             // Only act if we have a full message (end on a msg boundary)
@@ -31,16 +41,22 @@ impl<'a> AsyncReadableStream<'a> {
             };
             let mut msg = RedisMsg::from_raw(&receiver.incoming_raw_msg);
 
+            let prefix_to_skip = match &*config::REDIS_NAMESPACE {
+                Some(namespace) => format!("{}:timeline:", namespace),
+                None => "timeline:".to_string(),
+            };
+
             while !msg.raw.is_empty() {
                 let command = msg.next_field();
                 match command.as_str() {
                     "message" => {
-                        let timeline = &msg.next_field()["timeline:".len()..];
+                        let timeline = &msg.next_field()[prefix_to_skip.len()..];
                         let msg_txt = &msg.next_field();
                         let msg_value: Value = match serde_json::from_str(msg_txt) {
                             Ok(v) => v,
                             Err(e) => panic!("Unparseable json {}\n\n{}", msg_txt, e),
                         };
+                        dbg!(&timeline);
                         for msg_queue in receiver.msg_queues.values_mut() {
                             if msg_queue.redis_channel == timeline {
                                 msg_queue.messages.push_back(msg_value.clone());
@@ -62,12 +78,12 @@ impl<'a> AsyncReadableStream<'a> {
         }
     }
 
-    fn to_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {
+    fn as_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {
         String::from_utf8(cur_buffer[..size].to_vec()).unwrap_or_else(|_| {
             let mut new_buffer = vec![0u8; 1];
             self.poll_read(&mut new_buffer).unwrap();
             let buffer = ([cur_buffer, new_buffer]).concat();
-            self.to_utf8(buffer, size + 1)
+            self.as_utf8(buffer, size + 1)
         })
     }
 }
