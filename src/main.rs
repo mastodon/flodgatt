@@ -1,8 +1,7 @@
 use flodgatt::{
     config, err,
     parse_client_request::{sse, user, ws},
-    redis_to_client_stream,
-    redis_to_client_stream::ClientAgent,
+    redis_to_client_stream::{self, ClientAgent},
 };
 use log::warn;
 use warp::{ws::Ws2, Filter as WarpFilter};
@@ -11,11 +10,12 @@ fn main() {
     config::logging_and_env();
     let client_agent_sse = ClientAgent::blank();
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
+    let pg_conn = user::PostgresConn::new();
 
     warn!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
-    let sse_routes = sse::extract_user_or_reject()
+    let sse_routes = sse::extract_user_or_reject(pg_conn.clone())
         .and(warp::sse())
         .map(
             move |user: user::User, sse_connection_to_client: warp::sse::Sse| {
@@ -31,7 +31,7 @@ fn main() {
         .recover(err::handle_errors);
 
     // WebSocket
-    let websocket_routes = ws::extract_user_or_reject()
+    let websocket_routes = ws::extract_user_or_reject(pg_conn.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
             let token = user.access_token.clone();

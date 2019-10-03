@@ -1,7 +1,9 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
-use super::{query, query::Query, user::User};
+use super::{
+    query::{self, Query},
+    user::{PostgresConn, User},
+};
 use warp::{filters::BoxedFilter, path, Filter};
-
 #[allow(dead_code)]
 type TimelineUser = ((String, User),);
 
@@ -37,7 +39,7 @@ macro_rules! parse_query {
             .boxed()
     };
 }
-pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
     any_of!(
         parse_query!(
             path => "api" / "v1" / "streaming" / "user" / "notification"
@@ -65,14 +67,14 @@ pub fn extract_user_or_reject() -> BoxedFilter<(User,)> {
     // parameter, we need to update our Query if the header has a token
     .and(query::OptionalAccessToken::from_sse_header())
     .and_then(Query::update_access_token)
-    .and_then(User::from_query)
+    .and_then(move |q| User::from_query(q, pg_conn.clone()))
     .boxed()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parse_client_request::user::{Filter, OauthScope};
+    use crate::parse_client_request::user::{Filter, OauthScope, PostgresConn};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
@@ -81,9 +83,10 @@ mod test {
         }) => {
             #[test]
             fn $name() {
+                let pg_conn = PostgresConn::new();
                 let user = warp::test::request()
                     .path($path)
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn))
                     .expect("in test");
                 assert_eq!(user, $user);
             }
@@ -98,16 +101,17 @@ mod test {
             #[test]
             fn $name() {
                 let  path = format!("{}?access_token=TEST_USER", $path);
+                let pg_conn = PostgresConn::new();
                 $(let path = format!("{}&{}", path, $query);)*
                     let  user = warp::test::request()
                     .path(&path)
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn.clone()))
                     .expect("in test");
                 assert_eq!(user, $user);
                 let user = warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: TEST_USER")
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn))
                     .expect("in test");
                 assert_eq!(user, $user);
             }
@@ -123,9 +127,10 @@ mod test {
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
+                let pg_conn = PostgresConn::new();
                 warp::test::request()
                     .path(&path)
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn))
                     .expect("in test");
             }
         };
@@ -140,10 +145,12 @@ mod test {
             fn $name() {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
+
+                let pg_conn = PostgresConn::new();
                 warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: INVALID")
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn))
                     .expect("in test");
             }
         };
@@ -158,9 +165,10 @@ mod test {
             fn $name() {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
+                let pg_conn = PostgresConn::new();
                 warp::test::request()
                     .path(&path)
-                    .filter(&extract_user_or_reject())
+                    .filter(&extract_user_or_reject(pg_conn))
                     .expect("in test");
             }
         };
@@ -429,10 +437,10 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
+        let pg_conn = PostgresConn::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
-            .filter(&extract_user_or_reject())
+            .filter(&extract_user_or_reject(pg_conn))
             .expect("in test");
     }
-
 }

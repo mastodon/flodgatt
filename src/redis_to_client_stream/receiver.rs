@@ -1,7 +1,7 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
-use super::{redis_cmd, redis_stream};
+use super::{redis_cmd, redis_stream, redis_stream::RedisConn};
 use crate::{config, pubsub_cmd};
 use futures::{Async, Poll};
 use serde_json::Value;
@@ -14,6 +14,7 @@ use uuid::Uuid;
 pub struct Receiver {
     pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
+    pub redis_namespace: Option<String>,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
@@ -26,10 +27,16 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn new() -> Self {
-        let (pubsub_connection, secondary_redis_connection) = config::redis_addr();
+        let RedisConn {
+            primary: pubsub_connection,
+            secondary: secondary_redis_connection,
+            namespace: redis_namespace,
+        } = RedisConn::new();
+
         Self {
             pubsub_connection,
             secondary_redis_connection,
+            redis_namespace,
             redis_polled_at: time::Instant::now(),
             timeline: String::new(),
             manager_id: Uuid::default(),
