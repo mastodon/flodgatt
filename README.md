@@ -11,7 +11,17 @@ A blazingly fast drop-in replacement for the Mastodon streaming API server.
 
 Starting from version 0.3, Flóðgátt can be installed for Linux by installing the pre-built binaries released on GitHub.  Simply download the binary (extracting it if necessary), set it to executable (`chmod +x`) and run it.  Note that you will likely need to configure the Postgres connection before you can successfully connect.
 
-### Configuring
+### Configuration Examples
+
+If you are running Mastodon with its [standard Development settings](https://docs.joinmastodon.org/development/overview/), then you should be able to run `flodgatt` without any configuration.  (You will, of course, need to ensure that the Node streaming server is not running at the same time as Flodgatt.  If you normally run the development servers with `foreman start`, you should edit the `Procfile.dev` file to remove the line that starts the Node server).  You will likely wish to use the environmental variable `RUST_LOG=warn` to enable debugging warnings.
+
+If you are running Mastodon with its standard Production settings and connect to Postgres with the Ident authentication method, then you can use the following procedure to launch Flodgatt.
+ * Change to the user that satisfies the Ident requirement (typically "mastodon" with default settints).  For example: `su mastodon`
+ * Use environmental variables to set the user, database, and host names.  For example: `DB_NAME="mastodon_production" DB_USER="mastodon" DB_HOST="/var/run/postgresql" RUST_LOG=warn flodgatt`
+ 
+If you have any difficulty connecting, note that, if run with `RUST_LOG=warn` Flodgatt will print the parsed configuration variables it thinks that you passed to it.  You can use this info to debug the connection.
+
+### Advanced Configuration
 
 The streaming server will eventually uses the same environment variables as the rest of Mastodon, and currently uses a subset of those variables.  Supported variables are listed in `/src/config.rs`.  Supported environmental variables either be passed to Flóðgátt at runtime or through a `.env` file.
 
