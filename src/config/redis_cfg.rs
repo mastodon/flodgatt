@@ -1,4 +1,4 @@
-use crate::err;
+use crate::{err, maybe_update};
 use url::Url;
 
 fn none_if_empty(item: &str) -> Option<String> {
@@ -16,6 +16,7 @@ pub struct RedisConfig {
     pub port: String,
     pub host: String,
     pub db: Option<String>,
+    pub namespace: Option<String>,
 }
 impl Default for RedisConfig {
     fn default() -> Self {
@@ -25,6 +26,7 @@ impl Default for RedisConfig {
             db: None,
             port: "6379".to_string(),
             host: "127.0.0.1".to_string(),
+            namespace: None,
         }
     }
 }
@@ -43,20 +45,12 @@ impl RedisConfig {
             user: none_if_empty(url.username()),
             host: err::unwrap_or_die(url.host_str(), "Missing or invalid host in REDIS_URL"),
             port: err::unwrap_or_die(url.port(), "Missing or invalid port in REDIS_URL"),
+            namespace: None,
             password,
             db,
         }
     }
-    pub fn maybe_update_host(self, host: Option<String>) -> Self {
-        match host {
-            Some(host) => Self { host, ..self },
-            _ => Self { ..self },
-        }
-    }
-    pub fn maybe_update_port(self, port: Option<String>) -> Self {
-        match port {
-            Some(port) => Self { port, ..self },
-            _ => Self { ..self },
-        }
-    }
+    maybe_update!(maybe_update_host; host);
+    maybe_update!(maybe_update_port; port);
+    maybe_update!(maybe_update_namespace; Some(namespace));
 }

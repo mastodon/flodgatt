@@ -26,8 +26,6 @@ const DEFAULT_WS_UPDATE_INTERVAL: u64 = 100;
 const DEFAULT_REDIS_POLL_INTERVAL: u64 = 100;
 
 lazy_static! {
-    pub static ref REDIS_NAMESPACE: Option<String> =  env::var("REDIS_NAMESPACE").ok();
-
     pub static ref SERVER_ADDR: net::SocketAddr = env::var("SERVER_ADDR")
         .unwrap_or_else(|_| DEFAULT_SERVER_ADDR.to_owned())
         .parse()
@@ -78,7 +76,7 @@ pub fn postgres() -> postgres::Client {
             .maybe_update_user(env::var("USER").ok())
             .maybe_update_user(env::var("DB_USER").ok())
             .maybe_update_host(env::var("DB_HOST").ok())
-            .maybe_update_pass(env::var("DB_PASS").ok())
+            .maybe_update_password(env::var("DB_PASS").ok())
             .maybe_update_db(env::var("DB_NAME").ok())
             .maybe_update_sslmode(env::var("DB_SSLMODE").ok()),
     };
@@ -100,7 +98,7 @@ pub fn postgres() -> postgres::Client {
 }
 
 /// Configure Redis and return a pair of connections
-pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
+pub fn redis() -> (net::TcpStream, net::TcpStream, Option<String>) {
     let redis_cfg = match &env::var("REDIS_URL") {
         Ok(url) => {
             warn!("REDIS_URL env variable set.  Connecting to Redis with that URL and ignoring any values set in REDIS_HOST or DB_PORT.");
@@ -109,7 +107,8 @@ pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
         Err(_) => RedisConfig::default()
             .maybe_update_host(env::var("REDIS_HOST").ok())
             .maybe_update_port(env::var("REDIS_PORT").ok()),
-    };
+    }.maybe_update_namespace(env::var("REDIS_NAMESPACE").ok());
+
     log::warn!(
         "Connecting to Redis with the following configuration:\n{:#?}",
         &redis_cfg
@@ -153,5 +152,26 @@ pub fn redis_addr() -> (net::TcpStream, net::TcpStream) {
             .unwrap();
     }
 
-    (pubsub_connection, secondary_redis_connection)
+    (
+        pubsub_connection,
+        secondary_redis_connection,
+        redis_cfg.namespace,
+    )
 }
+
+#[macro_export]
+macro_rules! maybe_update {
+    ($name:ident; $item: tt) => (
+        pub fn $name(self, item: Option<String>) -> Self{
+            match item {
+                Some($item) => Self{ $item, ..self },
+                None => Self { ..self }
+            }
+        });
+    ($name:ident; Some($item: tt)) => (
+        pub fn $name(self, item: Option<String>) -> Self{
+            match item {
+                Some($item) => Self{ $item: Some($item), ..self },
+                None => Self { ..self }
+            }
+        })}

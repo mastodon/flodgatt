@@ -1,5 +1,4 @@
 use super::receiver::Receiver;
-use crate::config;
 use futures::{Async, Poll};
 use serde_json::Value;
 use std::io::Read;
@@ -41,7 +40,7 @@ If so, set it with the REDIS_PASSWORD environmental variable"
             };
             let mut msg = RedisMsg::from_raw(&receiver.incoming_raw_msg);
 
-            let prefix_to_skip = match &*config::REDIS_NAMESPACE {
+            let prefix_to_skip = match &receiver.redis_namespace {
                 Some(namespace) => format!("{}:timeline:", namespace),
                 None => "timeline:".to_string(),
             };

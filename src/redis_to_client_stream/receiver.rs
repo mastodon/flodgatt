@@ -14,6 +14,7 @@ use uuid::Uuid;
 pub struct Receiver {
     pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
+    pub redis_namespace: Option<String>,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
@@ -26,10 +27,11 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn new() -> Self {
-        let (pubsub_connection, secondary_redis_connection) = config::redis_addr();
+        let (pubsub_connection, secondary_redis_connection, redis_namespace) = config::redis();
         Self {
             pubsub_connection,
             secondary_redis_connection,
+            redis_namespace,
             redis_polled_at: time::Instant::now(),
             timeline: String::new(),
             manager_id: Uuid::default(),

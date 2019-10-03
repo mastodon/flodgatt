@@ -1,4 +1,4 @@
-use crate::err;
+use crate::{err, maybe_update};
 use url::Url;
 
 #[derive(Debug)]
@@ -26,14 +26,6 @@ impl Default for PostgresConfig {
 fn none_if_empty(item: &str) -> Option<String> {
     Some(item).filter(|i| !i.is_empty()).map(String::from)
 }
-macro_rules! maybe_update {
-    ( $name:ident; $item: tt ) => (
-        pub fn $name(self, item: Option<String>) -> Self{
-            match item {
-                Some($item) => Self{ $item, ..self },
-                _ => Self { ..self }
-            }
-        })}
 
 impl PostgresConfig {
     maybe_update!(maybe_update_user; user);
@@ -41,15 +33,7 @@ impl PostgresConfig {
     maybe_update!(maybe_update_db; database);
     maybe_update!(maybe_update_port; port);
     maybe_update!(maybe_update_sslmode; ssl_mode);
-    pub fn maybe_update_pass(self, pass: Option<String>) -> Self {
-        match pass {
-            Some(password) => Self {
-                password: Some(password),
-                ..self
-            },
-            _ => Self { ..self },
-        }
-    }
+    maybe_update!(maybe_update_password; Some(password));
 
     pub fn from_url(url: Url) -> Self {
         let (mut user, mut host, mut sslmode, mut password) = (None, None, None, None);
@@ -66,13 +50,13 @@ impl PostgresConfig {
         Self::default()
             // Values from query parameter
             .maybe_update_user(user)
-            .maybe_update_pass(password)
+            .maybe_update_password(password)
             .maybe_update_host(host)
             .maybe_update_sslmode(sslmode)
             // Values from URL (which override query values if both are present)
             .maybe_update_user(none_if_empty(url.username()))
             .maybe_update_host(url.host_str().filter(|h| !h.is_empty()).map(String::from))
-            .maybe_update_pass(url.password().map(String::from))
+            .maybe_update_password(url.password().map(String::from))
             .maybe_update_port(url.port().map(|port_num| port_num.to_string()))
             .maybe_update_db(none_if_empty(&url.path()[1..]))
     }
