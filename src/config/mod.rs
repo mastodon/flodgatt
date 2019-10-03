@@ -3,7 +3,7 @@
 //! the variable at runtime or in the `.env` file)
 mod postgres_cfg;
 mod redis_cfg;
-use self::{postgres_cfg::PostgresConfig, redis_cfg::RedisConfig};
+pub use self::{postgres_cfg::PostgresConfig, redis_cfg::RedisConfig};
 use crate::redis_to_client_stream::redis_cmd;
 use dotenv::dotenv;
 use lazy_static::lazy_static;
@@ -60,7 +60,7 @@ pub fn logging_and_env() {
 }
 
 /// Configure Postgres and return a connection
-pub fn postgres() -> postgres::Client {
+pub fn postgres() -> PostgresConfig {
     // use openssl::ssl::{SslConnector, SslMethod};
     // use postgres_openssl::MakeTlsConnector;
     // let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
@@ -84,17 +84,7 @@ pub fn postgres() -> postgres::Client {
         "Connecting to Postgres with the following configuration:\n{:#?}",
         &pg_cfg
     );
-
-    let mut con = postgres::Client::configure();
-    con.user(&pg_cfg.user)
-        .host(&pg_cfg.host)
-        .port(pg_cfg.port.parse::<u16>().unwrap())
-        .dbname(&pg_cfg.database);
-    if let Some(password) = &pg_cfg.password {
-        con.password(password);
-    };
-    con.connect(postgres::NoTls)
-        .expect("Can connect to local Postgres")
+    pg_cfg
 }
 
 /// Configure Redis and return a pair of connections

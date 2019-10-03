@@ -1,7 +1,8 @@
 //! Filters for the WebSocket endpoint
-use super::{query, query::Query, user::User};
-use ::postgres;
-use std::sync::{Arc, Mutex};
+use super::{
+    query::{self, Query},
+    user::{PostgresConn, User},
+};
 use warp::{filters::BoxedFilter, path, Filter};
 
 /// WebSocket filters
@@ -31,7 +32,7 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_or_reject(pg_conn: Arc<Mutex<postgres::Client>>) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
@@ -41,11 +42,7 @@ pub fn extract_user_or_reject(pg_conn: Arc<Mutex<postgres::Client>>) -> BoxedFil
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        config,
-        parse_client_request::user::{Filter, OauthScope},
-    };
-    use std::sync::{Arc, Mutex};
+    use crate::parse_client_request::user::{Filter, OauthScope};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
@@ -54,7 +51,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let pg_conn = Arc::new(Mutex::new(config::postgres()));
+                let pg_conn = PostgresConn::new();
                 let user = warp::test::request()
                     .path($path)
                     .header("connection", "upgrade")
@@ -74,7 +71,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let pg_conn = Arc::new(Mutex::new(config::postgres()));
+                let pg_conn = PostgresConn::new();
                 let path = format!("{}&access_token=TEST_USER", $path);
                 let user = warp::test::request()
                     .path(&path)
@@ -98,7 +95,7 @@ mod test {
 
             fn $name() {
                 let path = format!("{}&access_token=INVALID", $path);
-                let pg_conn = Arc::new(Mutex::new(config::postgres()));
+                let pg_conn = PostgresConn::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(pg_conn))
@@ -114,7 +111,7 @@ mod test {
             #[should_panic(expected = "Error: Missing access token")]
             fn $name() {
                 let path = $path;
-                let pg_conn = Arc::new(Mutex::new(config::postgres()));
+                let pg_conn = PostgresConn::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(pg_conn))
@@ -318,7 +315,7 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
-        let pg_conn = Arc::new(Mutex::new(config::postgres()));
+        let pg_conn = PostgresConn::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
             .header("connection", "upgrade")

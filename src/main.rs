@@ -1,18 +1,16 @@
 use flodgatt::{
     config, err,
     parse_client_request::{sse, user, ws},
-    redis_to_client_stream,
-    redis_to_client_stream::ClientAgent,
+    redis_to_client_stream::{self, ClientAgent},
 };
 use log::warn;
-use std::sync::{Arc, Mutex};
 use warp::{ws::Ws2, Filter as WarpFilter};
 
 fn main() {
     config::logging_and_env();
     let client_agent_sse = ClientAgent::blank();
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
-    let pg_conn = Arc::new(Mutex::new(config::postgres()));
+    let pg_conn = user::PostgresConn::new();
 
     warn!("Streaming server initialized and ready to accept connections");
 

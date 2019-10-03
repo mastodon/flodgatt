@@ -1,13 +1,34 @@
 //! Postgres queries
+use crate::config;
 use ::postgres;
 use std::sync::{Arc, Mutex};
+
+#[derive(Clone)]
+pub struct PostgresConn(pub Arc<Mutex<postgres::Client>>);
+impl PostgresConn {
+    pub fn new() -> Self {
+        let pg_cfg = config::postgres();
+        let mut con = postgres::Client::configure();
+        con.user(&pg_cfg.user)
+            .host(&pg_cfg.host)
+            .port(pg_cfg.port.parse::<u16>().unwrap())
+            .dbname(&pg_cfg.database);
+        if let Some(password) = &pg_cfg.password {
+            con.password(password);
+        };
+        Self(Arc::new(Mutex::new(
+            con.connect(postgres::NoTls)
+                .expect("Can connect to local Postgres"),
+        )))
+    }
+}
 
 #[cfg(not(test))]
 pub fn query_for_user_data(
     access_token: &str,
-    pg_conn: Arc<Mutex<postgres::Client>>,
+    pg_conn: PostgresConn,
 ) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let mut conn = pg_conn.lock().unwrap();
+    let mut conn = pg_conn.0.lock().unwrap();
 
     let query_result = conn
             .query(
@@ -57,8 +78,8 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
 }
 
 #[cfg(not(test))]
-pub fn query_list_owner(list_id: i64, pg_conn: Arc<Mutex<postgres::Client>>) -> Option<i64> {
-    let mut conn = pg_conn.lock().unwrap();
+pub fn query_list_owner(list_id: i64, pg_conn: PostgresConn) -> Option<i64> {
+    let mut conn = pg_conn.0.lock().unwrap();
     // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
         .query(

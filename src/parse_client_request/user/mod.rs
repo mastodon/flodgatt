@@ -5,9 +5,8 @@ mod mock_postgres;
 use mock_postgres as postgres;
 #[cfg(not(test))]
 mod postgres;
+pub use self::postgres::PostgresConn;
 use super::query::Query;
-use ::postgres::Client as PgClient;
-use std::sync::{Arc, Mutex};
 use warp::reject::Rejection;
 
 /// The filters that can be applied to toots after they come from Redis
@@ -59,7 +58,7 @@ impl From<Vec<String>> for OauthScope {
 }
 
 impl User {
-    pub fn from_query(q: Query, pg_conn: Arc<Mutex<PgClient>>) -> Result<Self, Rejection> {
+    pub fn from_query(q: Query, pg_conn: PostgresConn) -> Result<Self, Rejection> {
         let (id, access_token, scopes, langs, logged_in) = match q.access_token.clone() {
             None => (
                 -1,
@@ -96,7 +95,7 @@ impl User {
     fn update_timeline_and_filter(
         mut self,
         q: Query,
-        pg_conn: Arc<Mutex<PgClient>>,
+        pg_conn: PostgresConn,
     ) -> Result<Self, Rejection> {
         let read_scope = self.scopes.clone();
 
@@ -140,7 +139,7 @@ impl User {
     }
 
     /// Determine whether the User is authorised for a specified list
-    pub fn owns_list(&self, list: i64, pg_conn: Arc<Mutex<PgClient>>) -> bool {
+    pub fn owns_list(&self, list: i64, pg_conn: PostgresConn) -> bool {
         match postgres::query_list_owner(list, pg_conn) {
             Some(i) if i == self.id => true,
             _ => false,
