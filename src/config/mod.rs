@@ -4,11 +4,10 @@
 mod postgres_cfg;
 mod redis_cfg;
 pub use self::{postgres_cfg::PostgresConfig, redis_cfg::RedisConfig};
-use crate::redis_to_client_stream::redis_cmd;
 use dotenv::dotenv;
 use lazy_static::lazy_static;
 use log::warn;
-use std::{env, io::Write, net, time};
+use std::{env, net};
 use url::Url;
 
 const CORS_ALLOWED_METHODS: [&str; 2] = ["GET", "OPTIONS"];
@@ -88,7 +87,7 @@ pub fn postgres() -> PostgresConfig {
 }
 
 /// Configure Redis and return a pair of connections
-pub fn redis() -> (net::TcpStream, net::TcpStream, Option<String>) {
+pub fn redis() -> RedisConfig {
     let redis_cfg = match &env::var("REDIS_URL") {
         Ok(url) => {
             warn!("REDIS_URL env variable set.  Connecting to Redis with that URL and ignoring any values set in REDIS_HOST or DB_PORT.");
@@ -98,55 +97,17 @@ pub fn redis() -> (net::TcpStream, net::TcpStream, Option<String>) {
             .maybe_update_host(env::var("REDIS_HOST").ok())
             .maybe_update_port(env::var("REDIS_PORT").ok()),
     }.maybe_update_namespace(env::var("REDIS_NAMESPACE").ok());
-
-    log::warn!(
-        "Connecting to Redis with the following configuration:\n{:#?}",
-        &redis_cfg
-    );
-
-    let addr = format!("{}:{}", redis_cfg.host, redis_cfg.port);
     if let Some(user) = &redis_cfg.user {
         log::error!(
             "Username {} provided, but Redis does not need a username.  Ignoring it",
             user
         );
     };
-    let mut pubsub_connection =
-        net::TcpStream::connect(addr.clone()).expect("Can connect to Redis");
-    pubsub_connection
-        .set_read_timeout(Some(time::Duration::from_millis(10)))
-        .expect("Can set read timeout for Redis connection");
-    pubsub_connection
-        .set_nonblocking(true)
-        .expect("set_nonblocking call failed");
-    let mut secondary_redis_connection =
-        net::TcpStream::connect(addr).expect("Can connect to Redis");
-    secondary_redis_connection
-        .set_read_timeout(Some(time::Duration::from_millis(10)))
-        .expect("Can set read timeout for Redis connection");
-    if let Some(password) = redis_cfg.password {
-        pubsub_connection
-            .write_all(&redis_cmd::cmd("auth", &password))
-            .unwrap();
-        secondary_redis_connection
-            .write_all(&redis_cmd::cmd("auth", password))
-            .unwrap();
-    }
-
-    if let Some(db) = redis_cfg.db {
-        pubsub_connection
-            .write_all(&redis_cmd::cmd("SELECT", &db))
-            .unwrap();
-        secondary_redis_connection
-            .write_all(&redis_cmd::cmd("SELECT", &db))
-            .unwrap();
-    }
-
-    (
-        pubsub_connection,
-        secondary_redis_connection,
-        redis_cfg.namespace,
-    )
+    log::warn!(
+        "Connecting to Redis with the following configuration:\n{:#?}",
+        &redis_cfg
+    );
+    redis_cfg
 }
 
 #[macro_export]

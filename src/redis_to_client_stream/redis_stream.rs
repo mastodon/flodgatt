@@ -1,9 +1,57 @@
 use super::receiver::Receiver;
+use crate::{config, redis_to_client_stream::redis_cmd};
 use futures::{Async, Poll};
 use serde_json::Value;
-use std::io::Read;
-use std::net;
+use std::{io::Read, io::Write, net, time};
 use tokio::io::AsyncRead;
+
+pub struct RedisConn {
+    pub primary: net::TcpStream,
+    pub secondary: net::TcpStream,
+    pub namespace: Option<String>,
+}
+impl RedisConn {
+    pub fn new() -> Self {
+        let redis_cfg = config::redis();
+        let addr = format!("{}:{}", redis_cfg.host, redis_cfg.port);
+        let mut pubsub_connection =
+            net::TcpStream::connect(addr.clone()).expect("Can connect to Redis");
+        pubsub_connection
+            .set_read_timeout(Some(time::Duration::from_millis(10)))
+            .expect("Can set read timeout for Redis connection");
+        pubsub_connection
+            .set_nonblocking(true)
+            .expect("set_nonblocking call failed");
+        let mut secondary_redis_connection =
+            net::TcpStream::connect(addr).expect("Can connect to Redis");
+        secondary_redis_connection
+            .set_read_timeout(Some(time::Duration::from_millis(10)))
+            .expect("Can set read timeout for Redis connection");
+        if let Some(password) = redis_cfg.password {
+            pubsub_connection
+                .write_all(&redis_cmd::cmd("auth", &password))
+                .unwrap();
+            secondary_redis_connection
+                .write_all(&redis_cmd::cmd("auth", password))
+                .unwrap();
+        }
+
+        if let Some(db) = redis_cfg.db {
+            pubsub_connection
+                .write_all(&redis_cmd::cmd("SELECT", &db))
+                .unwrap();
+            secondary_redis_connection
+                .write_all(&redis_cmd::cmd("SELECT", &db))
+                .unwrap();
+        }
+
+        Self {
+            primary: pubsub_connection,
+            secondary: secondary_redis_connection,
+            namespace: redis_cfg.namespace,
+        }
+    }
+}
 
 pub struct AsyncReadableStream<'a>(&'a mut net::TcpStream);
 
