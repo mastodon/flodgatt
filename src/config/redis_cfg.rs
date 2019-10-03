@@ -31,11 +31,11 @@ impl Default for RedisConfig {
 impl RedisConfig {
     pub fn from_url(url: Url) -> Self {
         let mut password = url.password().as_ref().map(|str| str.to_string());
-        let mut db = none_if_empty(url.path());
+        let mut db = none_if_empty(&url.path()[1..]);
         for (k, v) in url.query_pairs() {
             match k.to_string().as_str() {
                 "password" => { password = Some(v.to_string());},
-                "db" => { db = Some(v.to_string())}
+                "db" => { db = Some(v.to_string())},
                 _ => { err::die_with_msg(format!("Unsupported parameter {} in REDIS_URL.\n   Flodgatt supports only `password` and `db` parameters.", k))}
                 }
         }
