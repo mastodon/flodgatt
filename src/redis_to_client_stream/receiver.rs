@@ -1,8 +1,8 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
-use super::{redis_cmd, redis_stream, redis_stream::RedisConn};
-use crate::{config, pubsub_cmd};
+use super::{config, redis_cmd, redis_stream, redis_stream::RedisConn};
+use crate::pubsub_cmd;
 use futures::{Async, Poll};
 use serde_json::Value;
 use std::{collections, net, time};
@@ -15,6 +15,7 @@ pub struct Receiver {
     pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
     pub redis_namespace: Option<String>,
+    redis_poll_interval: time::Duration,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
@@ -26,17 +27,19 @@ pub struct Receiver {
 impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-    pub fn new() -> Self {
+    pub fn new(redis_cfg: config::RedisConfig) -> Self {
         let RedisConn {
             primary: pubsub_connection,
             secondary: secondary_redis_connection,
             namespace: redis_namespace,
-        } = RedisConn::new();
+            polling_interval: redis_poll_interval,
+        } = RedisConn::new(redis_cfg);
 
         Self {
             pubsub_connection,
             secondary_redis_connection,
             redis_namespace,
+            redis_poll_interval,
             redis_polled_at: time::Instant::now(),
             timeline: String::new(),
             manager_id: Uuid::default(),
@@ -123,12 +126,6 @@ impl Receiver {
     }
 }
 
-impl Default for Receiver {
-    fn default() -> Self {
-        Receiver::new()
-    }
-}
-
 /// The stream that the ClientAgent polls to learn about new messages.
 impl futures::stream::Stream for Receiver {
     type Item = Value;
@@ -142,9 +139,7 @@ impl futures::stream::Stream for Receiver {
     /// been polled lately.
     fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
         let timeline = self.timeline.clone();
-        if self.redis_polled_at.elapsed()
-            > time::Duration::from_millis(*config::REDIS_POLL_INTERVAL)
-        {
+        if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             redis_stream::AsyncReadableStream::poll_redis(self);
             self.redis_polled_at = time::Instant::now();
         }

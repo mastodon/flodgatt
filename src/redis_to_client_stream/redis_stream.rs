@@ -9,10 +9,10 @@ pub struct RedisConn {
     pub primary: net::TcpStream,
     pub secondary: net::TcpStream,
     pub namespace: Option<String>,
+    pub polling_interval: time::Duration,
 }
 impl RedisConn {
-    pub fn new() -> Self {
-        let redis_cfg = config::redis();
+    pub fn new(redis_cfg: config::RedisConfig) -> Self {
         let addr = format!("{}:{}", redis_cfg.host, redis_cfg.port);
         let mut pubsub_connection =
             net::TcpStream::connect(addr.clone()).expect("Can connect to Redis");
@@ -49,6 +49,7 @@ impl RedisConn {
             primary: pubsub_connection,
             secondary: secondary_redis_connection,
             namespace: redis_cfg.namespace,
+            polling_interval: redis_cfg.polling_interval,
         }
     }
 }

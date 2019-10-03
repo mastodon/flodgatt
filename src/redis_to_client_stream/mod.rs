@@ -14,18 +14,16 @@ use std::time;
 pub fn send_updates_to_sse(
     mut client_agent: ClientAgent,
     connection: warp::sse::Sse,
+    update_interval: time::Duration,
 ) -> impl warp::reply::Reply {
-    let event_stream = tokio::timer::Interval::new(
-        time::Instant::now(),
-        time::Duration::from_millis(*config::SSE_UPDATE_INTERVAL),
-    )
-    .filter_map(move |_| match client_agent.poll() {
-        Ok(Async::Ready(Some(json_value))) => Some((
-            warp::sse::event(json_value["event"].clone().to_string()),
-            warp::sse::data(json_value["payload"].clone()),
-        )),
-        _ => None,
-    });
+    let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
+        .filter_map(move |_| match client_agent.poll() {
+            Ok(Async::Ready(Some(json_value))) => Some((
+                warp::sse::event(json_value["event"].clone().to_string()),
+                warp::sse::data(json_value["payload"].clone()),
+            )),
+            _ => None,
+        });
 
     connection.reply(warp::sse::keep(event_stream, None))
 }
@@ -34,6 +32,7 @@ pub fn send_updates_to_sse(
 pub fn send_updates_to_ws(
     socket: warp::ws::WebSocket,
     mut stream: ClientAgent,
+    update_interval: time::Duration,
 ) -> impl futures::future::Future<Item = (), Error = ()> {
     let (ws_tx, mut ws_rx) = socket.split();
 
@@ -50,22 +49,19 @@ pub fn send_updates_to_ws(
     );
 
     // Yield new events for as long as the client is still connected
-    let event_stream = tokio::timer::Interval::new(
-        time::Instant::now(),
-        time::Duration::from_millis(*config::WS_UPDATE_INTERVAL),
-    )
-    .take_while(move |_| match ws_rx.poll() {
-        Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
-        Ok(Async::Ready(None)) => {
-            // TODO: consider whether we should manually drop closed connections here
-            log::info!("Client closed WebSocket connection");
-            futures::future::ok(false)
-        }
-        Err(e) => {
-            log::warn!("{}", e);
-            futures::future::ok(false)
-        }
-    });
+    let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
+        .take_while(move |_| match ws_rx.poll() {
+            Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
+            Ok(Async::Ready(None)) => {
+                // TODO: consider whether we should manually drop closed connections here
+                log::info!("Client closed WebSocket connection");
+                futures::future::ok(false)
+            }
+            Err(e) => {
+                log::warn!("{}", e);
+                futures::future::ok(false)
+            }
+        });
 
     // Every time you get an event from that stream, send it through the pipe
     event_stream

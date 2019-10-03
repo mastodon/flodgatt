@@ -5,12 +5,20 @@ pub fn die_with_msg(msg: impl Display) -> ! {
     eprintln!("FATAL ERROR: {}", msg);
     std::process::exit(1);
 }
-pub fn unwrap_or_die(s: Option<impl Display>, msg: &str) -> String {
+
+#[macro_export]
+macro_rules! dbg_and_die {
+    ($msg:expr) => {
+        let message = format!("FATAL ERROR: {}", $msg);
+        dbg!(message);
+        std::process::exit(1);
+    };
+}
+pub fn unwrap_or_die<T: Display>(s: Option<T>, msg: &str) -> T {
     s.unwrap_or_else(|| {
         eprintln!("FATAL ERROR: {}", msg);
         std::process::exit(1)
     })
-    .to_string()
 }
 
 #[derive(Serialize)]
