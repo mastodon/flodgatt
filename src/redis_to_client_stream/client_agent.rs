@@ -16,7 +16,7 @@
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).
 use super::receiver::Receiver;
-use crate::parse_client_request::user::User;
+use crate::{config, parse_client_request::user::User};
 use futures::{Async, Poll};
 use serde_json::{json, Value};
 use std::sync;
@@ -24,7 +24,7 @@ use tokio::io::Error;
 use uuid::Uuid;
 
 /// Struct for managing all Redis streams.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct ClientAgent {
     receiver: sync::Arc<sync::Mutex<Receiver>>,
     id: uuid::Uuid,
@@ -34,9 +34,9 @@ pub struct ClientAgent {
 
 impl ClientAgent {
     /// Create a new `ClientAgent` with no shared data.
-    pub fn blank() -> Self {
+    pub fn blank(redis_cfg: config::RedisConfig) -> Self {
         ClientAgent {
-            receiver: sync::Arc::new(sync::Mutex::new(Receiver::new())),
+            receiver: sync::Arc::new(sync::Mutex::new(Receiver::new(redis_cfg))),
             id: Uuid::default(),
             target_timeline: String::new(),
             current_user: User::default(),

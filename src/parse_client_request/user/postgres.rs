@@ -6,12 +6,11 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct PostgresConn(pub Arc<Mutex<postgres::Client>>);
 impl PostgresConn {
-    pub fn new() -> Self {
-        let pg_cfg = config::postgres();
+    pub fn new(pg_cfg: config::PostgresConfig) -> Self {
         let mut con = postgres::Client::configure();
         con.user(&pg_cfg.user)
             .host(&pg_cfg.host)
-            .port(pg_cfg.port.parse::<u16>().unwrap())
+            .port(pg_cfg.port)
             .dbname(&pg_cfg.database);
         if let Some(password) = &pg_cfg.password {
             con.password(password);
