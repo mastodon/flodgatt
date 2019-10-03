@@ -1,9 +1,13 @@
 //! Postgres queries
-use crate::config;
+use ::postgres;
+use std::sync::{Arc, Mutex};
 
 #[cfg(not(test))]
-pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let mut conn = config::postgres();
+pub fn query_for_user_data(
+    access_token: &str,
+    pg_conn: Arc<Mutex<postgres::Client>>,
+) -> (i64, Option<Vec<String>>, Vec<String>) {
+    let mut conn = pg_conn.lock().unwrap();
 
     let query_result = conn
             .query(
@@ -53,8 +57,8 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
 }
 
 #[cfg(not(test))]
-pub fn query_list_owner(list_id: i64) -> Option<i64> {
-    let mut conn = config::postgres();
+pub fn query_list_owner(list_id: i64, pg_conn: Arc<Mutex<postgres::Client>>) -> Option<i64> {
+    let mut conn = pg_conn.lock().unwrap();
     // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
         .query(

@@ -1,6 +1,11 @@
 //! Mock Postgres connection (for use in unit testing)
+use ::postgres;
+use std::sync::{Arc, Mutex};
 
-pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
+pub fn query_for_user_data(
+    access_token: &str,
+    _pg_conn: Arc<Mutex<postgres::Client>>,
+) -> (i64, Option<Vec<String>>, Vec<String>) {
     let (user_id, lang, scopes) = if access_token == "TEST_USER" {
         (
             1,
@@ -17,7 +22,7 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
     (user_id, lang, scopes)
 }
 
-pub fn query_list_owner(list_id: i64) -> Option<i64> {
+pub fn query_list_owner(list_id: i64, _pg_conn: Arc<Mutex<postgres::Client>>) -> Option<i64> {
     match list_id {
         1 => Some(1),
         _ => None,

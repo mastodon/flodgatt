@@ -6,6 +6,8 @@ use mock_postgres as postgres;
 #[cfg(not(test))]
 mod postgres;
 use super::query::Query;
+use ::postgres::Client as PgClient;
+use std::sync::{Arc, Mutex};
 use warp::reject::Rejection;
 
 /// The filters that can be applied to toots after they come from Redis
@@ -57,7 +59,7 @@ impl From<Vec<String>> for OauthScope {
 }
 
 impl User {
-    pub fn from_query(q: Query) -> Result<Self, Rejection> {
+    pub fn from_query(q: Query, pg_conn: Arc<Mutex<PgClient>>) -> Result<Self, Rejection> {
         let (id, access_token, scopes, langs, logged_in) = match q.access_token.clone() {
             None => (
                 -1,
@@ -67,7 +69,8 @@ impl User {
                 false,
             ),
             Some(token) => {
-                let (id, langs, scope_list) = postgres::query_for_user_data(&token);
+                let (id, langs, scope_list) =
+                    postgres::query_for_user_data(&token, pg_conn.clone());
                 if id == -1 {
                     return Err(warp::reject::custom("Error: Invalid access token"));
                 }
@@ -85,12 +88,16 @@ impl User {
             filter: Filter::Language,
         };
 
-        user = user.update_timeline_and_filter(q)?;
+        user = user.update_timeline_and_filter(q, pg_conn.clone())?;
 
         Ok(user)
     }
 
-    fn update_timeline_and_filter(mut self, q: Query) -> Result<Self, Rejection> {
+    fn update_timeline_and_filter(
+        mut self,
+        q: Query,
+        pg_conn: Arc<Mutex<PgClient>>,
+    ) -> Result<Self, Rejection> {
         let read_scope = self.scopes.clone();
 
         let timeline = match q.stream.as_ref() {
@@ -110,7 +117,7 @@ impl User {
                 format!("{}", self.id)
             }
             // List endpoint:
-            "list" if self.owns_list(q.list) && (read_scope.all || read_scope.lists) => {
+            "list" if self.owns_list(q.list, pg_conn) && (read_scope.all || read_scope.lists) => {
                 self.filter = Filter::NoFilter;
                 format!("list:{}", q.list)
             }
@@ -133,8 +140,8 @@ impl User {
     }
 
     /// Determine whether the User is authorised for a specified list
-    pub fn owns_list(&self, list: i64) -> bool {
-        match postgres::query_list_owner(list) {
+    pub fn owns_list(&self, list: i64, pg_conn: Arc<Mutex<PgClient>>) -> bool {
+        match postgres::query_list_owner(list, pg_conn) {
             Some(i) if i == self.id => true,
             _ => false,
         }

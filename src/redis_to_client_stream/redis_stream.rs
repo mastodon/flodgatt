@@ -56,7 +56,6 @@ If so, set it with the REDIS_PASSWORD environmental variable"
                             Ok(v) => v,
                             Err(e) => panic!("Unparseable json {}\n\n{}", msg_txt, e),
                         };
-                        dbg!(&timeline);
                         for msg_queue in receiver.msg_queues.values_mut() {
                             if msg_queue.redis_channel == timeline {
                                 msg_queue.messages.push_back(msg_value.clone());
