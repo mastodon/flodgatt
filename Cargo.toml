@@ -9,7 +9,7 @@ edition = "2018"
 log = "0.4.6"
 futures = "0.1.26"
 tokio = "0.1.19"
-warp = "0.1.15"
+warp = { path = "/home/dsock/src/warp"}
 serde_json = "1.0.39"
 serde_derive = "1.0.90"
 serde = "1.0.90"

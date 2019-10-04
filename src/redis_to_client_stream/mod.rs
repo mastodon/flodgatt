@@ -63,6 +63,8 @@ pub fn send_updates_to_ws(
             }
         });
 
+    let mut time = time::Instant::now();
+
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
@@ -70,6 +72,12 @@ pub fn send_updates_to_ws(
                 let msg = warp::ws::Message::text(json_value.to_string());
                 tx.unbounded_send(msg).expect("No send error");
             };
+            if time.elapsed() > time::Duration::from_secs(30) {
+                let msg = warp::ws::Message::ping(Vec::new());
+                tx.unbounded_send(msg).expect("Can ping");
+                println!("Sent empty ping");
+                time = time::Instant::now();
+            }
             Ok(())
         })
         .then(move |result| {
