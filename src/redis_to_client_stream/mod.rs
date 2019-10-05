@@ -25,7 +25,12 @@ pub fn send_updates_to_sse(
             _ => None,
         });
 
-    connection.reply(warp::sse::keep(event_stream, None))
+    connection.reply(
+        warp::sse::keep_alive()
+            .interval(time::Duration::from_secs(30))
+            .text("thump".to_string())
+            .stream(event_stream),
+    )
 }
 
 /// Send a stream of replies to a WebSocket client.
@@ -75,7 +80,6 @@ pub fn send_updates_to_ws(
             if time.elapsed() > time::Duration::from_secs(30) {
                 let msg = warp::ws::Message::ping(Vec::new());
                 tx.unbounded_send(msg).expect("Can ping");
-                println!("Sent empty ping");
                 time = time::Instant::now();
             }
             Ok(())
