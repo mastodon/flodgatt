@@ -1,5 +1,21 @@
 use serde_derive::Serialize;
 use std::fmt::Display;
+use std::str::FromStr;
+
+pub trait FromStrOrDie<T: FromStr> {
+    fn name_and_values() -> (&'static str, String);
+    fn from_str_or_die(s: &String) -> T {
+        T::from_str(s).unwrap_or_else(|_| {
+            die_with_msg(&format!(
+                "\"{}\" is an invalid value for {}\n             {} must be {}",
+                s,
+                Self::name_and_values().0,
+                Self::name_and_values().0,
+                Self::name_and_values().1,
+            ))
+        })
+    }
+}
 
 pub fn die_with_msg(msg: impl Display) -> ! {
     eprintln!("FATAL ERROR: {}", msg);
@@ -14,7 +30,7 @@ macro_rules! dbg_and_die {
         std::process::exit(1);
     };
 }
-pub fn unwrap_or_die<T: Display>(s: Option<T>, msg: &str) -> T {
+pub fn unwrap_or_die<T>(s: Option<T>, msg: &str) -> T {
     s.unwrap_or_else(|| {
         eprintln!("FATAL ERROR: {}", msg);
         std::process::exit(1)

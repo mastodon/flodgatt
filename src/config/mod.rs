@@ -2,6 +2,7 @@
 //! by an environmental variable of the same name without that prefix (either by setting
 //! the variable at runtime or in the `.env` file)
 mod deployment_cfg;
+mod deployment_cfg_types;
 mod postgres_cfg;
 mod redis_cfg;
 pub use self::{
