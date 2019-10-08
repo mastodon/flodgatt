@@ -79,9 +79,9 @@ fn main() {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
-    let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.inner);
+    let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
 
-    if let Some(_socket) = cfg.unix_socket.inner.as_ref() {
+    if let Some(_socket) = cfg.unix_socket.0.as_ref() {
         dbg_and_die!("Unix socket support not yet implemented");
     } else {
         warp::serve(websocket_routes.or(sse_routes).with(cors)).run(server_addr);

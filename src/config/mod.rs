@@ -2,8 +2,10 @@ mod deployment_cfg;
 mod deployment_cfg_types;
 mod postgres_cfg;
 mod redis_cfg;
+mod redis_cfg_types;
 pub use self::{
     deployment_cfg::DeploymentConfig, postgres_cfg::PostgresConfig, redis_cfg::RedisConfig,
+    redis_cfg_types::RedisInterval,
 };
 
 #[macro_export]
@@ -25,59 +27,39 @@ macro_rules! maybe_update {
 #[macro_export]
 macro_rules! from_env_var {
     ($(#[$outer:meta])*
-$name:ident {
-        inner: $inner:expr; $type:ty,
-        env_var: $env_var:tt,
-        allowed_values: $allowed_values:expr,
-    }
-     inner_from_str(|$arg:ident| $body:expr)
+     let name = $name:ident;
+     let default: $type:ty = $inner:expr;
+     let (env_var, allowed_values) = ($env_var:tt, $allowed_values:expr);
+     let from_str = |$arg:ident| $body:expr;
     ) => {
-        pub struct $name {
-            pub inner: $type,
-            pub env_var: String,
-            pub allowed_values: String,
-        }
+        pub struct $name(pub $type);
         impl std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{:?}", self.inner)
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{:?}", self.0)
             }
         }
         impl std::ops::Deref for $name {
             type Target = $type;
             fn deref(&self) -> &$type {
-                &self.inner
+                &self.0
             }
         }
         impl std::default::Default for $name {
             fn default() -> Self {
-                $name {
-                    inner: $inner,
-                    env_var: $env_var.to_string(),
-                    allowed_values: $allowed_values,
-                }
+                $name($inner)
             }
         }
         impl $name {
             fn inner_from_str($arg: &str) -> Option<$type> {
                 $body
             }
-            fn update_inner(&mut self, inner: $type) -> &Self {
-                self.inner = inner;
-                self
-            }
-            pub fn from_env_var_or_die(env: Option<&String>) -> Self {
-                let mut res = Self::default();
-                if let Some(value) = env {
-                    res.update_inner(Self::inner_from_str(value).unwrap_or_else(|| {
-                        eprintln!(
-                            "\"{}\" is not a valid value for {}.  {} must be {}",
-                            value, res.env_var, res.env_var, res.allowed_values
-                        );
-                        std::process::exit(1);
-                    }));
-                    res
+            pub fn maybe_update(self, var: Option<&String>) -> Self {
+                if let Some(value) = var {
+                    Self(Self::inner_from_str(value).unwrap_or_else(|| {
+                        crate::err::env_var_fatal($env_var, value, $allowed_values)
+                    }))
                 } else {
-                    res
+                    self
                 }
             }
         }
