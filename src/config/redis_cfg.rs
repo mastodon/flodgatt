@@ -14,6 +14,10 @@ pub struct RedisConfig {
     pub host: String,
     pub db: Option<String>,
     pub namespace: Option<String>,
+    // **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver`
+    //            (on the order of 1ms rather than 50μs).  Thus, changing this setting
+    //            would be a good place to start for performance improvements at the cost
+    //            of delaying all updates.
     pub polling_interval: Duration,
 }
 impl Default for RedisConfig {
