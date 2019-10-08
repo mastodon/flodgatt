@@ -23,41 +23,9 @@ macro_rules! maybe_update {
             }
         })}
 #[macro_export]
-macro_rules! derive_deref {
-    ($name:ident: $type:ty) => {
-        impl std::ops::Deref for $name {
-            type Target = $type;
-            fn deref(&self) -> &$type {
-                &self.0
-            }
-        }
-    };
-}
-#[macro_export]
-macro_rules! derive_oneline_debug {
-    ($item:ident) => {
-        impl std::fmt::Debug for $item {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{:?}", self.0)
-            }
-        }
-    };
-}
-#[macro_export]
-macro_rules! derive_from_str_or_die {
-    ($item:ident {name: $name:expr,
-                  value: $value:expr}) => {
-        impl FromStrOrDie<Self> for $item {
-            fn name_and_values() -> (&'static str, String) {
-                ($name, $value)
-            }
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! from_env_var {
-    ($name:ident {
+    ($(#[$outer:meta])*
+$name:ident {
         inner: $inner:expr; $type:ty,
         env_var: $env_var:tt,
         allowed_values: $allowed_values:expr,
@@ -80,6 +48,15 @@ macro_rules! from_env_var {
                 &self.inner
             }
         }
+        impl std::default::Default for $name {
+            fn default() -> Self {
+                $name {
+                    inner: $inner,
+                    env_var: $env_var.to_string(),
+                    allowed_values: $allowed_values,
+                }
+            }
+        }
         impl $name {
             fn inner_from_str($arg: &str) -> Option<$type> {
                 $body
@@ -87,13 +64,6 @@ macro_rules! from_env_var {
             fn update_inner(&mut self, inner: $type) -> &Self {
                 self.inner = inner;
                 self
-            }
-            pub fn default() -> Self {
-                $name {
-                    inner: $inner,
-                    env_var: $env_var.to_string(),
-                    allowed_values: $allowed_values,
-                }
             }
             pub fn from_env_var_or_die(env: Option<&String>) -> Self {
                 let mut res = Self::default();
