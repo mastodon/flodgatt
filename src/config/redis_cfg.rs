@@ -23,7 +23,7 @@ impl RedisConfig {
 For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
     pub fn from_env(env: EnvVar) -> Self {
-        let env = match env.get("REDIS_URL").map(|s| s.clone()) {
+        let env = match env.get("REDIS_URL").cloned() {
             Some(url_str) => env.update_with_url(&url_str),
             None => env,
         };

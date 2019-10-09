@@ -1,10 +1,8 @@
 //! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 pub mod client_agent;
 pub mod receiver;
-pub mod redis_cmd;
-pub mod redis_stream;
+pub mod redis;
 
-use crate::config;
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
 use log;
