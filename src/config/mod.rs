@@ -4,9 +4,55 @@ mod postgres_cfg;
 mod redis_cfg;
 mod redis_cfg_types;
 pub use self::{
-    deployment_cfg::DeploymentConfig, postgres_cfg::PostgresConfig, redis_cfg::RedisConfig,
-    redis_cfg_types::RedisInterval,
+    deployment_cfg::DeploymentConfig,
+    postgres_cfg::PostgresConfig,
+    redis_cfg::RedisConfig,
+    redis_cfg_types::{RedisInterval, RedisNamespace},
 };
+use std::collections::HashMap;
+use url::Url;
+
+pub struct EnvVar(pub HashMap<String, String>);
+impl std::ops::Deref for EnvVar {
+    type Target = HashMap<String, String>;
+    fn deref(&self) -> &HashMap<String, String> {
+        &self.0
+    }
+}
+impl Clone for EnvVar {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+impl EnvVar {
+    fn update_with_url(mut self, url_str: &str) -> Self {
+        let url = Url::parse(url_str).unwrap();
+        let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
+
+        self.maybe_add_env_var("REDIS_PORT", url.port());
+        self.maybe_add_env_var("REDIS_PASSWORD", url.password());
+        self.maybe_add_env_var("REDIS_USERNAME", none_if_empty(url.username().to_string()));
+        self.maybe_add_env_var("REDIS_DB", none_if_empty(url.path()[1..].to_string()));
+        for (k, v) in url.query_pairs().into_owned() {
+            match k.to_string().as_str() {
+                "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
+                "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
+                _ => crate::err::die_with_msg(format!(
+                    r"Unsupported parameter {} in REDIS_URL.
+             Flodgatt supports only `password` and `db` parameters.",
+                    k
+                )),
+            }
+        }
+
+        self
+    }
+    fn maybe_add_env_var(&mut self, key: &str, maybe_value: Option<impl ToString>) {
+        if let Some(value) = maybe_value {
+            self.0.insert(key.to_string(), value.to_string());
+        }
+    }
+}
 
 #[macro_export]
 macro_rules! maybe_update {

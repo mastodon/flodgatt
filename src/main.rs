@@ -14,11 +14,12 @@ fn main() {
         Some("development") | None => ".env",
             Some(_) => err::die_with_msg("Unknown ENV variable specified.\n    Valid options are: `production` or `development`."),
         }).ok();
-    let env_vars: HashMap<_, _> = dotenv::vars().collect();
+    let env_vars_map: HashMap<_, _> = dotenv::vars().collect();
+    let env_vars = config::EnvVar(env_vars_map);
     pretty_env_logger::init();
-
-    let cfg = config::DeploymentConfig::from_env(env_vars.clone());
     let redis_cfg = config::RedisConfig::from_env(env_vars.clone());
+    let cfg = config::DeploymentConfig::from_env(env_vars.clone());
+
     let postgres_cfg = config::PostgresConfig::from_env(env_vars.clone());
 
     let client_agent_sse = ClientAgent::blank(redis_cfg);

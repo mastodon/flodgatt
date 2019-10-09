@@ -1,5 +1,9 @@
 use super::receiver::Receiver;
-use crate::{config, config::RedisInterval, err, redis_to_client_stream::redis_cmd};
+use crate::{
+    config::{self, RedisInterval, RedisNamespace},
+    err,
+    redis_to_client_stream::redis_cmd,
+};
 use futures::{Async, Poll};
 use serde_json::Value;
 use std::{io::Read, io::Write, net, time};
@@ -8,22 +12,27 @@ use tokio::io::AsyncRead;
 pub struct RedisConn {
     pub primary: net::TcpStream,
     pub secondary: net::TcpStream,
-    pub namespace: Option<String>,
+    pub namespace: RedisNamespace,
     pub polling_interval: RedisInterval,
 }
 
-fn send_password(mut conn: net::TcpStream, password: &String) -> net::TcpStream {
+fn send_password(mut conn: net::TcpStream, password: &str) -> net::TcpStream {
     conn.write_all(&redis_cmd::cmd("auth", &password)).unwrap();
     let mut buffer = vec![0u8; 5];
     conn.read_exact(&mut buffer).unwrap();
     let reply = String::from_utf8(buffer.to_vec()).unwrap();
-    if reply != "+OK\r\n".to_string() {
+    if reply != "+OK\r\n" {
         err::die_with_msg(format!(
             r"Incorrect Redis password.  You supplied `{}`.
              Please supply correct password with REDIS_PASSWORD environmental variable.",
             password,
         ))
     };
+    conn
+}
+
+fn set_db(mut conn: net::TcpStream, db: &str) -> net::TcpStream {
+    conn.write_all(&redis_cmd::cmd("SELECT", &db)).unwrap();
     conn
 }
 
@@ -60,39 +69,29 @@ impl RedisConn {
                 *redis_cfg.host, *redis_cfg.port, e,
             ))
         };
-        let mut pubsub_connection = net::TcpStream::connect(addr).unwrap_or_else(conn_err);
-        let mut secondary_redis_connection = net::TcpStream::connect(addr).unwrap_or_else(conn_err);
-
-        if let Some(password) = redis_cfg.password.clone() {
-            pubsub_connection = send_password(pubsub_connection, &password);
-            secondary_redis_connection = send_password(secondary_redis_connection, &password)
-        }
-        pubsub_connection = send_test_ping(pubsub_connection);
-        secondary_redis_connection = send_test_ping(secondary_redis_connection);
-
-        pubsub_connection
-            .set_read_timeout(Some(time::Duration::from_millis(10)))
-            .expect("Can set read timeout for Redis connection");
-        pubsub_connection
+        let update_conn = |mut conn| {
+            if let Some(password) = redis_cfg.password.clone() {
+                conn = send_password(conn, &password);
+            }
+            conn = send_test_ping(conn);
+            conn.set_read_timeout(Some(time::Duration::from_millis(10)))
+                .expect("Can set read timeout for Redis connection");
+            if let Some(db) = &*redis_cfg.db {
+                conn = set_db(conn, db);
+            }
+            conn
+        };
+        let (primary_conn, secondary_conn) = (
+            update_conn(net::TcpStream::connect(addr).unwrap_or_else(conn_err)),
+            update_conn(net::TcpStream::connect(addr).unwrap_or_else(conn_err)),
+        );
+        primary_conn
             .set_nonblocking(true)
             .expect("set_nonblocking call failed");
 
-        secondary_redis_connection
-            .set_read_timeout(Some(time::Duration::from_millis(10)))
-            .expect("Can set read timeout for Redis connection");
-
-        if let Some(db) = redis_cfg.db {
-            pubsub_connection
-                .write_all(&redis_cmd::cmd("SELECT", &db))
-                .unwrap();
-            secondary_redis_connection
-                .write_all(&redis_cmd::cmd("SELECT", &db))
-                .unwrap();
-        }
-
         Self {
-            primary: pubsub_connection,
-            secondary: secondary_redis_connection,
+            primary: primary_conn,
+            secondary: secondary_conn,
             namespace: redis_cfg.namespace,
             polling_interval: redis_cfg.polling_interval,
         }
@@ -139,7 +138,7 @@ Please update the REDIS_HOST and/or REDIS_PORT environmental variables with the 
             };
             let mut msg = RedisMsg::from_raw(&receiver.incoming_raw_msg);
 
-            let prefix_to_skip = match &receiver.redis_namespace {
+            let prefix_to_skip = match &*receiver.redis_namespace {
                 Some(namespace) => format!("{}:timeline:", namespace),
                 None => "timeline:".to_string(),
             };

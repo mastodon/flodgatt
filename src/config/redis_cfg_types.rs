@@ -16,7 +16,6 @@ from_env_var!(
         _ => s.parse().ok(),
     };
 );
-
 from_env_var!(
     /// The port Redis is running on
     let name = RedisPort;
@@ -29,12 +28,33 @@ from_env_var!(
     let name = RedisInterval;
     let default: Duration = Duration::from_millis(100);
     let (env_var, allowed_values) = ("REDIS_POLL_INTERVAL", "a number of milliseconds".to_string());
-    let from_str = |s| s.parse().map(|num| Duration::from_millis(num)).ok();
+    let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );
 from_env_var!(
     /// The password to use for Redis
     let name = RedisPass;
     let default: Option<String> = None;
     let (env_var, allowed_values) = ("REDIS_PASSWORD", "any string".to_string());
+    let from_str = |s| Some(Some(s.to_string()));
+);
+from_env_var!(
+    /// An optional Redis Namespace
+    let name = RedisNamespace;
+    let default: Option<String> = None;
+    let (env_var, allowed_values) = ("REDIS_NAMESPACE", "any string".to_string());
+    let from_str = |s| Some(Some(s.to_string()));
+);
+from_env_var!(
+    /// A user for Redis (not supported)
+    let name = RedisUser;
+    let default: Option<String> = None;
+    let (env_var, allowed_values) = ("REDIS_USER", "any string".to_string());
+    let from_str = |s| Some(Some(s.to_string()));
+);
+from_env_var!(
+    /// The database to use with Redis (no current effect for PubSub connections)
+    let name = RedisDb;
+    let default: Option<String> = None;
+    let (env_var, allowed_values) = ("REDIS_DB", "any string".to_string());
     let from_str = |s| Some(Some(s.to_string()));
 );

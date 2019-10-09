@@ -1,64 +1,50 @@
 use super::redis_cfg_types::*;
-//use crate::{err, maybe_update};
-use crate::maybe_update;
-use std::collections::HashMap;
-//use url::Url;
+use crate::config::EnvVar;
 
-fn none_if_empty(item: &str) -> Option<String> {
-    Some(item).filter(|i| !i.is_empty()).map(String::from)
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RedisConfig {
-    pub user: Option<String>,
+    pub user: RedisUser,
     pub password: RedisPass,
     pub port: RedisPort,
     pub host: RedisHost,
-    pub db: Option<String>,
-    pub namespace: Option<String>,
-    // **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver`
-    //            (on the order of 1ms rather than 50μs).  Thus, changing this setting
-    //            would be a good place to start for performance improvements at the cost
-    //            of delaying all updates.
+    pub db: RedisDb,
+    pub namespace: RedisNamespace,
+    // **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver` (~1ms
+    // compared to ~50μs).  Thus, changing this setting with REDIS_POLL_INTERVAL may be a good
+    // place to start for performance improvements at the cost of delaying all updates.
     pub polling_interval: RedisInterval,
-}
-impl Default for RedisConfig {
-    fn default() -> Self {
-        Self {
-            user: None,
-            password: RedisPass::default(),
-            db: None,
-            port: RedisPort::default(),
-            host: RedisHost::default(),
-            namespace: None,
-            polling_interval: RedisInterval::default(),
-        }
-    }
 }
 
 impl RedisConfig {
-    pub fn from_env(env_vars: HashMap<String, String>) -> Self {
-        // TODO handle REDIS_URL
+    const USER_SET_WARNING: &'static str =
+        "Redis user specified, but Redis did not ask for a username.  Ignoring it.";
+    const DB_SET_WARNING: &'static str =
+        r"Redis database specified, but PubSub connections do not use databases.
+For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
-        let mut cfg = RedisConfig::default();
-        cfg.host = RedisHost::default().maybe_update(env_vars.get("REDIS_HOST"));
-        cfg = cfg.maybe_update_namespace(env_vars.get("REDIS_NAMESPACE").map(String::from));
+    pub fn from_env(env: EnvVar) -> Self {
+        let env = match env.get("REDIS_URL").map(|s| s.clone()) {
+            Some(url_str) => env.update_with_url(&url_str),
+            None => env,
+        };
 
-        cfg.port = RedisPort::default().maybe_update(env_vars.get("REDIS_PORT"));
-        cfg.polling_interval =
-            RedisInterval::default().maybe_update(env_vars.get("REDIS_POLL_INTERVAL"));
-        cfg.password = RedisPass::default().maybe_update(env_vars.get("REDIS_PASSWORD"));
+        let cfg = RedisConfig {
+            user: RedisUser::default().maybe_update(env.get("REDIS_USER")),
+            password: RedisPass::default().maybe_update(env.get("REDIS_PASSWORD")),
+            port: RedisPort::default().maybe_update(env.get("REDIS_PORT")),
+            host: RedisHost::default().maybe_update(env.get("REDIS_HOST")),
+            db: RedisDb::default().maybe_update(env.get("REDIS_DB")),
+            namespace: RedisNamespace::default().maybe_update(env.get("REDIS_NAMESPACE")),
+            polling_interval: RedisInterval::default().maybe_update(env.get("REDIS_POLL_INTERVAL")),
+        };
 
-        cfg.log()
-    }
-
-    //    maybe_update!(maybe_update_host; host: String);
-    //    maybe_update!(maybe_update_port; port: u16);
-    maybe_update!(maybe_update_namespace; Some(namespace: String));
-    //    maybe_update!(maybe_update_polling_interval; polling_interval: Duration);
-
-    fn log(self) -> Self {
-        log::warn!("Redis configuration:\n{:#?},", &self);
-        self
+        if cfg.db.is_some() {
+            log::warn!("{}", Self::DB_SET_WARNING);
+        }
+        if cfg.user.is_some() {
+            log::warn!("{}", Self::USER_SET_WARNING);
+        }
+        log::info!("Redis configuration:\n{:#?},", &cfg);
+        cfg
     }
 }

@@ -1,5 +1,4 @@
-use super::deployment_cfg_types::*;
-use std::collections::HashMap;
+use super::{deployment_cfg_types::*, EnvVar};
 
 #[derive(Debug, Default)]
 pub struct DeploymentConfig<'a> {
@@ -14,7 +13,7 @@ pub struct DeploymentConfig<'a> {
 }
 
 impl DeploymentConfig<'_> {
-    pub fn from_env(env: HashMap<String, String>) -> Self {
+    pub fn from_env(env: EnvVar) -> Self {
         let mut cfg = Self {
             env: Env::default().maybe_update(env.get("NODE_ENV")),
             log_level: LogLevel::default().maybe_update(env.get("RUST_LOG")),

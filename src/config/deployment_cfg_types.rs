@@ -47,14 +47,14 @@ from_env_var!(
     let name = WsInterval;
     let default: Duration = Duration::from_millis(100);
     let (env_var, allowed_values) = ("WS_FREQ",  "a valid Unix Socket".to_string());
-    let from_str = |s| s.parse().map(|num| Duration::from_millis(num)).ok();
+    let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );
 from_env_var!(
     /// The time between replies sent via Server Sent Events
     let name = SseInterval;
     let default: Duration = Duration::from_millis(100);
     let (env_var, allowed_values) = ("WS_FREQ", "a number of milliseconds".to_string());
-    let from_str = |s| s.parse().map(|num| Duration::from_millis(num)).ok();
+    let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );
 from_env_var!(
     /// The port to run Flodgatt on
