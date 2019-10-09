@@ -7,9 +7,11 @@ macro_rules! pubsub_cmd {
     ($cmd:expr, $self:expr, $tl:expr) => {{
         use std::io::Write;
         log::info!("Sending {} command to {}", $cmd, $tl);
+        let namespace = $self.pubsub_connection.namespace.clone();
+
         $self
             .pubsub_connection
-            .write_all(&redis_cmd::pubsub($cmd, $tl, $self.redis_namespace.clone()))
+            .write_all(&redis_cmd::pubsub($cmd, $tl, namespace.clone()))
             .expect("Can send command to Redis");
         // Because we keep track of the number of clients subscribed to a channel on our end,
         // we need to manually tell Redis when we have subscribed or unsubscribed
@@ -23,7 +25,7 @@ macro_rules! pubsub_cmd {
             .write_all(&redis_cmd::set(
                 format!("subscribed:timeline:{}", $tl),
                 subscription_new_number,
-                $self.redis_namespace.clone(),
+                namespace.clone(),
             ))
             .expect("Can set Redis");
 

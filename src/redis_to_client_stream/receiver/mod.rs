@@ -1,13 +1,14 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
-use super::{
-    config::{self, RedisInterval, RedisNamespace},
-    redis_cmd, redis_stream,
-    redis_stream::RedisConn,
+mod message_queues;
+use crate::{
+    config::{self, RedisInterval},
+    pubsub_cmd,
+    redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
 };
-use crate::pubsub_cmd;
 use futures::{Async, Poll};
+pub use message_queues::{MessageQueues, MsgQueue};
 use serde_json::Value;
 use std::{collections, net, time};
 use tokio::io::Error;
@@ -16,16 +17,14 @@ use uuid::Uuid;
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
-    pub pubsub_connection: net::TcpStream,
+    pub pubsub_connection: RedisStream,
     secondary_redis_connection: net::TcpStream,
-    pub redis_namespace: RedisNamespace,
     redis_poll_interval: RedisInterval,
     redis_polled_at: time::Instant,
     timeline: String,
     manager_id: Uuid,
-    pub msg_queues: collections::HashMap<Uuid, MsgQueue>,
+    pub msg_queues: MessageQueues,
     clients_per_timeline: collections::HashMap<String, i32>,
-    pub incoming_raw_msg: String,
 }
 
 impl Receiver {
@@ -40,18 +39,15 @@ impl Receiver {
         } = RedisConn::new(redis_cfg);
 
         Self {
-            pubsub_connection,
+            pubsub_connection: RedisStream::from_stream(pubsub_connection)
+                .with_namespace(redis_namespace),
             secondary_redis_connection,
-            redis_namespace,
             redis_poll_interval,
             redis_polled_at: time::Instant::now(),
             timeline: String::new(),
             manager_id: Uuid::default(),
-            msg_queues: collections::HashMap::new(),
+            msg_queues: MessageQueues(collections::HashMap::new()),
             clients_per_timeline: collections::HashMap::new(),
-            /// The unprocessed message from Redis, consisting of 0 or more
-            /// actual `messages` in the sense of updates to send.
-            incoming_raw_msg: String::new(),
         }
     }
 
@@ -81,30 +77,9 @@ impl Receiver {
     /// subscribe to it.
     fn subscribe_or_unsubscribe_as_needed(&mut self, timeline: &str) {
         let start_time = std::time::Instant::now();
-        let mut timelines_to_modify = Vec::new();
-        struct Change {
-            timeline: String,
-            in_subscriber_number: i32,
-        }
-
-        timelines_to_modify.push(Change {
-            timeline: timeline.to_owned(),
-            in_subscriber_number: 1,
-        });
-
-        // Keep only message queues that have been polled recently
-        self.msg_queues.retain(|_id, msg_queue| {
-            if msg_queue.last_polled_at.elapsed() < time::Duration::from_secs(30) {
-                true
-            } else {
-                let timeline = &msg_queue.redis_channel;
-                timelines_to_modify.push(Change {
-                    timeline: timeline.to_owned(),
-                    in_subscriber_number: -1,
-                });
-                false
-            }
-        });
+        let timelines_to_modify = self
+            .msg_queues
+            .calculate_timelines_to_add_or_drop(timeline.to_string());
 
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
@@ -124,10 +99,6 @@ impl Receiver {
             log::warn!("Sending cmd to Redis took: {:?}", start_time.elapsed());
         };
     }
-
-    fn get_target_msg_queue(&mut self) -> collections::hash_map::Entry<Uuid, MsgQueue> {
-        self.msg_queues.entry(self.manager_id)
-    }
 }
 
 /// The stream that the ClientAgent polls to learn about new messages.
@@ -142,23 +113,17 @@ impl futures::stream::Stream for Receiver {
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
     fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
-        let timeline = self.timeline.clone();
+        let (timeline, id) = (self.timeline.clone(), self.manager_id);
         if self.redis_polled_at.elapsed() > *self.redis_poll_interval {
-            redis_stream::AsyncReadableStream::poll_redis(self);
+            self.pubsub_connection.poll_redis(&mut self.msg_queues);
             self.redis_polled_at = time::Instant::now();
         }
 
         // Record current time as last polled time
-        self.get_target_msg_queue()
-            .and_modify(|msg_queue| msg_queue.last_polled_at = time::Instant::now());
+        self.msg_queues.update_time_for_target_queue(id);
 
         // If the `msg_queue` being polled has any new messages, return the first (oldest) one
-        match self
-            .get_target_msg_queue()
-            .or_insert_with(|| MsgQueue::new(timeline.clone()))
-            .messages
-            .pop_front()
-        {
+        match self.msg_queues.oldest_msg_in_target_queue(id, timeline) {
             Some(value) => Ok(Async::Ready(Some(value))),
             _ => Ok(Async::NotReady),
         }
@@ -168,23 +133,5 @@ impl futures::stream::Stream for Receiver {
 impl Drop for Receiver {
     fn drop(&mut self) {
         pubsub_cmd!("unsubscribe", self, self.timeline.clone());
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MsgQueue {
-    pub messages: collections::VecDeque<Value>,
-    last_polled_at: time::Instant,
-    pub redis_channel: String,
-}
-
-impl MsgQueue {
-    fn new(redis_channel: impl std::fmt::Display) -> Self {
-        let redis_channel = redis_channel.to_string();
-        MsgQueue {
-            messages: collections::VecDeque::new(),
-            last_polled_at: time::Instant::now(),
-            redis_channel,
-        }
     }
 }
