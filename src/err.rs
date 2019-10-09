@@ -6,6 +6,17 @@ pub fn die_with_msg(msg: impl Display) -> ! {
     std::process::exit(1);
 }
 
+pub fn env_var_fatal(env_var: &str, supplied_value: &str, allowed_values: String) -> ! {
+    eprintln!(
+        r"FATAL ERROR: {var} is set to `{value}`, which is invalid.
+             {var} must be {allowed_vals}.",
+        var = env_var,
+        value = supplied_value,
+        allowed_vals = allowed_values
+    );
+    std::process::exit(1);
+}
+
 #[macro_export]
 macro_rules! dbg_and_die {
     ($msg:expr) => {
@@ -14,7 +25,7 @@ macro_rules! dbg_and_die {
         std::process::exit(1);
     };
 }
-pub fn unwrap_or_die<T: Display>(s: Option<T>, msg: &str) -> T {
+pub fn unwrap_or_die<T>(s: Option<T>, msg: &str) -> T {
     s.unwrap_or_else(|| {
         eprintln!("FATAL ERROR: {}", msg);
         std::process::exit(1)

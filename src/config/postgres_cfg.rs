@@ -1,5 +1,5 @@
+use super::EnvVar;
 use crate::{err, maybe_update};
-use std::collections::HashMap;
 use url::Url;
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ fn none_if_empty(item: &str) -> Option<String> {
 
 impl PostgresConfig {
     /// Configure Postgres and return a connection
-    pub fn from_env(env_vars: HashMap<String, String>) -> Self {
+    pub fn from_env(env_vars: EnvVar) -> Self {
         // use openssl::ssl::{SslConnector, SslMethod};
         // use postgres_openssl::MakeTlsConnector;
         // let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();

@@ -39,6 +39,7 @@ pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
         .and_then(move |q| User::from_query(q, pg_conn.clone()))
         .boxed()
 }
+
 #[cfg(test)]
 mod test {
     use super::*;

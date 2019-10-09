@@ -14,11 +14,12 @@ fn main() {
         Some("development") | None => ".env",
             Some(_) => err::die_with_msg("Unknown ENV variable specified.\n    Valid options are: `production` or `development`."),
         }).ok();
-    let env_vars: HashMap<_, _> = dotenv::vars().collect();
+    let env_vars_map: HashMap<_, _> = dotenv::vars().collect();
+    let env_vars = config::EnvVar(env_vars_map);
     pretty_env_logger::init();
-
-    let cfg = config::DeploymentConfig::from_env(env_vars.clone());
     let redis_cfg = config::RedisConfig::from_env(env_vars.clone());
+    let cfg = config::DeploymentConfig::from_env(env_vars.clone());
+
     let postgres_cfg = config::PostgresConfig::from_env(env_vars.clone());
 
     let client_agent_sse = ClientAgent::blank(redis_cfg);
@@ -28,7 +29,7 @@ fn main() {
     warn!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
-    let sse_update_interval = cfg.ws_interval;
+    let sse_update_interval = *cfg.ws_interval;
     let sse_routes = sse::extract_user_or_reject(pg_conn.clone())
         .and(warp::sse())
         .map(
@@ -49,7 +50,7 @@ fn main() {
         .recover(err::handle_errors);
 
     // WebSocket
-    let ws_update_interval = cfg.ws_interval;
+    let ws_update_interval = *cfg.ws_interval;
     let websocket_routes = ws::extract_user_or_reject(pg_conn.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
@@ -79,9 +80,9 @@ fn main() {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
-    let server_addr = net::SocketAddr::new(cfg.address, cfg.port);
+    let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
 
-    if let Some(_socket) = cfg.unix_socket {
+    if let Some(_socket) = cfg.unix_socket.0.as_ref() {
         dbg_and_die!("Unix socket support not yet implemented");
     } else {
         warp::serve(websocket_routes.or(sse_routes).with(cors)).run(server_addr);
