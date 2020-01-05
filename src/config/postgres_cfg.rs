@@ -39,8 +39,8 @@ impl PostgresConfig {
         // TODO: add TLS support, remove `NoTls`
         match env_vars.get("DATABASE_URL") {
             Some(url) => {
-            log::warn!("DATABASE_URL env variable set.  Connecting to Postgres with that URL and ignoring any values set in DB_HOST, DB_USER, DB_NAME, DB_PASS, or DB_PORT.");
-            PostgresConfig::from_url(Url::parse(url).unwrap())
+                log::warn!("DATABASE_URL env variable set.  Connecting to Postgres with that URL and ignoring any values set in DB_HOST, DB_USER, DB_NAME, DB_PASS, or DB_PORT.");
+                Self::from_url(Url::parse(url).unwrap())                    
             }
             None => Self::default()
                 .maybe_update_user(env_vars.get("USER").map(String::from))

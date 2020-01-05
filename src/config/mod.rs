@@ -9,7 +9,7 @@ pub use self::{
     redis_cfg::RedisConfig,
     redis_cfg_types::{RedisInterval, RedisNamespace},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 use url::Url;
 
 pub struct EnvVar(pub HashMap<String, String>);
@@ -19,12 +19,16 @@ impl std::ops::Deref for EnvVar {
         &self.0
     }
 }
+
 impl Clone for EnvVar {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 impl EnvVar {
+    pub fn new(vars: HashMap<String, String>) -> Self {
+        Self(vars)
+    }
     fn update_with_url(mut self, url_str: &str) -> Self {
         let url = Url::parse(url_str).unwrap();
         let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
@@ -53,7 +57,42 @@ impl EnvVar {
         }
     }
 }
-
+impl fmt::Display for EnvVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut result =
+            String::from("Flodgatt received the following known environmental variables:");
+        for env_var in [
+            "NODE_ENV",
+            "RUST_LOG",
+            "BIND",
+            "PORT",
+            "SOCKET",
+            "SSE_FREQ",
+            "WS_FREQ",
+            "DATABASE_URL",
+            "DB_USER",
+            "USER",
+            "DB_PORT",
+            "DB_HOST",
+            "DB_PASS",
+            "DB_NAME",
+            "DB_SSLMODE",
+            "REDIS_HOST",
+            "REDIS_USER",
+            "REDIS_PORT",
+            "REDIS_PASSWORD",
+            "REDIS_USER",
+            "REDIS_DB",
+        ]
+        .iter()
+        {
+            if let Some(value) = self.get(&env_var.to_string()) {
+                result = format!("{}\n    {}: {}", result, env_var, value)
+            }
+        }
+        write!(f, "{}", result)
+    }
+}
 #[macro_export]
 macro_rules! maybe_update {
     ($name:ident; $item: tt:$type:ty) => (

@@ -9,7 +9,7 @@ use std::{
 use strum_macros::{EnumString, EnumVariantNames};
 
 from_env_var!(
-    /// The current environment, which controls what file to read other ENV vars from
+    /// The current environment, which controls what file to read other ENV vars from 
     let name = Env;
     let default: EnvInner = EnvInner::Development;
     let (env_var, allowed_values) = ("RUST_ENV",  format!("one of: {:?}", EnvInner::variants()));
@@ -29,7 +29,7 @@ from_env_var!(
     /// How verbosely Flodgatt should log messages
     let name = LogLevel;
     let default: LogLevelInner = LogLevelInner::Warn;
-    let (env_var, allowed_values) = ("RUST_LOG",  "a valid address (e.g., 127.0.0.1)".to_string());
+    let (env_var, allowed_values) = ("RUST_LOG",  "a valid address (e.g., 127.0.0.1)".to_string()); 
     let from_str = |s| LogLevelInner::from_str(s).ok();
 );
 from_env_var!(
