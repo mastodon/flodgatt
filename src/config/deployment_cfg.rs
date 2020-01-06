@@ -25,7 +25,7 @@ impl DeploymentConfig<'_> {
             cors: Cors::default(),
         };
         cfg.env = cfg.env.maybe_update(env.get("RUST_ENV"));
-        log::info!("Using deployment configuration:\n {:#?}", &cfg);
+        log::warn!("Using deployment configuration:\n {:#?}", &cfg);
         cfg
     }
 }

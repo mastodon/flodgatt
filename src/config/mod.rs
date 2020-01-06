@@ -1,6 +1,7 @@
 mod deployment_cfg;
 mod deployment_cfg_types;
 mod postgres_cfg;
+mod postgres_cfg_types;
 mod redis_cfg;
 mod redis_cfg_types;
 pub use self::{
@@ -9,8 +10,7 @@ pub use self::{
     redis_cfg::RedisConfig,
     redis_cfg_types::{RedisInterval, RedisNamespace},
 };
-use std::collections::HashMap;
-use url::Url;
+use std::{collections::HashMap, fmt};
 
 pub struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {
@@ -19,41 +19,58 @@ impl std::ops::Deref for EnvVar {
         &self.0
     }
 }
+
 impl Clone for EnvVar {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 impl EnvVar {
-    fn update_with_url(mut self, url_str: &str) -> Self {
-        let url = Url::parse(url_str).unwrap();
-        let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
-
-        self.maybe_add_env_var("REDIS_PORT", url.port());
-        self.maybe_add_env_var("REDIS_PASSWORD", url.password());
-        self.maybe_add_env_var("REDIS_USERNAME", none_if_empty(url.username().to_string()));
-        self.maybe_add_env_var("REDIS_DB", none_if_empty(url.path()[1..].to_string()));
-        for (k, v) in url.query_pairs().into_owned() {
-            match k.to_string().as_str() {
-                "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
-                "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
-                _ => crate::err::die_with_msg(format!(
-                    r"Unsupported parameter {} in REDIS_URL.
-             Flodgatt supports only `password` and `db` parameters.",
-                    k
-                )),
-            }
-        }
-
-        self
+    pub fn new(vars: HashMap<String, String>) -> Self {
+        Self(vars)
     }
+
     fn maybe_add_env_var(&mut self, key: &str, maybe_value: Option<impl ToString>) {
         if let Some(value) = maybe_value {
             self.0.insert(key.to_string(), value.to_string());
         }
     }
 }
-
+impl fmt::Display for EnvVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut result = String::new();
+        for env_var in [
+            "NODE_ENV",
+            "RUST_LOG",
+            "BIND",
+            "PORT",
+            "SOCKET",
+            "SSE_FREQ",
+            "WS_FREQ",
+            "DATABASE_URL",
+            "DB_USER",
+            "USER",
+            "DB_PORT",
+            "DB_HOST",
+            "DB_PASS",
+            "DB_NAME",
+            "DB_SSLMODE",
+            "REDIS_HOST",
+            "REDIS_USER",
+            "REDIS_PORT",
+            "REDIS_PASSWORD",
+            "REDIS_USER",
+            "REDIS_DB",
+        ]
+        .iter()
+        {
+            if let Some(value) = self.get(&env_var.to_string()) {
+                result = format!("{}\n    {}: {}", result, env_var, value)
+            }
+        }
+        write!(f, "{}", result)
+    }
+}
 #[macro_export]
 macro_rules! maybe_update {
     ($name:ident; $item: tt:$type:ty) => (

@@ -15,8 +15,13 @@ fn main() {
             Some(_) => err::die_with_msg("Unknown ENV variable specified.\n    Valid options are: `production` or `development`."),
         }).ok();
     let env_vars_map: HashMap<_, _> = dotenv::vars().collect();
-    let env_vars = config::EnvVar(env_vars_map);
+    let env_vars = config::EnvVar::new(env_vars_map);
     pretty_env_logger::init();
+
+    warn!(
+        "Flodgatt recognized the following environmental variables:{}",
+        env_vars.clone()
+    );
     let redis_cfg = config::RedisConfig::from_env(env_vars.clone());
     let cfg = config::DeploymentConfig::from_env(env_vars.clone());
 

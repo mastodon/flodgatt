@@ -9,10 +9,10 @@ impl PostgresConn {
     pub fn new(pg_cfg: config::PostgresConfig) -> Self {
         let mut con = postgres::Client::configure();
         con.user(&pg_cfg.user)
-            .host(&pg_cfg.host)
-            .port(pg_cfg.port)
+            .host(&*pg_cfg.host.to_string())
+            .port(*pg_cfg.port)
             .dbname(&pg_cfg.database);
-        if let Some(password) = &pg_cfg.password {
+        if let Some(password) = &*pg_cfg.password {
             con.password(password);
         };
         Self(Arc::new(Mutex::new(
