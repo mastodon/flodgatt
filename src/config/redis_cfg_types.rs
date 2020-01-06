@@ -1,20 +1,14 @@
 use crate::from_env_var;
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    time::Duration,
-};
+use std::time::Duration;
 //use std::{fmt, net::IpAddr, os::unix::net::UnixListener, str::FromStr, time::Duration};
 //use strum_macros::{EnumString, EnumVariantNames};
 
 from_env_var!(
     /// The host address where Redis is running
     let name = RedisHost;
-    let default: IpAddr = IpAddr::V4("127.0.0.1".parse().expect("hardcoded"));
-    let (env_var, allowed_values) = ("REDIS_HOST", "a valid address (e.g., 127.0.0.1)".to_string());
-    let from_str = |s| match s {
-        "localhost" => Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-        _ => s.parse().ok(),
-    };
+    let default: String = "127.0.0.1".to_string(); 
+    let (env_var, allowed_values) = ("REDIS_HOST", "any string".to_string());
+    let from_str = |s| Some(s.to_string());
 );
 from_env_var!(
     /// The port Redis is running on
