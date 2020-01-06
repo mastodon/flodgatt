@@ -1,6 +1,7 @@
 mod deployment_cfg;
 mod deployment_cfg_types;
 mod postgres_cfg;
+mod postgres_cfg_types;
 mod redis_cfg;
 mod redis_cfg_types;
 pub use self::{
@@ -10,7 +11,6 @@ pub use self::{
     redis_cfg_types::{RedisInterval, RedisNamespace},
 };
 use std::{collections::HashMap, fmt};
-use url::Url;
 
 pub struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {
@@ -29,28 +29,7 @@ impl EnvVar {
     pub fn new(vars: HashMap<String, String>) -> Self {
         Self(vars)
     }
-    fn update_with_url(mut self, url_str: &str) -> Self {
-        let url = Url::parse(url_str).unwrap();
-        let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
 
-        self.maybe_add_env_var("REDIS_PORT", url.port());
-        self.maybe_add_env_var("REDIS_PASSWORD", url.password());
-        self.maybe_add_env_var("REDIS_USERNAME", none_if_empty(url.username().to_string()));
-        self.maybe_add_env_var("REDIS_DB", none_if_empty(url.path()[1..].to_string()));
-        for (k, v) in url.query_pairs().into_owned() {
-            match k.to_string().as_str() {
-                "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
-                "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
-                _ => crate::err::die_with_msg(format!(
-                    r"Unsupported parameter {} in REDIS_URL.
-             Flodgatt supports only `password` and `db` parameters.",
-                    k
-                )),
-            }
-        }
-
-        self
-    }
     fn maybe_add_env_var(&mut self, key: &str, maybe_value: Option<impl ToString>) {
         if let Some(value) = maybe_value {
             self.0.insert(key.to_string(), value.to_string());
@@ -59,8 +38,7 @@ impl EnvVar {
 }
 impl fmt::Display for EnvVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut result =
-            String::from("Flodgatt received the following known environmental variables:");
+        let mut result = String::new();
         for env_var in [
             "NODE_ENV",
             "RUST_LOG",

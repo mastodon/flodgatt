@@ -18,7 +18,10 @@ fn main() {
     let env_vars = config::EnvVar::new(env_vars_map);
     pretty_env_logger::init();
 
-    warn!("{}", env_vars.clone());
+    warn!(
+        "Flodgatt recognized the following environmental variables:{}",
+        env_vars.clone()
+    );
     let redis_cfg = config::RedisConfig::from_env(env_vars.clone());
     let cfg = config::DeploymentConfig::from_env(env_vars.clone());
 

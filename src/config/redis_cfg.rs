@@ -1,5 +1,6 @@
 use super::redis_cfg_types::*;
 use crate::config::EnvVar;
+use url::Url;
 
 #[derive(Debug, Default)]
 pub struct RedisConfig {
@@ -15,6 +16,30 @@ pub struct RedisConfig {
     pub polling_interval: RedisInterval,
 }
 
+impl EnvVar {
+    fn update_with_redis_url(mut self, url_str: &str) -> Self {
+        let url = Url::parse(url_str).unwrap();
+        let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
+
+        self.maybe_add_env_var("REDIS_PORT", url.port());
+        self.maybe_add_env_var("REDIS_PASSWORD", url.password());
+        self.maybe_add_env_var("REDIS_USERNAME", none_if_empty(url.username().to_string()));
+        self.maybe_add_env_var("REDIS_DB", none_if_empty(url.path()[1..].to_string()));
+        for (k, v) in url.query_pairs().into_owned() {
+            match k.to_string().as_str() {
+                "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
+                "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
+                _ => crate::err::die_with_msg(format!(
+                    r"Unsupported parameter {} in REDIS_URL.
+             Flodgatt supports only `password` and `db` parameters.",
+                    k
+                )),
+            }
+        }
+        self
+    }
+}
+
 impl RedisConfig {
     const USER_SET_WARNING: &'static str =
         "Redis user specified, but Redis did not ask for a username.  Ignoring it.";
@@ -24,7 +49,7 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
     pub fn from_env(env: EnvVar) -> Self {
         let env = match env.get("REDIS_URL").cloned() {
-            Some(url_str) => env.update_with_url(&url_str),
+            Some(url_str) => env.update_with_redis_url(&url_str),
             None => env,
         };
 
@@ -44,7 +69,7 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
         if cfg.user.is_some() {
             log::warn!("{}", Self::USER_SET_WARNING);
         }
-        log::info!("Redis configuration:\n{:#?},", &cfg);
+        log::warn!("Redis configuration:\n{:#?},", &cfg);
         cfg
     }
 }

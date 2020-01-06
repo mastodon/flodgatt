@@ -29,7 +29,7 @@ from_env_var!(
     /// How verbosely Flodgatt should log messages
     let name = LogLevel;
     let default: LogLevelInner = LogLevelInner::Warn;
-    let (env_var, allowed_values) = ("RUST_LOG",  "a valid address (e.g., 127.0.0.1)".to_string()); 
+    let (env_var, allowed_values) = ("RUST_LOG",  format!("one of: {:?}", LogLevelInner::variants())); 
     let from_str = |s| LogLevelInner::from_str(s).ok();
 );
 from_env_var!(
@@ -46,7 +46,7 @@ from_env_var!(
     /// The time between replies sent via WebSocket
     let name = WsInterval;
     let default: Duration = Duration::from_millis(100);
-    let (env_var, allowed_values) = ("WS_FREQ",  "a valid Unix Socket".to_string());
+    let (env_var, allowed_values) = ("WS_FREQ",  "a number of milliseconds".to_string());
     let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );
 from_env_var!(
