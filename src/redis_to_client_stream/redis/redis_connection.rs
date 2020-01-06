@@ -56,7 +56,7 @@ fn send_test_ping(mut conn: net::TcpStream) -> net::TcpStream {
 
 impl RedisConn {
     pub fn new(redis_cfg: RedisConfig) -> Self {
-        let addr = net::SocketAddr::from((*redis_cfg.host, *redis_cfg.port));
+        let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
         let conn_err = |e| {
             err::die_with_msg(format!(
                 "Could not connect to Redis at {}:{}.\n             Error detail: {}",
@@ -76,7 +76,7 @@ impl RedisConn {
             conn
         };
         let (primary_conn, secondary_conn) = (
-            update_conn(net::TcpStream::connect(addr).unwrap_or_else(conn_err)),
+            update_conn(net::TcpStream::connect(addr.clone()).unwrap_or_else(conn_err)),
             update_conn(net::TcpStream::connect(addr).unwrap_or_else(conn_err)),
         );
         primary_conn
