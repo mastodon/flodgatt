@@ -117,13 +117,21 @@ macro_rules! from_env_var {
                 $body
             }
             pub fn maybe_update(self, var: Option<&String>) -> Self {
-                if let Some(value) = var {
-                    Self(Self::inner_from_str(value).unwrap_or_else(|| {
+                match var {
+                    Some(empty_string) if empty_string.is_empty() => Self::default(),
+                    Some(value) => Self(Self::inner_from_str(value).unwrap_or_else(|| {
                         crate::err::env_var_fatal($env_var, value, $allowed_values)
-                    }))
-                } else {
-                    self
+                    })),
+                    None => self,
                 }
+
+                // if let Some(value) = var {
+                //     Self(Self::inner_from_str(value).unwrap_or_else(|| {
+                //         crate::err::env_var_fatal($env_var, value, $allowed_values)
+                //     }))
+                // } else {
+                //     self
+                // }
             }
         }
     };
