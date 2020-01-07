@@ -5,7 +5,7 @@ use flodgatt::{
 };
 use log::warn;
 use std::{collections::HashMap, env, net};
-use warp::{ws::Ws2, Filter as WarpFilter};
+use warp::{path, ws::Ws2, Filter};
 
 fn main() {
     dotenv::from_filename(
@@ -87,9 +87,11 @@ fn main() {
 
     let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
 
+    let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
+
     if let Some(_socket) = cfg.unix_socket.0.as_ref() {
         dbg_and_die!("Unix socket support not yet implemented");
     } else {
-        warp::serve(websocket_routes.or(sse_routes).with(cors)).run(server_addr);
+        warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run(server_addr);
     }
 }

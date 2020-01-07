@@ -2,7 +2,6 @@ use crate::from_env_var;
 use std::{
     fmt,
     net::{IpAddr, Ipv4Addr},
-    os::unix::net::UnixListener,
     str::FromStr,
     time::Duration,
 };
@@ -35,12 +34,9 @@ from_env_var!(
 from_env_var!(
     /// A Unix Socket to use in place of a local address
     let name = Socket;
-    let default: Option<UnixListener> = None;
-    let (env_var, allowed_values) = ("SOCKET", "a valid Unix Socket".to_string());
-    let from_str = |s| match UnixListener::bind(s).ok() {
-        Some(socket) => Some(Some(socket)),
-        None => None,
-    };
+    let default: Option<String> = None;
+    let (env_var, allowed_values) = ("SOCKET", "any string".to_string());
+    let from_str = |s| Some(Some(s.to_string()));
 );
 from_env_var!(
     /// The time between replies sent via WebSocket
