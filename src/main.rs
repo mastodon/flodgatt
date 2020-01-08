@@ -1,5 +1,5 @@
 use flodgatt::{
-    config, dbg_and_die, err,
+    config, err,
     parse_client_request::{sse, user, ws},
     redis_to_client_stream::{self, ClientAgent},
 };
@@ -89,8 +89,12 @@ fn main() {
 
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
-    if let Some(_socket) = cfg.unix_socket.0.as_ref() {
-        dbg_and_die!("Unix socket support not yet implemented");
+    if let Some(socket) = &*cfg.unix_socket {
+        warn!("Using Unix sockets is a WIP that is currently unsupported and untested.");
+        std::fs::remove_file(socket).unwrap();
+        use tokio::net::UnixListener;
+        let incoming = UnixListener::bind(socket).unwrap().incoming();
+        warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run_incoming(incoming);
     } else {
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run(server_addr);
     }
