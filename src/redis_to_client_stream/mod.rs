@@ -76,7 +76,7 @@ pub fn send_updates_to_ws(
                 tx.unbounded_send(msg).expect("No send error");
             };
             if time.elapsed() > time::Duration::from_secs(30) {
-                let msg = warp::ws::Message::ping(Vec::new());
+                let msg = warp::ws::Message::text("{}");
                 tx.unbounded_send(msg).expect("Can ping");
                 time = time::Instant::now();
             }
