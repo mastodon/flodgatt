@@ -41,6 +41,8 @@ If you have any difficulty connecting, note that, if run with `RUST_LOG=warn` Fl
 both the environmental variables it received and the parsed configuration variables it generated
 from those environmental variables.  You can use this info to debug the connection.
 
+Flóðgátt is tested against the [default Mastodon nginx config](https://github.com/tootsuite/mastodon/blob/master/dist/nginx.conf) and treats that as the known-good configuration.
+
 ### Advanced Configuration
 
 The streaming server will eventually uses the same environment variables as the rest of Mastodon,
