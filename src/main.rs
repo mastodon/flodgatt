@@ -4,7 +4,8 @@ use flodgatt::{
     redis_to_client_stream::{self, ClientAgent},
 };
 use log::warn;
-use std::{collections::HashMap, env, net};
+use std::{collections::HashMap, env, fs, net, os::unix::fs::PermissionsExt};
+use tokio::net::UnixListener;
 use warp::{path, ws::Ws2, Filter};
 
 fn main() {
@@ -89,16 +90,11 @@ fn main() {
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     if let Some(socket) = &*cfg.unix_socket {
-        use std::fs;
-        use std::os::unix::fs::PermissionsExt;
         warn!("Using Unix socket {}", socket);
+        fs::remove_file(socket).unwrap_or_default();
+        let incoming = UnixListener::bind(socket).unwrap().incoming();
 
-        use tokio::net::UnixListener;
-        let listener = UnixListener::bind(socket).unwrap();
-
-        let new_perms = PermissionsExt::from_mode(0o666);
-        fs::set_permissions(socket, new_perms).unwrap();
-        let incoming = listener.incoming();
+        fs::set_permissions(socket, PermissionsExt::from_mode(0o666)).unwrap();
 
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run_incoming(incoming);
     } else {
