@@ -59,6 +59,7 @@ fn main() {
     let websocket_routes = ws::extract_user_or_reject(pg_conn.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
+            warn!("Incoming request");
             let token = user.access_token.clone();
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
@@ -85,17 +86,23 @@ fn main() {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
-    let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
-
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     if let Some(socket) = &*cfg.unix_socket {
-        warn!("Using Unix sockets is a WIP that is currently unsupported and untested.");
-        std::fs::remove_file(socket).unwrap();
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        warn!("Using Unix socket {}", socket);
+
         use tokio::net::UnixListener;
-        let incoming = UnixListener::bind(socket).unwrap().incoming();
+        let listener = UnixListener::bind(socket).unwrap();
+
+        let new_perms = PermissionsExt::from_mode(0o666);
+        fs::set_permissions(socket, new_perms).unwrap();
+        let incoming = listener.incoming();
+
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run_incoming(incoming);
     } else {
+        let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run(server_addr);
     }
 }
