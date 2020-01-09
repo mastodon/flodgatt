@@ -2,7 +2,7 @@ use criterion::black_box;
 use criterion::criterion_group;
 use criterion::criterion_main;
 use criterion::Criterion;
-use flodgatt::redis_to_client_stream::redis_stream::RedisMsg;
+use flodgatt::redis_to_client_stream::redis::redis_msg::RedisMsg;
 use regex::Regex;
 use serde_json::Value;
 
@@ -69,7 +69,7 @@ fn parse_with_stuct(input: &str) -> Vec<(String, Value)> {
     let mut incoming_raw_msg = input;
 
     while incoming_raw_msg.len() > 0 {
-        let mut msg = RedisMsg::from_raw(incoming_raw_msg);
+        let mut msg = RedisMsg::from_raw(incoming_raw_msg, "timeline".len());
         let command = msg.next_field();
         match command.as_str() {
             "message" => {
