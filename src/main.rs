@@ -4,7 +4,8 @@ use flodgatt::{
     redis_to_client_stream::{self, ClientAgent},
 };
 use log::warn;
-use std::{collections::HashMap, env, net};
+use std::{collections::HashMap, env, fs, net, os::unix::fs::PermissionsExt};
+use tokio::net::UnixListener;
 use warp::{path, ws::Ws2, Filter};
 
 fn main() {
@@ -59,6 +60,7 @@ fn main() {
     let websocket_routes = ws::extract_user_or_reject(pg_conn.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
+            warn!("Incoming request");
             let token = user.access_token.clone();
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
@@ -85,17 +87,18 @@ fn main() {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
-    let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
-
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     if let Some(socket) = &*cfg.unix_socket {
-        warn!("Using Unix sockets is a WIP that is currently unsupported and untested.");
-        std::fs::remove_file(socket).unwrap();
-        use tokio::net::UnixListener;
+        warn!("Using Unix socket {}", socket);
+        fs::remove_file(socket).unwrap_or_default();
         let incoming = UnixListener::bind(socket).unwrap().incoming();
+
+        fs::set_permissions(socket, PermissionsExt::from_mode(0o666)).unwrap();
+
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run_incoming(incoming);
     } else {
+        let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
         warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run(server_addr);
     }
 }

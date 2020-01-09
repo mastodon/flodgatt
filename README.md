@@ -54,6 +54,9 @@ Note that the default values for the `postgres` connection do not correspond to 
 used in production.  Thus, you will need to configure the connection either env vars or a `.env`
 file if you intend to connect Flóðgátt to a production database.
 
+If you set the `SOCKET` environmental variable, you must set the nginx `proxy_pass` variable to
+the same socket (with the file prefixed by `http://unix:`).
+
 Additionally, note that connecting Flóðgátt to Postgres with the `ident` method requires running
 Flóðgátt as the user who owns the mastodon database (typically `mastodon`).
 
