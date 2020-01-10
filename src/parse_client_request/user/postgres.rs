@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 pub struct PostgresConn(pub Arc<Mutex<postgres::Client>>);
 impl PostgresConn {
     pub fn new(pg_cfg: config::PostgresConfig) -> Self {
-        let mut con = postgres::Client::configure();
+        let mut con = postgres::Config::new();
         con.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
             .port(*pg_cfg.port)
