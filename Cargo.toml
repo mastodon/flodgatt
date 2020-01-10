@@ -21,6 +21,8 @@ postgres-openssl = { git = "https://github.com/sfackler/rust-postgres.git"}
 url = "2.1.0"
 strum = "0.16.0"
 strum_macros = "0.16.0"
+r2d2_postgres = "0.16.0"
+r2d2 = "0.8.8"
 
 [dev-dependencies]
 criterion = "0.3"

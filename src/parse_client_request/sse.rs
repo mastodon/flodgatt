@@ -1,7 +1,7 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
 use super::{
     query::{self, Query},
-    user::{PostgresConn, User},
+    user::{PostgresPool, User},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 #[allow(dead_code)]
@@ -39,7 +39,7 @@ macro_rules! parse_query {
             .boxed()
     };
 }
-pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_conn: PostgresPool) -> BoxedFilter<(User,)> {
     any_of!(
         parse_query!(
             path => "api" / "v1" / "streaming" / "user" / "notification"

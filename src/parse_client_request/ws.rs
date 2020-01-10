@@ -1,7 +1,7 @@
 //! Filters for the WebSocket endpoint
 use super::{
     query::{self, Query},
-    user::{PostgresConn, User},
+    user::{PostgresPool, User},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 
@@ -32,7 +32,7 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_conn: PostgresPool) -> BoxedFilter<(User,)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)

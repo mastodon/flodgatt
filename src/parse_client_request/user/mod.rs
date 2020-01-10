@@ -1,11 +1,11 @@
 //! `User` struct and related functionality
-#[cfg(test)]
-mod mock_postgres;
-#[cfg(test)]
-use mock_postgres as postgres;
-#[cfg(not(test))]
+//#[cfg(test)]
+//mod mock_postgres;
+//#[cfg(test)]
+//use mock_postgres as postgres;
+//#[cfg(not(test))]
 mod postgres;
-pub use self::postgres::PostgresConn;
+pub use self::postgres::PostgresPool;
 use super::query::Query;
 use warp::reject::Rejection;
 
@@ -58,7 +58,7 @@ impl From<Vec<String>> for OauthScope {
 }
 
 impl User {
-    pub fn from_query(q: Query, pg_conn: PostgresConn) -> Result<Self, Rejection> {
+    pub fn from_query(q: Query, pg_conn: PostgresPool) -> Result<Self, Rejection> {
         let (id, access_token, scopes, langs, logged_in) = match q.access_token.clone() {
             None => (
                 -1,
@@ -95,7 +95,7 @@ impl User {
     fn update_timeline_and_filter(
         mut self,
         q: Query,
-        pg_conn: PostgresConn,
+        pg_conn: PostgresPool,
     ) -> Result<Self, Rejection> {
         let read_scope = self.scopes.clone();
 
@@ -139,7 +139,7 @@ impl User {
     }
 
     /// Determine whether the User is authorised for a specified list
-    pub fn owns_list(&self, list: i64, pg_conn: PostgresConn) -> bool {
+    pub fn owns_list(&self, list: i64, pg_conn: PostgresPool) -> bool {
         match postgres::query_list_owner(list, pg_conn) {
             Some(i) if i == self.id => true,
             _ => false,

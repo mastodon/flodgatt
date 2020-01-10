@@ -30,7 +30,7 @@ fn main() {
 
     let client_agent_sse = ClientAgent::blank(redis_cfg);
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
-    let pg_conn = user::PostgresConn::new(postgres_cfg);
+    let pg_conn = user::PostgresPool::new(postgres_cfg);
 
     warn!("Streaming server initialized and ready to accept connections");
 
