@@ -30,13 +30,13 @@ fn main() {
 
     let client_agent_sse = ClientAgent::blank(redis_cfg);
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
-    let pg_conn = user::PostgresPool::new(postgres_cfg);
+    let pg_pool = user::PostgresPool::new(postgres_cfg);
 
     warn!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
     let sse_update_interval = *cfg.ws_interval;
-    let sse_routes = sse::extract_user_or_reject(pg_conn.clone())
+    let sse_routes = sse::extract_user_or_reject(pg_pool.clone())
         .and(warp::sse())
         .map(
             move |user: user::User, sse_connection_to_client: warp::sse::Sse| {
@@ -57,7 +57,7 @@ fn main() {
 
     // WebSocket
     let ws_update_interval = *cfg.ws_interval;
-    let websocket_routes = ws::extract_user_or_reject(pg_conn.clone())
+    let websocket_routes = ws::extract_user_or_reject(pg_pool.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
             warn!("Incoming request");

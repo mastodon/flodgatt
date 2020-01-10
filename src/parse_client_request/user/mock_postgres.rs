@@ -28,7 +28,7 @@ pub fn query_for_user_data(
     (user_id, lang, scopes)
 }
 
-pub fn query_list_owner(list_id: i64, _pg_conn: PostgresPool) -> Option<i64> {
+pub fn query_list_owner(list_id: i64, _pg_pool: PostgresPool) -> Option<i64> {
     match list_id {
         1 => Some(1),
         _ => None,
