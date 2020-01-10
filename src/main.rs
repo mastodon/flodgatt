@@ -3,7 +3,6 @@ use flodgatt::{
     parse_client_request::{sse, user, ws},
     redis_to_client_stream::{self, ClientAgent},
 };
-use log::warn;
 use std::{collections::HashMap, env, fs, net, os::unix::fs::PermissionsExt};
 use tokio::net::UnixListener;
 use warp::{path, ws::Ws2, Filter};
@@ -19,7 +18,7 @@ fn main() {
     let env_vars = config::EnvVar::new(env_vars_map);
     pretty_env_logger::init();
 
-    warn!(
+    log::warn!(
         "Flodgatt recognized the following environmental variables:{}",
         env_vars.clone()
     );
@@ -32,7 +31,7 @@ fn main() {
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
     let pg_pool = user::PostgresPool::new(postgres_cfg);
 
-    warn!("Streaming server initialized and ready to accept connections");
+    log::warn!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
     let sse_update_interval = *cfg.ws_interval;
@@ -40,6 +39,7 @@ fn main() {
         .and(warp::sse())
         .map(
             move |user: user::User, sse_connection_to_client: warp::sse::Sse| {
+                log::info!("Incoming SSE request");
                 // Create a new ClientAgent
                 let mut client_agent = client_agent_sse.clone_with_shared_receiver();
                 // Assign ClientAgent to generate stream of updates for the user/timeline pair
@@ -60,7 +60,7 @@ fn main() {
     let websocket_routes = ws::extract_user_or_reject(pg_pool.clone())
         .and(warp::ws::ws2())
         .map(move |user: user::User, ws: Ws2| {
-            warn!("Incoming request");
+            log::info!("Incoming websocket request");
             let token = user.access_token.clone();
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
@@ -90,7 +90,7 @@ fn main() {
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     if let Some(socket) = &*cfg.unix_socket {
-        warn!("Using Unix socket {}", socket);
+        log::warn!("Using Unix socket {}", socket);
         fs::remove_file(socket).unwrap_or_default();
         let incoming = UnixListener::bind(socket).unwrap().incoming();
 
