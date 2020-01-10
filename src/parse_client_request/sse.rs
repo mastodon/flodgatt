@@ -74,7 +74,7 @@ pub fn extract_user_or_reject(pg_conn: PostgresPool) -> BoxedFilter<(User,)> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parse_client_request::user::{Filter, OauthScope, PostgresConn};
+    use crate::parse_client_request::user::{Filter, OauthScope, PostgresPool};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
@@ -83,7 +83,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let pg_conn = PostgresConn::new();
+                let pg_conn = PostgresPool::new();
                 let user = warp::test::request()
                     .path($path)
                     .filter(&extract_user_or_reject(pg_conn))
@@ -101,7 +101,7 @@ mod test {
             #[test]
             fn $name() {
                 let  path = format!("{}?access_token=TEST_USER", $path);
-                let pg_conn = PostgresConn::new();
+                let pg_conn = PostgresPool::new();
                 $(let path = format!("{}&{}", path, $query);)*
                     let  user = warp::test::request()
                     .path(&path)
@@ -127,7 +127,7 @@ mod test {
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
-                let pg_conn = PostgresConn::new();
+                let pg_conn = PostgresPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(pg_conn))
@@ -146,7 +146,7 @@ mod test {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
 
-                let pg_conn = PostgresConn::new();
+                let pg_conn = PostgresPool::new();
                 warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: INVALID")
@@ -165,7 +165,7 @@ mod test {
             fn $name() {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
-                let pg_conn = PostgresConn::new();
+                let pg_conn = PostgresPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(pg_conn))
@@ -437,7 +437,7 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
-        let pg_conn = PostgresConn::new();
+        let pg_conn = PostgresPool::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
             .filter(&extract_user_or_reject(pg_conn))

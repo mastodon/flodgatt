@@ -1,9 +1,9 @@
 //! `User` struct and related functionality
-//#[cfg(test)]
-//mod mock_postgres;
-//#[cfg(test)]
-//use mock_postgres as postgres;
-//#[cfg(not(test))]
+#[cfg(test)]
+mod mock_postgres;
+#[cfg(test)]
+use mock_postgres as postgres;
+#[cfg(not(test))]
 mod postgres;
 pub use self::postgres::PostgresPool;
 use super::query::Query;

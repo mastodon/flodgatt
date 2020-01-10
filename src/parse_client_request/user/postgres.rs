@@ -25,7 +25,6 @@ impl PostgresPool {
     }
 }
 
-#[cfg(not(test))]
 pub fn query_for_user_data(
     access_token: &str,
     pg_pool: PostgresPool,
@@ -79,7 +78,6 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
     (user_id, lang, scopes)
 }
 
-#[cfg(not(test))]
 pub fn query_list_owner(list_id: i64, pg_pool: PostgresPool) -> Option<i64> {
     let mut conn = pg_pool.0.get().unwrap();
     // For the Postgres query, `id` = list number; `account_id` = user.id
@@ -99,8 +97,3 @@ LIMIT 1",
         Some(rows.get(0).unwrap().get(1))
     }
 }
-
-//#[cfg(test)]
-//pub fn query_list_owner(_list_id: i64) -> Option<i64> {
-//    Some(1)
-//}
