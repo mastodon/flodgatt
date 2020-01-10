@@ -48,7 +48,10 @@ pub fn send_updates_to_ws(
         rx.map_err(|()| -> warp::Error { unreachable!() })
             .forward(ws_tx)
             .map(|_r| ())
-            .map_err(|e| eprintln!("websocket send error: {}", e)),
+            .map_err(|e| match e.to_string().as_ref() {
+                "IO error: Broken pipe (os error 32)" => (), // just closed unix socket
+                _ => log::warn!("websocket send error: {}", e),
+            }),
     );
 
     // Yield new events for as long as the client is still connected
@@ -57,6 +60,11 @@ pub fn send_updates_to_ws(
             Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
             Ok(Async::Ready(None)) => {
                 // TODO: consider whether we should manually drop closed connections here
+                log::info!("Client closed WebSocket connection");
+                futures::future::ok(false)
+            }
+            Err(e) if e.to_string() == "IO error: Broken pipe (os error 32)" => {
+                // no err, just closed Unix socket
                 log::info!("Client closed WebSocket connection");
                 futures::future::ok(false)
             }
