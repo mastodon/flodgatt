@@ -14,13 +14,15 @@ serde_json = "1.0.39"
 serde_derive = "1.0.90"
 serde = "1.0.90"
 pretty_env_logger = "0.3.0"
-postgres = { git = "https://github.com/sfackler/rust-postgres.git" }
+postgres = "0.17.0"
 uuid = { version = "0.7", features = ["v4"] }
 dotenv = "0.14.0"
 postgres-openssl = { git = "https://github.com/sfackler/rust-postgres.git"}
 url = "2.1.0"
 strum = "0.16.0"
 strum_macros = "0.16.0"
+r2d2_postgres = "0.16.0"
+r2d2 = "0.8.8"
 
 [dev-dependencies]
 criterion = "0.3"

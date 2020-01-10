@@ -1,7 +1,7 @@
 //! Filters for the WebSocket endpoint
 use super::{
     query::{self, Query},
-    user::{PostgresConn, User},
+    user::{PostgresPool, User},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 
@@ -32,11 +32,11 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_or_reject(pg_conn: PostgresConn) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_pool: PostgresPool) -> BoxedFilter<(User,)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
-        .and_then(move |q| User::from_query(q, pg_conn.clone()))
+        .and_then(move |q| User::from_query(q, pg_pool.clone()))
         .boxed()
 }
 
@@ -52,14 +52,14 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let pg_conn = PostgresConn::new();
+                let mock_pg_pool = PostgresPool::new();
                 let user = warp::test::request()
                     .path($path)
                     .header("connection", "upgrade")
                     .header("upgrade", "websocket")
                     .header("sec-websocket-version", "13")
                     .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-                    .filter(&extract_user_or_reject(pg_conn))
+                    .filter(&extract_user_or_reject(mock_pg_pool))
                     .expect("in test");
                 assert_eq!(user, $user);
             }
@@ -72,7 +72,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let pg_conn = PostgresConn::new();
+                let mock_pg_pool = PostgresPool::new();
                 let path = format!("{}&access_token=TEST_USER", $path);
                 let user = warp::test::request()
                     .path(&path)
@@ -80,7 +80,7 @@ mod test {
                     .header("upgrade", "websocket")
                     .header("sec-websocket-version", "13")
                     .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-                    .filter(&extract_user_or_reject(pg_conn))
+                    .filter(&extract_user_or_reject(mock_pg_pool))
                     .expect("in test");
                 assert_eq!(user, $user);
             }
@@ -96,10 +96,10 @@ mod test {
 
             fn $name() {
                 let path = format!("{}&access_token=INVALID", $path);
-                let pg_conn = PostgresConn::new();
+                let mock_pg_pool = PostgresPool::new();
                 warp::test::request()
                     .path(&path)
-                    .filter(&extract_user_or_reject(pg_conn))
+                    .filter(&extract_user_or_reject(mock_pg_pool))
                     .expect("in test");
             }
         };
@@ -112,10 +112,10 @@ mod test {
             #[should_panic(expected = "Error: Missing access token")]
             fn $name() {
                 let path = $path;
-                let pg_conn = PostgresConn::new();
+                let mock_pg_pool = PostgresPool::new();
                 warp::test::request()
                     .path(&path)
-                    .filter(&extract_user_or_reject(pg_conn))
+                    .filter(&extract_user_or_reject(mock_pg_pool))
                     .expect("in test");
             }
         };
@@ -316,14 +316,14 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
-        let pg_conn = PostgresConn::new();
+        let mock_pg_pool = PostgresPool::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
             .header("connection", "upgrade")
             .header("upgrade", "websocket")
             .header("sec-websocket-version", "13")
             .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-            .filter(&extract_user_or_reject(pg_conn))
+            .filter(&extract_user_or_reject(mock_pg_pool))
             .expect("in test");
     }
 }

@@ -1,33 +1,35 @@
 //! Postgres queries
 use crate::config;
 use ::postgres;
-use std::sync::{Arc, Mutex};
+use r2d2_postgres::PostgresConnectionManager;
 
 #[derive(Clone)]
-pub struct PostgresConn(pub Arc<Mutex<postgres::Client>>);
-impl PostgresConn {
+pub struct PostgresPool(pub r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>);
+impl PostgresPool {
     pub fn new(pg_cfg: config::PostgresConfig) -> Self {
-        let mut con = postgres::Client::configure();
-        con.user(&pg_cfg.user)
+        let mut cfg = postgres::Config::new();
+        cfg.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
             .port(*pg_cfg.port)
             .dbname(&pg_cfg.database);
         if let Some(password) = &*pg_cfg.password {
-            con.password(password);
+            cfg.password(password);
         };
-        Self(Arc::new(Mutex::new(
-            con.connect(postgres::NoTls)
-                .expect("Can connect to local Postgres"),
-        )))
+
+        let manager = PostgresConnectionManager::new(cfg, postgres::NoTls);
+        let pool = r2d2::Pool::builder()
+            .max_size(10)
+            .build(manager)
+            .expect("Can connect to local postgres");
+        Self(pool)
     }
 }
 
-#[cfg(not(test))]
 pub fn query_for_user_data(
     access_token: &str,
-    pg_conn: PostgresConn,
+    pg_pool: PostgresPool,
 ) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let mut conn = pg_conn.0.lock().unwrap();
+    let mut conn = pg_pool.0.get().unwrap();
 
     let query_result = conn
             .query(
@@ -76,9 +78,8 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
     (user_id, lang, scopes)
 }
 
-#[cfg(not(test))]
-pub fn query_list_owner(list_id: i64, pg_conn: PostgresConn) -> Option<i64> {
-    let mut conn = pg_conn.0.lock().unwrap();
+pub fn query_list_owner(list_id: i64, pg_pool: PostgresPool) -> Option<i64> {
+    let mut conn = pg_pool.0.get().unwrap();
     // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
         .query(
@@ -95,9 +96,4 @@ LIMIT 1",
     } else {
         Some(rows.get(0).unwrap().get(1))
     }
-}
-
-#[cfg(test)]
-pub fn query_list_owner(_list_id: i64) -> Option<i64> {
-    Some(1)
 }
