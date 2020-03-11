@@ -6,6 +6,7 @@ pub mod redis;
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
 use log;
+use serde_json::json;
 use std::time;
 
 /// Send a stream of replies to a Server Sent Events client.
@@ -16,9 +17,9 @@ pub fn send_updates_to_sse(
 ) -> impl warp::reply::Reply {
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .filter_map(move |_| match client_agent.poll() {
-            Ok(Async::Ready(Some(json_value))) => Some((
-                warp::sse::event(json_value["event"].clone().to_string()),
-                warp::sse::data(json_value["payload"].clone()),
+            Ok(Async::Ready(Some(toot))) => Some((
+                warp::sse::event(toot.category),
+                warp::sse::data(toot.payload),
             )),
             _ => None,
         });
@@ -89,10 +90,15 @@ pub fn send_updates_to_ws(
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
-            if let Ok(Async::Ready(Some(json_value))) = client_agent.poll() {
-                let toot = json_value["payload"]["content"].clone();
-                log::warn!("toot: {}\n in TL: {}\nuser: {}({})", toot, tl, email, id);
-                let msg = warp::ws::Message::text(json_value.to_string());
+            if let Ok(Async::Ready(Some(toot))) = client_agent.poll() {
+                let txt = &toot.payload["content"];
+                log::warn!("toot: {}\n in TL: {}\nuser: {}({})", txt, tl, email, id);
+
+                let msg = warp::ws::Message::text(
+                    json!({"event": toot.category,
+                           "payload": toot.payload.to_string()})
+                    .to_string(),
+                );
 
                 tx.unbounded_send(msg).expect("No send error");
             };
