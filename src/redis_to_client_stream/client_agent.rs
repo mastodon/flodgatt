@@ -18,7 +18,7 @@
 use super::receiver::Receiver;
 use crate::{config, parse_client_request::user::User};
 use futures::{Async, Poll};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync;
 use tokio::io::Error;
 use uuid::Uuid;
@@ -71,7 +71,7 @@ impl ClientAgent {
 
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
-    type Item = Value;
+    type Item = Toot;
     type Error = Error;
 
     /// Checks for any new messages that should be sent to the client.
@@ -102,17 +102,18 @@ impl futures::stream::Stream for ClientAgent {
                 let toot = Toot::from_json(value);
                 toot.filter(&user)
             }
-            Ok(inner_value) => Ok(inner_value),
+            Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(e) => Err(e),
         }
     }
 }
 
 /// The message to send to the client (which might not literally be a toot in some cases).
-struct Toot {
-    category: String,
-    payload: Value,
-    language: Option<String>,
+pub struct Toot {
+    pub category: String,
+    pub payload: Value,
+    pub language: Option<String>,
 }
 
 impl Toot {
@@ -132,29 +133,20 @@ impl Toot {
         }
     }
 
-    /// Convert a `Toot` to JSON inside an Option.
-    fn to_optional_json(&self) -> Option<Value> {
-        Some(json!(
-            {"event": self.category,
-             "payload": self.payload,}
-        ))
-    }
-
     /// Filter out any `Toot`'s that fail the provided filter.
-    fn filter(&self, user: &User) -> Result<Async<Option<Value>>, Error> {
+    fn filter(self, user: &User) -> Result<Async<Option<Self>>, Error> {
         let toot = self;
 
-        let (send_msg, skip_msg) = (
-            Ok(Async::Ready(toot.to_optional_json())),
-            Ok(Async::NotReady),
-        );
+        let category = toot.category.clone();
+        let toot_language = &toot.language.clone().expect("Valid lanugage");
+        let (send_msg, skip_msg) = (Ok(Async::Ready(Some(toot))), Ok(Async::NotReady));
 
-        if toot.category == "update" {
+        if category == "update" {
             use crate::parse_client_request::user::Filter;
-            let toot_language = &toot.language.clone().expect("Valid lanugage");
+
             match &user.filter {
                 Filter::NoFilter => send_msg,
-                Filter::Notification if toot.category == "notification" => send_msg,
+                Filter::Notification if category == "notification" => send_msg,
                 // If not, skip it
                 Filter::Notification => skip_msg,
                 Filter::Language if user.langs.is_none() => send_msg,
