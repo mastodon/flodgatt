@@ -5,7 +5,7 @@ mod mock_postgres;
 use mock_postgres as postgres;
 #[cfg(not(test))]
 mod postgres;
-pub use self::postgres::PostgresPool;
+pub use self::postgres::PostgresPool as PgPool;
 use super::query::Query;
 use warp::reject::Rejection;
 
@@ -20,19 +20,6 @@ impl Default for Filter {
     fn default() -> Self {
         Filter::NoFilter
     }
-}
-
-/// The User (with data read from Postgres)
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct User {
-    pub target_timeline: String,
-    pub email: String, // We only use email for logging; we could cut it for performance
-    pub id: i64,
-    pub access_token: String,
-    pub scopes: OauthScope,
-    pub langs: Option<Vec<String>>,
-    pub logged_in: bool,
-    pub filter: Filter,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -58,51 +45,58 @@ impl From<Vec<String>> for OauthScope {
     }
 }
 
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Blocks {
+    domain_blocks: Vec<String>,
+    user_blocks: Vec<i64>,
+}
+
+/// The User (with data read from Postgres)
+#[derive(Clone, Debug, PartialEq)]
+pub struct User {
+    pub target_timeline: String,
+    pub email: String, // We only use email for logging; we could cut it for performance
+    pub access_token: String, // We only need this once (to send back with the WS reply).  Cut?
+    pub id: i64,
+    pub scopes: OauthScope,
+    pub langs: Option<Vec<String>>,
+    pub logged_in: bool,
+    pub filter: Filter,
+    pub blocks: Blocks,
+}
+
+impl Default for User {
+    fn default() -> Self {
+        Self {
+            id: -1,
+            email: "".to_string(),
+            access_token: "".to_string(),
+            scopes: OauthScope::default(),
+            langs: None,
+            logged_in: false,
+            target_timeline: String::new(),
+            filter: Filter::default(),
+            blocks: Blocks::default(),
+        }
+    }
+}
+
 impl User {
-    pub fn from_query(q: Query, pg_pool: PostgresPool) -> Result<Self, Rejection> {
-        let (id, access_token, email, scopes, langs, logged_in) = match q.access_token.clone() {
-            None => (
-                -1,
-                "no access token".to_owned(),
-                "".to_string(),
-                OauthScope::default(),
-                None,
-                false,
-            ),
-            Some(token) => {
-                let (id, email, langs, scope_list) =
-                    postgres::query_for_user_data(&token, pg_pool.clone());
-
-                if id == -1 {
-                    return Err(warp::reject::custom("Error: Invalid access token"));
-                }
-                let scopes = OauthScope::from(scope_list);
-                (id, token, email, scopes, langs, true)
-            }
-        };
-        let mut user = User {
-            id,
-            email,
-            target_timeline: "PLACEHOLDER".to_string(),
-            access_token,
-            scopes,
-            langs,
-            logged_in,
-            filter: Filter::Language,
+    pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
+        let mut user: User = match q.access_token.clone() {
+            None => User::default(),
+            Some(token) => postgres::select_user(&token, pool.clone())?,
         };
 
-        user = user.update_timeline_and_filter(q, pg_pool.clone())?;
+        user = user.set_timeline_and_filter(q, pool.clone())?;
+        user.blocks.user_blocks = postgres::select_user_blocks(user.id, pool.clone());
+        user.blocks.domain_blocks = postgres::select_domain_blocks(pool.clone());
 
         Ok(user)
     }
 
-    fn update_timeline_and_filter(
-        mut self,
-        q: Query,
-        pg_pool: PostgresPool,
-    ) -> Result<Self, Rejection> {
+    fn set_timeline_and_filter(mut self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
         let read_scope = self.scopes.clone();
-
         let timeline = match q.stream.as_ref() {
             // Public endpoints:
             tl @ "public" | tl @ "public:local" if q.media => format!("{}:media", tl),
@@ -110,7 +104,7 @@ impl User {
             tl @ "public" | tl @ "public:local" => tl.to_string(),
             // Hashtag endpoints:
             tl @ "hashtag" | tl @ "hashtag:local" => format!("{}:{}", tl, q.hashtag),
-            // Private endpoints: User
+            // Private endpoints: User:
             "user" if self.logged_in && (read_scope.all || read_scope.statuses) => {
                 self.filter = Filter::NoFilter;
                 format!("{}", self.id)
@@ -120,7 +114,7 @@ impl User {
                 format!("{}", self.id)
             }
             // List endpoint:
-            "list" if self.owns_list(q.list, pg_pool) && (read_scope.all || read_scope.lists) => {
+            "list" if self.owns_list(q.list, pool) && (read_scope.all || read_scope.lists) => {
                 self.filter = Filter::NoFilter;
                 format!("list:{}", q.list)
             }
@@ -142,11 +136,7 @@ impl User {
         })
     }
 
-    /// Determine whether the User is authorised for a specified list
-    pub fn owns_list(&self, list: i64, pg_pool: PostgresPool) -> bool {
-        match postgres::query_list_owner(list, pg_pool) {
-            Some(i) if i == self.id => true,
-            _ => false,
-        }
+    fn owns_list(&self, list: i64, pool: PgPool) -> bool {
+        postgres::user_owns_list(self.id, list, pool)
     }
 }
