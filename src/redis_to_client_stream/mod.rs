@@ -34,7 +34,7 @@ pub fn send_updates_to_sse(
 /// Send a stream of replies to a WebSocket client.
 pub fn send_updates_to_ws(
     socket: warp::ws::WebSocket,
-    mut stream: ClientAgent,
+    mut client_agent: ClientAgent,
     update_interval: time::Duration,
 ) -> impl futures::future::Future<Item = (), Error = ()> {
     let (ws_tx, mut ws_rx) = socket.split();
@@ -54,6 +54,11 @@ pub fn send_updates_to_ws(
             }),
     );
 
+    let (tl, email, id) = (
+        client_agent.current_user.target_timeline.clone(),
+        client_agent.current_user.email.clone(),
+        client_agent.current_user.id,
+    );
     // Yield new events for as long as the client is still connected
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .take_while(move |_| match ws_rx.poll() {
@@ -69,18 +74,26 @@ pub fn send_updates_to_ws(
                 futures::future::ok(false)
             }
             Err(e) => {
-                log::warn!("{}", e);
+                log::warn!("Error in TL {}\nfor user: {}({})\n{}", tl, email, id, e);
                 futures::future::ok(false)
             }
         });
 
     let mut time = time::Instant::now();
 
+    let (tl, email, id) = (
+        client_agent.current_user.target_timeline.clone(),
+        client_agent.current_user.email.clone(),
+        client_agent.current_user.id,
+    );
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
-            if let Ok(Async::Ready(Some(json_value))) = stream.poll() {
+            if let Ok(Async::Ready(Some(json_value))) = client_agent.poll() {
+                let toot = json_value["payload"]["content"].clone();
+                log::warn!("toot: {}\n in TL: {}\nuser: {}({})", toot, tl, email, id);
                 let msg = warp::ws::Message::text(json_value.to_string());
+
                 tx.unbounded_send(msg).expect("No send error");
             };
             if time.elapsed() > time::Duration::from_secs(30) {
@@ -95,5 +108,5 @@ pub fn send_updates_to_ws(
             log::info!("WebSocket connection closed.");
             result
         })
-        .map_err(move |e| log::error!("{}", e))
+        .map_err(move |e| log::warn!("Error sending to user: {}\n{}", id, e))
 }
