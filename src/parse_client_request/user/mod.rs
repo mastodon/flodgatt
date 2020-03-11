@@ -5,7 +5,7 @@ mod mock_postgres;
 use mock_postgres as postgres;
 #[cfg(not(test))]
 mod postgres;
-pub use self::postgres::PostgresPool as PgPool;
+pub use self::postgres::PgPool;
 use super::query::Query;
 use warp::reject::Rejection;
 
@@ -18,7 +18,7 @@ pub enum Filter {
 }
 impl Default for Filter {
     fn default() -> Self {
-        Filter::NoFilter
+        Filter::Language
     }
 }
 

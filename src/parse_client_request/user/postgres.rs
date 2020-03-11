@@ -8,8 +8,8 @@ use r2d2_postgres::PostgresConnectionManager;
 use warp::reject::Rejection;
 
 #[derive(Clone)]
-pub struct PostgresPool(pub r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>);
-impl PostgresPool {
+pub struct PgPool(pub r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>);
+impl PgPool {
     pub fn new(pg_cfg: config::PostgresConfig) -> Self {
         let mut cfg = postgres::Config::new();
         cfg.user(&pg_cfg.user)
@@ -33,7 +33,7 @@ impl PostgresPool {
 ///
 /// This does _not_ set the timeline, filter, or blocks fields.  Use the various `User`
 /// methods to do so.  In general, this function shouldn't be needed outside `User`.
-pub fn select_user(access_token: &str, pg_pool: PostgresPool) -> Result<User, Rejection> {
+pub fn select_user(access_token: &str, pg_pool: PgPool) -> Result<User, Rejection> {
     let mut conn = pg_pool.0.get().unwrap();
     let query_result = conn
             .query(
@@ -91,7 +91,7 @@ pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec
 ///
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.
-pub fn select_user_blocks(user_id: i64, pg_pool: PostgresPool) -> Vec<i64> {
+pub fn select_user_blocks(user_id: i64, pg_pool: PgPool) -> Vec<i64> {
     pg_pool
         .0
         .get()
@@ -117,7 +117,7 @@ UNION SELECT target_account_id
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.  Additionally, we are querying it once per
 /// user, even though it is constant for all users (at any given time).
-pub fn select_domain_blocks(pg_pool: PostgresPool) -> Vec<String> {
+pub fn select_domain_blocks(pg_pool: PgPool) -> Vec<String> {
     pg_pool
         .0
         .get()
@@ -130,7 +130,7 @@ pub fn select_domain_blocks(pg_pool: PostgresPool) -> Vec<String> {
 }
 
 /// Test whether a user owns a list
-pub fn user_owns_list(user_id: i64, list_id: i64, pg_pool: PostgresPool) -> bool {
+pub fn user_owns_list(user_id: i64, list_id: i64, pg_pool: PgPool) -> bool {
     let mut conn = pg_pool.0.get().unwrap();
     // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
