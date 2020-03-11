@@ -11,10 +11,11 @@ impl PostgresPool {
 pub fn query_for_user_data(
     access_token: &str,
     _pg_pool: PostgresPool,
-) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let (user_id, lang, scopes) = if access_token == "TEST_USER" {
+) -> (i64, String, Option<Vec<String>>, Vec<String>) {
+    let (user_id, email, lang, scopes) = if access_token == "TEST_USER" {
         (
             1,
+            "user@example.com".to_string(),
             None,
             vec![
                 "read".to_string(),
@@ -23,9 +24,9 @@ pub fn query_for_user_data(
             ],
         )
     } else {
-        (-1, None, Vec::new())
+        (-1, "".to_string(), None, Vec::new())
     };
-    (user_id, lang, scopes)
+    (user_id, email, lang, scopes)
 }
 
 pub fn query_list_owner(list_id: i64, _pg_pool: PostgresPool) -> Option<i64> {

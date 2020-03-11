@@ -179,6 +179,7 @@ mod test {
         user: User {
             target_timeline: "public:media".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -196,6 +197,7 @@ mod test {
         user: User {
             target_timeline: "public:media".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -213,6 +215,7 @@ mod test {
         user: User {
             target_timeline: "public:local".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -230,6 +233,7 @@ mod test {
         user: User {
             target_timeline: "public:local:media".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -247,6 +251,7 @@ mod test {
         user: User {
             target_timeline: "public:local:media".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -264,6 +269,7 @@ mod test {
         user: User {
             target_timeline: "hashtag:a".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -281,6 +287,7 @@ mod test {
         user: User {
             target_timeline: "hashtag:local:a".to_string(),
             id: -1,
+            email: "".to_string(),
             access_token: "no access token".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -299,6 +306,7 @@ mod test {
         user: User {
             target_timeline: "1".to_string(),
             id: 1,
+            email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -316,6 +324,7 @@ mod test {
         user: User {
             target_timeline: "1".to_string(),
             id: 1,
+            email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -333,6 +342,7 @@ mod test {
         user: User {
             target_timeline: "direct".to_string(),
             id: 1,
+            email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
             langs: None,
             scopes: OauthScope {
@@ -352,6 +362,7 @@ mod test {
         user: User {
             target_timeline: "list:1".to_string(),
             id: 1,
+            email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
             langs: None,
             scopes: OauthScope {

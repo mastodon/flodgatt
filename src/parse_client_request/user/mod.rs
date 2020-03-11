@@ -26,7 +26,7 @@ impl Default for Filter {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct User {
     pub target_timeline: String,
-    pub email: String,
+    pub email: String, // We only use email for logging; we could cut it for performance
     pub id: i64,
     pub access_token: String,
     pub scopes: OauthScope,
@@ -64,7 +64,7 @@ impl User {
             None => (
                 -1,
                 "no access token".to_owned(),
-                "no email".to_owned(),
+                "".to_string(),
                 OauthScope::default(),
                 None,
                 false,
