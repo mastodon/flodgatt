@@ -28,13 +28,13 @@ impl PostgresPool {
 pub fn query_for_user_data(
     access_token: &str,
     pg_pool: PostgresPool,
-) -> (i64, Option<Vec<String>>, Vec<String>) {
+) -> (i64, String, Option<Vec<String>>, Vec<String>) {
     let mut conn = pg_pool.0.get().unwrap();
 
     let query_result = conn
             .query(
                 "
-SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_languages, oauth_access_tokens.scopes
+SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.email, users.chosen_languages, oauth_access_tokens.scopes
 FROM
 oauth_access_tokens
 INNER JOIN users ON
@@ -48,15 +48,16 @@ LIMIT 1",
     if !query_result.is_empty() {
         let only_row: &postgres::Row = query_result.get(0).unwrap();
         let id: i64 = only_row.get(1);
+        let email: String = only_row.get(2);
         let scopes = only_row
-            .get::<_, String>(3)
+            .get::<_, String>(4)
             .split(' ')
             .map(|s| s.to_owned())
             .collect();
-        let langs: Option<Vec<String>> = only_row.get(2);
-        (id, langs, scopes)
+        let langs: Option<Vec<String>> = only_row.get(3);
+        (id, email, langs, scopes)
     } else {
-        (-1, None, Vec::new())
+        (-1, "".to_string(), None, Vec::new())
     }
 }
 

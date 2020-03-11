@@ -26,6 +26,7 @@ impl Default for Filter {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct User {
     pub target_timeline: String,
+    pub email: String,
     pub id: i64,
     pub access_token: String,
     pub scopes: OauthScope,
@@ -59,26 +60,29 @@ impl From<Vec<String>> for OauthScope {
 
 impl User {
     pub fn from_query(q: Query, pg_pool: PostgresPool) -> Result<Self, Rejection> {
-        let (id, access_token, scopes, langs, logged_in) = match q.access_token.clone() {
+        let (id, access_token, email, scopes, langs, logged_in) = match q.access_token.clone() {
             None => (
                 -1,
                 "no access token".to_owned(),
+                "no email".to_owned(),
                 OauthScope::default(),
                 None,
                 false,
             ),
             Some(token) => {
-                let (id, langs, scope_list) =
+                let (id, email, langs, scope_list) =
                     postgres::query_for_user_data(&token, pg_pool.clone());
+
                 if id == -1 {
                     return Err(warp::reject::custom("Error: Invalid access token"));
                 }
                 let scopes = OauthScope::from(scope_list);
-                (id, token, scopes, langs, true)
+                (id, token, email, scopes, langs, true)
             }
         };
         let mut user = User {
             id,
+            email,
             target_timeline: "PLACEHOLDER".to_string(),
             access_token,
             scopes,

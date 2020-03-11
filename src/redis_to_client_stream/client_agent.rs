@@ -28,8 +28,8 @@ use uuid::Uuid;
 pub struct ClientAgent {
     receiver: sync::Arc<sync::Mutex<Receiver>>,
     id: uuid::Uuid,
-    target_timeline: String,
-    current_user: User,
+    pub target_timeline: String,
+    pub current_user: User,
 }
 
 impl ClientAgent {
@@ -111,7 +111,7 @@ impl futures::stream::Stream for ClientAgent {
 /// The message to send to the client (which might not literally be a toot in some cases).
 struct Toot {
     category: String,
-    payload: String,
+    payload: Value,
     language: Option<String>,
 }
 
@@ -127,7 +127,7 @@ impl Toot {
 
         Self {
             category,
-            payload: value["payload"].to_string(),
+            payload: value["payload"].clone(),
             language,
         }
     }
