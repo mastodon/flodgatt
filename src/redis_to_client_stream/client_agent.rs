@@ -19,7 +19,7 @@ use super::receiver::Receiver;
 use crate::{config, parse_client_request::user::User};
 use futures::{Async, Poll};
 use serde_json::Value;
-use std::{collections::HashSet, sync};
+use std::{collections::HashSet, fmt::Display, sync};
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -112,36 +112,55 @@ impl futures::stream::Stream for ClientAgent {
 /// The message to send to the client (which might not literally be a toot in some cases).
 #[derive(Debug, Clone)]
 pub struct Toot {
-    pub category: String,
-    pub payload: Value,
+    pub event_type: Event,
     pub language: Option<String>,
+    pub payload: Value,
+}
+
+use std::fmt;
+#[derive(Debug, Clone)]
+pub enum Event {
+    Update,
+    Delete,
+}
+
+impl Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Update => write!(f, "update"),
+            Self::Delete => write!(f, "delete"),
+        }
+    }
 }
 
 impl Toot {
     /// Construct a `Toot` from well-formed JSON.
     pub fn from_json(value: Value) -> Self {
-        let category = value["event"].as_str().expect("Redis string").to_owned();
-        let language = if category == "update" {
-            Some(value["payload"]["language"].to_string())
-        } else {
-            None
-        };
-
-        Self {
-            category,
-            payload: value["payload"].clone(),
-            language,
+        let payload = value["payload"].clone();
+        match value["event"].as_str().expect("Redis") {
+            "update" => Self {
+                event_type: Event::Update,
+                language: Some(payload["language"].as_str().expect("Redis").into()),
+                payload,
+            },
+            "delete" => Self {
+                event_type: Event::Delete,
+                language: None,
+                payload,
+            },
+            other => panic!("Unknown event type `{}` received.", other),
         }
     }
 
     pub fn get_originating_domain(&self) -> HashSet<String> {
         let api = "originating  Invariant Violation: JSON value does not conform to Mastdon API";
         let mut originating_domain = HashSet::new();
+        // TODO: make this log an error instead of panicking.
         originating_domain.insert(
             self.payload["account"]["acct"]
                 .as_str()
                 .expect(&api)
-                .split("@")
+                .split('@')
                 .nth(1)
                 .expect(&api)
                 .to_string(),
@@ -172,29 +191,26 @@ impl Toot {
 
     /// Filter out any `Toot`'s that fail the provided filter.
     pub fn filter(self, user: &User) -> Result<Async<Option<Self>>, Error> {
-        let toot = self;
+        let toot_language = &self.language.clone().expect("Valid lanugage");
+        let event_type = &self.event_type.clone();
+        let (send_msg, skip_msg) = (Ok(Async::Ready(Some(self))), Ok(Async::NotReady));
 
-        let category = toot.category.clone();
-        let toot_language = &toot.language.clone().expect("Valid lanugage");
-        let (send_msg, skip_msg) = (Ok(Async::Ready(Some(toot))), Ok(Async::NotReady));
+        match event_type {
+            Event::Update => {
+                use crate::parse_client_request::user::Filter;
 
-        if category == "update" {
-            use crate::parse_client_request::user::Filter;
-
-            match &user.filter {
-                Filter::NoFilter => send_msg,
-                Filter::Notification if category == "notification" => send_msg,
-                // If not, skip it
-                Filter::Notification => skip_msg,
-                Filter::Language if user.langs.is_none() => send_msg,
-                Filter::Language if user.langs.clone().expect("").contains(toot_language) => {
-                    send_msg
+                match &user.filter {
+                    Filter::NoFilter => send_msg,
+                    Filter::Language if user.langs.is_none() => send_msg,
+                    Filter::Language if user.langs.clone().expect("").contains(toot_language) => {
+                        send_msg
+                    }
+                    // If not, skip it
+                    Filter::Notification => skip_msg,
+                    Filter::Language => skip_msg,
                 }
-                // If not, skip it
-                Filter::Language => skip_msg,
             }
-        } else {
-            send_msg
+            Event::Delete => send_msg,
         }
     }
 }

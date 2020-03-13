@@ -18,7 +18,7 @@ pub fn send_updates_to_sse(
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .filter_map(move |_| match client_agent.poll() {
             Ok(Async::Ready(Some(toot))) => Some((
-                warp::sse::event(toot.category),
+                warp::sse::event(toot.event_type),
                 warp::sse::data(toot.payload),
             )),
             _ => None,
@@ -100,7 +100,7 @@ pub fn send_updates_to_ws(
                     log::warn!("toot: {}\nTL: {}\nUser: {}({})", txt, tl, email, id);
 
                     tx.unbounded_send(warp::ws::Message::text(
-                        json!({ "event": toot.category,
+                        json!({ "event": toot.event_type.to_string(),
                                 "payload": &toot.payload.to_string() })
                         .to_string(),
                     ))
