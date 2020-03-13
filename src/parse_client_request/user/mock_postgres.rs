@@ -1,5 +1,6 @@
 //! Mock Postgres connection (for use in unit testing)
 use super::{OauthScope, User};
+use std::collections::HashSet;
 
 #[derive(Clone)]
 pub struct PgPool;
@@ -27,11 +28,11 @@ pub fn select_user(access_token: &str, _pg_pool: PgPool) -> Result<User, warp::r
     Ok(user)
 }
 
-pub fn select_user_blocks(_id: i64, _pg_pool: PgPool) -> Vec<i64> {
-    Vec::new()
+pub fn select_user_blocks(_id: i64, _pg_pool: PgPool) -> HashSet<i64> {
+    HashSet::new()
 }
-pub fn select_domain_blocks(_pg_pool: PgPool) -> Vec<String> {
-    Vec::new()
+pub fn select_domain_blocks(_pg_pool: PgPool) -> HashSet<String> {
+    HashSet::new()
 }
 
 pub fn user_owns_list(user_id: i64, list_id: i64, _pg_pool: PgPool) -> bool {
