@@ -82,29 +82,36 @@ pub fn send_updates_to_ws(
 
     let mut time = time::Instant::now();
 
-    let (tl, email, id) = (
+    let (tl, email, id, blocked_users, blocked_domains) = (
         client_agent.current_user.target_timeline.clone(),
         client_agent.current_user.email.clone(),
         client_agent.current_user.id,
+        client_agent.current_user.blocks.user_blocks.clone(),
+        client_agent.current_user.blocks.domain_blocks.clone(),
     );
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
             if let Ok(Async::Ready(Some(toot))) = client_agent.poll() {
-                let txt = &toot.payload["content"];
-                log::warn!("toot: {}\n in TL: {}\nuser: {}({})", txt, tl, email, id);
+                if blocked_domains.is_disjoint(&toot.get_originating_domain())
+                    && blocked_users.is_disjoint(&toot.get_involved_users())
+                {
+                    let txt = &toot.payload["content"];
+                    log::warn!("toot: {}\nTL: {}\nUser: {}({})", txt, tl, email, id);
 
-                let msg = warp::ws::Message::text(
-                    json!({"event": toot.category,
-                           "payload": toot.payload.to_string()})
-                    .to_string(),
-                );
-
-                tx.unbounded_send(msg).expect("No send error");
+                    tx.unbounded_send(warp::ws::Message::text(
+                        json!({ "event": toot.category,
+                                "payload": &toot.payload.to_string() })
+                        .to_string(),
+                    ))
+                    .expect("No send error");
+                } else {
+                    log::info!("Blocked a message to {}", email);
+                }
             };
             if time.elapsed() > time::Duration::from_secs(30) {
-                let msg = warp::ws::Message::text("{}");
-                tx.unbounded_send(msg).expect("Can ping");
+                tx.unbounded_send(warp::ws::Message::text("{}"))
+                    .expect("Can ping");
                 time = time::Instant::now();
             }
             Ok(())

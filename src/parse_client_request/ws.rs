@@ -1,7 +1,7 @@
 //! Filters for the WebSocket endpoint
 use super::{
     query::{self, Query},
-    user::{PostgresPool, User},
+    user::{PgPool, User},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 
@@ -32,7 +32,7 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_or_reject(pg_pool: PostgresPool) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_pool: PgPool) -> BoxedFilter<(User,)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
@@ -43,7 +43,7 @@ pub fn extract_user_or_reject(pg_pool: PostgresPool) -> BoxedFilter<(User,)> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parse_client_request::user::{Filter, OauthScope};
+    use crate::parse_client_request::user::{Blocks, Filter, OauthScope};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
@@ -52,7 +52,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 let user = warp::test::request()
                     .path($path)
                     .header("connection", "upgrade")
@@ -72,7 +72,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 let path = format!("{}&access_token=TEST_USER", $path);
                 let user = warp::test::request()
                     .path(&path)
@@ -96,7 +96,7 @@ mod test {
 
             fn $name() {
                 let path = format!("{}&access_token=INVALID", $path);
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(mock_pg_pool))
@@ -112,7 +112,7 @@ mod test {
             #[should_panic(expected = "Error: Missing access token")]
             fn $name() {
                 let path = $path;
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(mock_pg_pool))
@@ -127,7 +127,7 @@ mod test {
             target_timeline: "public:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -136,6 +136,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -145,7 +146,7 @@ mod test {
             target_timeline: "public:local".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -154,6 +155,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -163,7 +165,7 @@ mod test {
             target_timeline: "public:local:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -172,6 +174,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -181,7 +184,7 @@ mod test {
             target_timeline: "hashtag:a".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -190,6 +193,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -199,7 +203,7 @@ mod test {
             target_timeline: "hashtag:local:a".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -208,6 +212,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -227,6 +232,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -245,6 +251,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::Notification,
         },
     });
@@ -263,6 +270,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -281,6 +289,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -325,7 +334,7 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
-        let mock_pg_pool = PostgresPool::new();
+        let mock_pg_pool = PgPool::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
             .header("connection", "upgrade")

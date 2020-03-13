@@ -1,7 +1,7 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
 use super::{
     query::{self, Query},
-    user::{PostgresPool, User},
+    user::{PgPool, User},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 #[allow(dead_code)]
@@ -39,7 +39,7 @@ macro_rules! parse_query {
             .boxed()
     };
 }
-pub fn extract_user_or_reject(pg_pool: PostgresPool) -> BoxedFilter<(User,)> {
+pub fn extract_user_or_reject(pg_pool: PgPool) -> BoxedFilter<(User,)> {
     any_of!(
         parse_query!(
             path => "api" / "v1" / "streaming" / "user" / "notification"
@@ -74,7 +74,7 @@ pub fn extract_user_or_reject(pg_pool: PostgresPool) -> BoxedFilter<(User,)> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parse_client_request::user::{Filter, OauthScope, PostgresPool};
+    use crate::parse_client_request::user::{Blocks, Filter, OauthScope, PgPool};
 
     macro_rules! test_public_endpoint {
         ($name:ident {
@@ -83,7 +83,7 @@ mod test {
         }) => {
             #[test]
             fn $name() {
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 let user = warp::test::request()
                     .path($path)
                     .filter(&extract_user_or_reject(mock_pg_pool))
@@ -101,7 +101,7 @@ mod test {
             #[test]
             fn $name() {
                 let  path = format!("{}?access_token=TEST_USER", $path);
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 $(let path = format!("{}&{}", path, $query);)*
                     let  user = warp::test::request()
                     .path(&path)
@@ -127,7 +127,7 @@ mod test {
             fn $name() {
                 let  path = format!("{}?access_token=INVALID", $path);
                 $(let path = format!("{}&{}", path, $query);)*
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(mock_pg_pool))
@@ -146,7 +146,7 @@ mod test {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
 
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 warp::test::request()
                     .path(&path)
                     .header("Authorization", "Bearer: INVALID")
@@ -165,7 +165,7 @@ mod test {
             fn $name() {
                 let path = $path;
                 $(let path = format!("{}?{}", path, $query);)*
-                let mock_pg_pool = PostgresPool::new();
+                let mock_pg_pool = PgPool::new();
                 warp::test::request()
                     .path(&path)
                     .filter(&extract_user_or_reject(mock_pg_pool))
@@ -180,7 +180,7 @@ mod test {
             target_timeline: "public:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -189,6 +189,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -198,7 +199,7 @@ mod test {
             target_timeline: "public:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -207,6 +208,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -216,7 +218,7 @@ mod test {
             target_timeline: "public:local".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -225,6 +227,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -234,7 +237,7 @@ mod test {
             target_timeline: "public:local:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -243,6 +246,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -252,7 +256,7 @@ mod test {
             target_timeline: "public:local:media".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -261,6 +265,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -270,7 +275,7 @@ mod test {
             target_timeline: "hashtag:a".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -279,6 +284,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -288,7 +294,7 @@ mod test {
             target_timeline: "hashtag:local:a".to_string(),
             id: -1,
             email: "".to_string(),
-            access_token: "no access token".to_string(),
+            access_token: "".to_string(),
             langs: None,
             scopes: OauthScope {
                 all: false,
@@ -297,6 +303,7 @@ mod test {
                 lists: false,
             },
             logged_in: false,
+            blocks: Blocks::default(),
             filter: Filter::Language,
         },
     });
@@ -316,6 +323,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -334,6 +342,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::Notification,
         },
     });
@@ -352,6 +361,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -372,6 +382,7 @@ mod test {
                 lists: false,
             },
             logged_in: true,
+            blocks: Blocks::default(),
             filter: Filter::NoFilter,
         },
     });
@@ -448,7 +459,7 @@ mod test {
     #[test]
     #[should_panic(expected = "NotFound")]
     fn nonexistant_endpoint() {
-        let mock_pg_pool = PostgresPool::new();
+        let mock_pg_pool = PgPool::new();
         warp::test::request()
             .path("/api/v1/streaming/DOES_NOT_EXIST")
             .filter(&extract_user_or_reject(mock_pg_pool))

@@ -1,37 +1,40 @@
 //! Mock Postgres connection (for use in unit testing)
+use super::{OauthScope, User};
+use std::collections::HashSet;
 
 #[derive(Clone)]
-pub struct PostgresPool;
-impl PostgresPool {
+pub struct PgPool;
+impl PgPool {
     pub fn new() -> Self {
         Self
     }
 }
 
-pub fn query_for_user_data(
-    access_token: &str,
-    _pg_pool: PostgresPool,
-) -> (i64, String, Option<Vec<String>>, Vec<String>) {
-    let (user_id, email, lang, scopes) = if access_token == "TEST_USER" {
-        (
-            1,
-            "user@example.com".to_string(),
-            None,
-            vec![
-                "read".to_string(),
-                "write".to_string(),
-                "follow".to_string(),
-            ],
-        )
-    } else {
-        (-1, "".to_string(), None, Vec::new())
-    };
-    (user_id, email, lang, scopes)
+pub fn select_user(access_token: &str, _pg_pool: PgPool) -> Result<User, warp::reject::Rejection> {
+    let mut user = User::default();
+    if access_token == "TEST_USER" {
+        user.id = 1;
+        user.logged_in = true;
+        user.access_token = "TEST_USER".to_string();
+        user.email = "user@example.com".to_string();
+        user.scopes = OauthScope::from(vec![
+            "read".to_string(),
+            "write".to_string(),
+            "follow".to_string(),
+        ]);
+    } else if access_token == "INVALID" {
+        return Err(warp::reject::custom("Error: Invalid access token"));
+    }
+    Ok(user)
 }
 
-pub fn query_list_owner(list_id: i64, _pg_pool: PostgresPool) -> Option<i64> {
-    match list_id {
-        1 => Some(1),
-        _ => None,
-    }
+pub fn select_user_blocks(_id: i64, _pg_pool: PgPool) -> HashSet<i64> {
+    HashSet::new()
+}
+pub fn select_domain_blocks(_pg_pool: PgPool) -> HashSet<String> {
+    HashSet::new()
+}
+
+pub fn user_owns_list(user_id: i64, list_id: i64, _pg_pool: PgPool) -> bool {
+    user_id == list_id
 }
