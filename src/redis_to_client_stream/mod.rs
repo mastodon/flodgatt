@@ -82,17 +82,20 @@ pub fn send_updates_to_ws(
 
     let mut time = time::Instant::now();
 
-    let (tl, email, id, blocked_users) = (
+    let (tl, email, id, blocked_users, blocked_domains) = (
         client_agent.current_user.target_timeline.clone(),
         client_agent.current_user.email.clone(),
         client_agent.current_user.id,
         client_agent.current_user.blocks.user_blocks.clone(),
+        client_agent.current_user.blocks.domain_blocks.clone(),
     );
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
             if let Ok(Async::Ready(Some(toot))) = client_agent.poll() {
-                if blocked_users.is_disjoint(&toot.get_involved_users()) {
+                if blocked_domains.is_disjoint(&toot.get_originating_domain())
+                    && blocked_users.is_disjoint(&toot.get_involved_users())
+                {
                     let txt = &toot.payload["content"];
                     log::warn!("toot: {}\nTL: {}\nUser: {}({})", txt, tl, email, id);
 

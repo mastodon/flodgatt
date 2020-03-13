@@ -134,6 +134,21 @@ impl Toot {
         }
     }
 
+    pub fn get_originating_domain(&self) -> HashSet<String> {
+        let api = "originating  Invariant Violation: JSON value does not conform to Mastdon API";
+        let mut originating_domain = HashSet::new();
+        originating_domain.insert(
+            self.payload["account"]["acct"]
+                .as_str()
+                .expect(&api)
+                .split("@")
+                .nth(1)
+                .expect(&api)
+                .to_string(),
+        );
+        originating_domain
+    }
+
     pub fn get_involved_users(&self) -> HashSet<i64> {
         let mut involved_users: HashSet<i64> = HashSet::new();
         let msg = self.payload.clone();

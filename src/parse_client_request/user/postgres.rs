@@ -99,14 +99,13 @@ UNION SELECT target_account_id
 /// Query Postgres for all current domain blocks
 ///
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
-/// the user adds until they refresh/reconnect.  Additionally, we are querying it once per
-/// user, even though it is constant for all users (at any given time).
+/// the user adds until they refresh/reconnect.
 pub fn select_domain_blocks(pg_pool: PgPool) -> HashSet<String> {
     pg_pool
         .0
         .get()
         .unwrap()
-        .query("SELECT domain FROM domain_blocks", &[])
+        .query("SELECT domain FROM account_domain_blocks", &[])
         .expect("Hard-coded query will return Some([0 or more rows])")
         .iter()
         .map(|row| row.get(0))
