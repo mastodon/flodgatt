@@ -53,19 +53,27 @@ LIMIT 1",
     if query_result.is_empty() {
         Err(warp::reject::custom("Error: Invalid access token"))
     } else {
+        // TODO: better name than `only_row`
         let only_row: &postgres::Row = query_result.get(0).unwrap();
         let scope_vec: Vec<String> = only_row
             .get::<_, String>(4)
             .split(' ')
             .map(|s| s.to_owned())
             .collect();
+        let mut allowed_langs = HashSet::new();
+        if let Ok(langs_vec) = only_row.try_get::<_, Vec<String>>(3) {
+            for lang in langs_vec {
+                allowed_langs.insert(lang);
+            }
+        }
+
         Ok(User {
-            id: only_row.get(1),
-            access_token: access_token.to_string(),
             email: only_row.get(2),
-            logged_in: true,
+            access_token: access_token.to_string(),
+            id: only_row.get(1),
             scopes: OauthScope::from(scope_vec),
-            langs: only_row.get(3),
+            logged_in: true,
+            allowed_langs,
             ..User::default()
         })
     }

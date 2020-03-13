@@ -15,11 +15,10 @@
 //! Because `StreamManagers` are lightweight data structures that do not directly
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).
-use super::receiver::Receiver;
+use super::{message::Message, receiver::Receiver};
 use crate::{config, parse_client_request::user::User};
 use futures::{Async, Poll};
-use serde_json::Value;
-use std::{collections::HashSet, fmt::Display, sync};
+use std::sync;
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -71,7 +70,7 @@ impl ClientAgent {
 
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
-    type Item = Toot;
+    type Item = Message;
     type Error = Error;
 
     /// Checks for any new messages that should be sent to the client.
@@ -96,135 +95,16 @@ impl futures::stream::Stream for ClientAgent {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
+        let (filter, blocks) = (&self.current_user.allowed_langs, &self.current_user.blocks);
         match result {
-            Ok(Async::Ready(Some(value))) => {
-                let user = &self.current_user;
-                let toot = Toot::from_json(value);
-                toot.filter(&user)
-            }
+            Ok(Async::Ready(Some(json))) => match Message::from_json(json) {
+                Message::Update(status) if status.is_filtered_out(filter) => Ok(Async::NotReady),
+                Message::Update(status) if status.is_blocked(blocks) => Ok(Async::NotReady),
+                no_filtering_needed => Ok(Async::Ready(Some(no_filtering_needed))),
+            },
             Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(e) => Err(e),
         }
-    }
-}
-
-/// The message to send to the client (which might not literally be a toot in some cases).
-#[derive(Debug, Clone)]
-pub struct Toot {
-    pub event_type: Event,
-    pub language: Option<String>,
-    pub payload: Value,
-}
-
-use std::fmt;
-#[derive(Debug, Clone)]
-pub enum Event {
-    Update,
-    Delete,
-}
-
-impl Display for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Update => write!(f, "update"),
-            Self::Delete => write!(f, "delete"),
-        }
-    }
-}
-
-impl Toot {
-    /// Construct a `Toot` from well-formed JSON.
-    pub fn from_json(value: Value) -> Self {
-        let payload = value["payload"].clone();
-        match value["event"].as_str().expect("Redis") {
-            "update" => Self {
-                event_type: Event::Update,
-                language: Some(payload["language"].as_str().expect("Redis").into()),
-                payload,
-            },
-            "delete" => Self {
-                event_type: Event::Delete,
-                language: None,
-                payload,
-            },
-            other => panic!("Unknown event type `{}` received.", other),
-        }
-    }
-
-    pub fn get_originating_domain(&self) -> HashSet<String> {
-        let api = "originating  Invariant Violation: JSON value does not conform to Mastdon API";
-        let mut originating_domain = HashSet::new();
-        // TODO: make this log an error instead of panicking.
-        originating_domain.insert(
-            self.payload["account"]["acct"]
-                .as_str()
-                .expect(&api)
-                .split('@')
-                .nth(1)
-                .expect(&api)
-                .to_string(),
-        );
-        originating_domain
-    }
-
-    pub fn get_involved_users(&self) -> HashSet<i64> {
-        let mut involved_users: HashSet<i64> = HashSet::new();
-        let msg = self.payload.clone();
-
-        let api = "Invariant Violation: JSON value does not conform to Mastdon API";
-        involved_users.insert(msg["account"]["id"].str_to_i64().expect(&api));
-        if let Some(mentions) = msg["mentions"].as_array() {
-            for mention in mentions {
-                involved_users.insert(mention["id"].str_to_i64().expect(&api));
-            }
-        }
-        if let Some(replied_to_account) = msg["in_reply_to_account_id"].as_str() {
-            involved_users.insert(replied_to_account.parse().expect(&api));
-        }
-
-        if let Some(reblog) = msg["reblog"].as_object() {
-            involved_users.insert(reblog["account"]["id"].str_to_i64().expect(&api));
-        }
-        involved_users
-    }
-
-    /// Filter out any `Toot`'s that fail the provided filter.
-    pub fn filter(self, user: &User) -> Result<Async<Option<Self>>, Error> {
-        let toot_language = &self.language.clone().expect("Valid lanugage");
-        let event_type = &self.event_type.clone();
-        let (send_msg, skip_msg) = (Ok(Async::Ready(Some(self))), Ok(Async::NotReady));
-
-        match event_type {
-            Event::Update => {
-                use crate::parse_client_request::user::Filter;
-
-                match &user.filter {
-                    Filter::NoFilter => send_msg,
-                    Filter::Language if user.langs.is_none() => send_msg,
-                    Filter::Language if user.langs.clone().expect("").contains(toot_language) => {
-                        send_msg
-                    }
-                    // If not, skip it
-                    Filter::Notification => skip_msg,
-                    Filter::Language => skip_msg,
-                }
-            }
-            Event::Delete => send_msg,
-        }
-    }
-}
-
-trait ConvertValue {
-    fn str_to_i64(&self) -> Result<i64, Box<dyn std::error::Error>>;
-}
-
-impl ConvertValue for Value {
-    fn str_to_i64(&self) -> Result<i64, Box<dyn std::error::Error>> {
-        Ok(self
-            .as_str()
-            .ok_or(format!("{} is not a string", &self))?
-            .parse()
-            .map_err(|_| "Could not parse str")?)
     }
 }

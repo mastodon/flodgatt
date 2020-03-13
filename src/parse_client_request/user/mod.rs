@@ -10,19 +10,6 @@ use super::query::Query;
 use std::collections::HashSet;
 use warp::reject::Rejection;
 
-/// The filters that can be applied to toots after they come from Redis
-#[derive(Clone, Debug, PartialEq)]
-pub enum Filter {
-    NoFilter,
-    Language,
-    Notification,
-}
-impl Default for Filter {
-    fn default() -> Self {
-        Filter::Language
-    }
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OauthScope {
     pub all: bool,
@@ -60,9 +47,8 @@ pub struct User {
     pub access_token: String, // We only need this once (to send back with the WS reply).  Cut?
     pub id: i64,
     pub scopes: OauthScope,
-    pub langs: Option<Vec<String>>,
     pub logged_in: bool,
-    pub filter: Filter,
+    pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
 }
 
@@ -73,10 +59,9 @@ impl Default for User {
             email: "".to_string(),
             access_token: "".to_string(),
             scopes: OauthScope::default(),
-            langs: None,
             logged_in: false,
             target_timeline: String::new(),
-            filter: Filter::default(),
+            allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
         }
     }
@@ -97,33 +82,30 @@ impl User {
         Ok(user)
     }
 
-    fn set_timeline_and_filter(mut self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
-        let read_scope = self.scopes.clone();
-        let timeline = match q.stream.as_ref() {
+    fn set_timeline_and_filter(self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
+        let (read_scope, f) = (self.scopes.clone(), self.allowed_langs.clone());
+        let (filter, target_timeline) = match q.stream.as_ref() {
             // Public endpoints:
-            tl @ "public" | tl @ "public:local" if q.media => format!("{}:media", tl),
-            tl @ "public:media" | tl @ "public:local:media" => tl.to_string(),
-            tl @ "public" | tl @ "public:local" => tl.to_string(),
+            tl @ "public" | tl @ "public:local" if q.media => (f, format!("{}:media", tl)),
+            tl @ "public:media" | tl @ "public:local:media" => (f, tl.to_string()),
+            tl @ "public" | tl @ "public:local" => (f, tl.to_string()),
+
             // Hashtag endpoints:
-            tl @ "hashtag" | tl @ "hashtag:local" => format!("{}:{}", tl, q.hashtag),
+            tl @ "hashtag" | tl @ "hashtag:local" => (f, format!("{}:{}", tl, q.hashtag)),
             // Private endpoints: User:
             "user" if self.logged_in && (read_scope.all || read_scope.statuses) => {
-                self.filter = Filter::NoFilter;
-                format!("{}", self.id)
+                (HashSet::new(), format!("{}", self.id))
             }
             "user:notification" if self.logged_in && (read_scope.all || read_scope.notify) => {
-                self.filter = Filter::Notification;
-                format!("{}", self.id)
+                (HashSet::new(), format!("{}", self.id))
             }
             // List endpoint:
             "list" if self.owns_list(q.list, pool) && (read_scope.all || read_scope.lists) => {
-                self.filter = Filter::NoFilter;
-                format!("list:{}", q.list)
+                (HashSet::new(), format!("list:{}", q.list))
             }
             // Direct endpoint:
             "direct" if self.logged_in && (read_scope.all || read_scope.statuses) => {
-                self.filter = Filter::NoFilter;
-                "direct".to_string()
+                (HashSet::new(), "direct".to_string())
             }
             // Reject unathorized access attempts for private endpoints
             "user" | "user:notification" | "direct" | "list" => {
@@ -133,7 +115,8 @@ impl User {
             _ => return Err(warp::reject::custom("Error: Nonexistent endpoint")),
         };
         Ok(Self {
-            target_timeline: timeline,
+            target_timeline,
+            allowed_langs: filter,
             ..self
         })
     }
