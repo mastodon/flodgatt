@@ -5,6 +5,7 @@ use crate::{
 };
 use ::postgres;
 use r2d2_postgres::PostgresConnectionManager;
+use std::collections::HashSet;
 use warp::reject::Rejection;
 
 #[derive(Clone)]
@@ -60,6 +61,7 @@ LIMIT 1",
             .collect();
         Ok(User {
             id: only_row.get(1),
+            access_token: access_token.to_string(),
             email: only_row.get(2),
             logged_in: true,
             scopes: OauthScope::from(scope_vec),
@@ -69,29 +71,11 @@ LIMIT 1",
     }
 }
 
-#[cfg(test)]
-pub fn query_for_user_data(access_token: &str) -> (i64, Option<Vec<String>>, Vec<String>) {
-    let (user_id, lang, scopes) = if access_token == "TEST_USER" {
-        (
-            1,
-            None,
-            vec![
-                "read".to_string(),
-                "write".to_string(),
-                "follow".to_string(),
-            ],
-        )
-    } else {
-        (-1, None, Vec::new())
-    };
-    (user_id, lang, scopes)
-}
-
 /// Query Postgres for everyone the user has blocked or muted
 ///
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.
-pub fn select_user_blocks(user_id: i64, pg_pool: PgPool) -> Vec<i64> {
+pub fn select_user_blocks(user_id: i64, pg_pool: PgPool) -> HashSet<i64> {
     pg_pool
         .0
         .get()
@@ -117,7 +101,7 @@ UNION SELECT target_account_id
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.  Additionally, we are querying it once per
 /// user, even though it is constant for all users (at any given time).
-pub fn select_domain_blocks(pg_pool: PgPool) -> Vec<String> {
+pub fn select_domain_blocks(pg_pool: PgPool) -> HashSet<String> {
     pg_pool
         .0
         .get()

@@ -7,6 +7,7 @@ use mock_postgres as postgres;
 mod postgres;
 pub use self::postgres::PgPool;
 use super::query::Query;
+use std::collections::HashSet;
 use warp::reject::Rejection;
 
 /// The filters that can be applied to toots after they come from Redis
@@ -47,8 +48,8 @@ impl From<Vec<String>> for OauthScope {
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Blocks {
-    domain_blocks: Vec<String>,
-    user_blocks: Vec<i64>,
+    pub domain_blocks: HashSet<String>,
+    pub user_blocks: HashSet<i64>,
 }
 
 /// The User (with data read from Postgres)
@@ -83,6 +84,7 @@ impl Default for User {
 
 impl User {
     pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
+        println!("Creating user...");
         let mut user: User = match q.access_token.clone() {
             None => User::default(),
             Some(token) => postgres::select_user(&token, pool.clone())?,
@@ -91,7 +93,7 @@ impl User {
         user = user.set_timeline_and_filter(q, pool.clone())?;
         user.blocks.user_blocks = postgres::select_user_blocks(user.id, pool.clone());
         user.blocks.domain_blocks = postgres::select_domain_blocks(pool.clone());
-
+        dbg!(&user);
         Ok(user)
     }
 

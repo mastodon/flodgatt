@@ -19,7 +19,7 @@ use super::receiver::Receiver;
 use crate::{config, parse_client_request::user::User};
 use futures::{Async, Poll};
 use serde_json::Value;
-use std::sync;
+use std::{collections::HashSet, sync};
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -110,6 +110,7 @@ impl futures::stream::Stream for ClientAgent {
 }
 
 /// The message to send to the client (which might not literally be a toot in some cases).
+#[derive(Debug, Clone)]
 pub struct Toot {
     pub category: String,
     pub payload: Value,
@@ -118,7 +119,7 @@ pub struct Toot {
 
 impl Toot {
     /// Construct a `Toot` from well-formed JSON.
-    fn from_json(value: Value) -> Self {
+    pub fn from_json(value: Value) -> Self {
         let category = value["event"].as_str().expect("Redis string").to_owned();
         let language = if category == "update" {
             Some(value["payload"]["language"].to_string())
@@ -133,8 +134,29 @@ impl Toot {
         }
     }
 
+    pub fn get_involved_users(&self) -> HashSet<i64> {
+        let mut involved_users: HashSet<i64> = HashSet::new();
+        let msg = self.payload.clone();
+
+        let api = "Invariant Violation: JSON value does not conform to Mastdon API";
+        involved_users.insert(msg["account"]["id"].str_to_i64().expect(&api));
+        if let Some(mentions) = msg["mentions"].as_array() {
+            for mention in mentions {
+                involved_users.insert(mention["id"].str_to_i64().expect(&api));
+            }
+        }
+        if let Some(replied_to_account) = msg["in_reply_to_account_id"].as_str() {
+            involved_users.insert(replied_to_account.parse().expect(&api));
+        }
+
+        if let Some(reblog) = msg["reblog"].as_object() {
+            involved_users.insert(reblog["account"]["id"].str_to_i64().expect(&api));
+        }
+        involved_users
+    }
+
     /// Filter out any `Toot`'s that fail the provided filter.
-    fn filter(self, user: &User) -> Result<Async<Option<Self>>, Error> {
+    pub fn filter(self, user: &User) -> Result<Async<Option<Self>>, Error> {
         let toot = self;
 
         let category = toot.category.clone();
@@ -159,5 +181,19 @@ impl Toot {
         } else {
             send_msg
         }
+    }
+}
+
+trait ConvertValue {
+    fn str_to_i64(&self) -> Result<i64, Box<dyn std::error::Error>>;
+}
+
+impl ConvertValue for Value {
+    fn str_to_i64(&self) -> Result<i64, Box<dyn std::error::Error>> {
+        Ok(self
+            .as_str()
+            .ok_or(format!("{} is not a string", &self))?
+            .parse()
+            .map_err(|_| "Could not parse str")?)
     }
 }
