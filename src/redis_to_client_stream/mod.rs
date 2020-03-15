@@ -56,9 +56,8 @@ pub fn send_updates_to_ws(
             }),
     );
 
-    let (tl, email, id) = (
+    let (tl, id) = (
         client_agent.current_user.target_timeline.clone(),
-        client_agent.current_user.email.clone(),
         client_agent.current_user.id,
     );
     // Yield new events for as long as the client is still connected
@@ -76,7 +75,7 @@ pub fn send_updates_to_ws(
                 futures::future::ok(false)
             }
             Err(e) => {
-                log::warn!("Error in TL {}\nfor user: {}({})\n{}", tl, email, id, e);
+                log::warn!("Error in TL {}\nfor user: #{}\n{}", tl, id, e);
                 futures::future::ok(false)
             }
         });

@@ -43,8 +43,6 @@ pub struct Blocks {
 #[derive(Clone, Debug, PartialEq)]
 pub struct User {
     pub target_timeline: String,
-    pub email: String, // We only use email for logging; we could cut it for performance
-    pub access_token: String, // We only need this once (to send back with the WS reply).  Cut?
     pub id: i64,
     pub scopes: OauthScope,
     pub logged_in: bool,
@@ -56,8 +54,6 @@ impl Default for User {
     fn default() -> Self {
         Self {
             id: -1,
-            email: "".to_string(),
-            access_token: "".to_string(),
             scopes: OauthScope::default(),
             logged_in: false,
             target_timeline: String::new(),
@@ -67,18 +63,23 @@ impl Default for User {
     }
 }
 
+// impl fmt::Display for User {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, r##"User {} "##)
+//     }
+// }
+
 impl User {
     pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
-        println!("Creating user...");
-        let mut user: User = match q.access_token.clone() {
+        let token = q.access_token.clone();
+        let mut user: User = match token {
             None => User::default(),
             Some(token) => postgres::select_user(&token, pool.clone())?,
         };
 
         user = user.set_timeline_and_filter(q, pool.clone())?;
         user.blocks.user_blocks = postgres::select_user_blocks(user.id, pool.clone());
-        user.blocks.domain_blocks = postgres::select_domain_blocks(pool.clone());
-        dbg!(&user);
+        user.blocks.domain_blocks = postgres::select_domain_blocks(user.id, pool.clone());
         Ok(user)
     }
 

@@ -57,11 +57,10 @@ fn main() {
 
     // WebSocket
     let ws_update_interval = *cfg.ws_interval;
-    let websocket_routes = ws::extract_user_or_reject(pg_pool.clone())
+    let websocket_routes = ws::extract_user_and_token_or_reject(pg_pool.clone())
         .and(warp::ws::ws2())
-        .map(move |user: user::User, ws: Ws2| {
+        .map(move |user: user::User, token: Option<String>, ws: Ws2| {
             log::info!("Incoming websocket request");
-            let token = user.access_token.clone();
             // Create a new ClientAgent
             let mut client_agent = client_agent_ws.clone_with_shared_receiver();
             // Assign that agent to generate a stream of updates for the user/timeline pair
@@ -77,7 +76,7 @@ fn main() {
                         ws_update_interval,
                     )
                 }),
-                token,
+                token.unwrap_or_else(String::new),
             )
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));

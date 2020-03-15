@@ -32,11 +32,12 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_or_reject(pg_pool: PgPool) -> BoxedFilter<(User,)> {
+pub fn extract_user_and_token_or_reject(pg_pool: PgPool) -> BoxedFilter<(User, Option<String>)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
         .and_then(move |q| User::from_query(q, pg_pool.clone()))
+        .and(query::OptionalAccessToken::from_ws_header())
         .boxed()
 }
 
@@ -137,7 +138,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_local {
@@ -156,7 +157,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_local_media {
@@ -175,7 +176,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(hashtag {
@@ -194,7 +195,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(hashtag_local {
@@ -213,7 +214,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
 
@@ -233,7 +234,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
     test_private_endpoint!(user_notification {
@@ -252,7 +253,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::Notification,
+            allowed_langs: Filter::Notification,
         },
     });
     test_private_endpoint!(direct {
@@ -271,7 +272,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
     test_private_endpoint!(list_valid_list {
@@ -290,7 +291,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
 

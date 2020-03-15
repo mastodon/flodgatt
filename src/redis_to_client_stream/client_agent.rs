@@ -14,10 +14,14 @@
 //!
 //! Because `StreamManagers` are lightweight data structures that do not directly
 //! communicate with Redis, it we create a new `ClientAgent` for
-//! each new client connection (each in its own thread).
+//! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
 use super::{message::Message, receiver::Receiver};
 use crate::{config, parse_client_request::user::User};
-use futures::{Async, Poll};
+use futures::{
+    Async::{self, NotReady, Ready},
+    Poll,
+};
+
 use std::sync;
 use tokio::io::Error;
 use uuid::Uuid;
@@ -95,15 +99,20 @@ impl futures::stream::Stream for ClientAgent {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
-        let (filter, blocks) = (&self.current_user.allowed_langs, &self.current_user.blocks);
+        let allowed_langs = &self.current_user.allowed_langs;
+        let blocked_users = &self.current_user.blocks.user_blocks;
+        let blocked_domains = &self.current_user.blocks.domain_blocks;
+        const BLOCK_TOOT: Result<Async<Option<Message>>, Error> = Ok(NotReady);
+
         match result {
             Ok(Async::Ready(Some(json))) => match Message::from_json(json) {
-                Message::Update(status) if status.is_filtered_out(filter) => Ok(Async::NotReady),
-                Message::Update(status) if status.is_blocked(blocks) => Ok(Async::NotReady),
-                no_filtering_needed => Ok(Async::Ready(Some(no_filtering_needed))),
+                Message::Update(toot) if toot.language_not_allowed(allowed_langs) => BLOCK_TOOT,
+                Message::Update(toot) if toot.involves_blocked_user(blocked_users) => BLOCK_TOOT,
+                Message::Update(toot) if toot.from_blocked_domain(blocked_domains) => BLOCK_TOOT,
+                other_message => Ok(Ready(Some(other_message))),
             },
-            Ok(Async::Ready(None)) => Ok(Async::Ready(None)),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Ok(Ready(None)) => Ok(Ready(None)),
+            Ok(NotReady) => Ok(NotReady),
             Err(e) => Err(e),
         }
     }

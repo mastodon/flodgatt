@@ -190,7 +190,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_media_1 {
@@ -209,7 +209,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_local {
@@ -228,7 +228,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_local_media_true {
@@ -247,7 +247,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(public_local_media_1 {
@@ -266,7 +266,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(hashtag {
@@ -285,7 +285,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
     test_public_endpoint!(hashtag_local {
@@ -304,7 +304,7 @@ mod test {
             },
             logged_in: false,
             blocks: Blocks::default(),
-            filter: Filter::Language,
+            allowed_langs: Filter::Language,
         },
     });
 
@@ -324,7 +324,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
     test_private_endpoint!(user_notification {
@@ -343,7 +343,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::Notification,
+            allowed_langs: Filter::Notification,
         },
     });
     test_private_endpoint!(direct {
@@ -362,7 +362,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
 
@@ -383,7 +383,7 @@ mod test {
             },
             logged_in: true,
             blocks: Blocks::default(),
-            filter: Filter::NoFilter,
+            allowed_langs: Filter::NoFilter,
         },
     });
     test_bad_auth_token_in_query!(public_media_true_bad_auth {
