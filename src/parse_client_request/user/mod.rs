@@ -10,27 +10,12 @@ use super::query::Query;
 use std::collections::HashSet;
 use warp::reject::Rejection;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct OauthScope {
-    pub all: bool,
-    pub statuses: bool,
-    pub notify: bool,
-    pub lists: bool,
-}
-impl From<Vec<String>> for OauthScope {
-    fn from(scope_list: Vec<String>) -> Self {
-        let mut oauth_scope = OauthScope::default();
-        for scope in scope_list {
-            match scope.as_str() {
-                "read" => oauth_scope.all = true,
-                "read:statuses" => oauth_scope.statuses = true,
-                "read:notifications" => oauth_scope.notify = true,
-                "read:lists" => oauth_scope.lists = true,
-                _ => (),
-            }
-        }
-        oauth_scope
-    }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Scope {
+    All,
+    Statuses,
+    Notifications,
+    Lists,
 }
 
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -44,7 +29,7 @@ pub struct Blocks {
 pub struct User {
     pub target_timeline: String,
     pub id: i64,
-    pub scopes: OauthScope,
+    pub scopes: HashSet<Scope>,
     pub logged_in: bool,
     pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
@@ -54,7 +39,7 @@ impl Default for User {
     fn default() -> Self {
         Self {
             id: -1,
-            scopes: OauthScope::default(),
+            scopes: HashSet::new(),
             logged_in: false,
             target_timeline: String::new(),
             allowed_langs: HashSet::new(),
@@ -62,12 +47,6 @@ impl Default for User {
         }
     }
 }
-
-// impl fmt::Display for User {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, r##"User {} "##)
-//     }
-// }
 
 impl User {
     pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
@@ -80,11 +59,13 @@ impl User {
         user = user.set_timeline_and_filter(q, pool.clone())?;
         user.blocks.user_blocks = postgres::select_user_blocks(user.id, pool.clone());
         user.blocks.domain_blocks = postgres::select_domain_blocks(user.id, pool.clone());
+        log::info!("Creating user: {:#?}", user);
         Ok(user)
     }
 
     fn set_timeline_and_filter(self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
         let (read_scope, f) = (self.scopes.clone(), self.allowed_langs.clone());
+        use Scope::*;
         let (filter, target_timeline) = match q.stream.as_ref() {
             // Public endpoints:
             tl @ "public" | tl @ "public:local" if q.media => (f, format!("{}:media", tl)),
@@ -94,18 +75,18 @@ impl User {
             // Hashtag endpoints:
             tl @ "hashtag" | tl @ "hashtag:local" => (f, format!("{}:{}", tl, q.hashtag)),
             // Private endpoints: User:
-            "user" if self.logged_in && (read_scope.all || read_scope.statuses) => {
+            "user" if self.logged_in && read_scope.contains(&Statuses) => {
                 (HashSet::new(), format!("{}", self.id))
             }
-            "user:notification" if self.logged_in && (read_scope.all || read_scope.notify) => {
+            "user:notification" if self.logged_in && read_scope.contains(&Notifications) => {
                 (HashSet::new(), format!("{}", self.id))
             }
             // List endpoint:
-            "list" if self.owns_list(q.list, pool) && (read_scope.all || read_scope.lists) => {
+            "list" if self.owns_list(q.list, pool) && read_scope.contains(&Lists) => {
                 (HashSet::new(), format!("list:{}", q.list))
             }
             // Direct endpoint:
-            "direct" if self.logged_in && (read_scope.all || read_scope.statuses) => {
+            "direct" if self.logged_in && read_scope.contains(&Statuses) => {
                 (HashSet::new(), "direct".to_string())
             }
             // Reject unathorized access attempts for private endpoints

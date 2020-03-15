@@ -34,7 +34,7 @@ impl Message {
         }
     }
     pub fn event(&self) -> String {
-        format!("{}", self)
+        format!("{}", self).to_lowercase()
     }
     pub fn payload(&self) -> String {
         match self {
@@ -72,6 +72,7 @@ impl Status {
             None => ALLOW, // If toot language is null, toot is always allowed
         }
     }
+
     /// Returns `true` if this toot originated from a domain the User has blocked.
     pub fn from_blocked_domain(&self, blocked_domains: &HashSet<String>) -> bool {
         let full_username = self.0["account"]["acct"]
@@ -93,6 +94,8 @@ impl Status {
     ///  * Wrote the toot that this toot is boosting (if any)
     pub fn involves_blocked_user(&self, blocked_users: &HashSet<i64>) -> bool {
         let toot = self.0.clone();
+        const ALLOW: bool = false;
+        const REJECT: bool = true;
 
         let author_user = match toot["account"]["id"].str_to_i64() {
             Ok(user_id) => vec![user_id].into_iter(),
@@ -128,7 +131,11 @@ impl Status {
             .chain(boosted_user)
             .collect::<HashSet<i64>>();
 
-        involved_users.is_disjoint(blocked_users)
+        if involved_users.is_disjoint(blocked_users) {
+            ALLOW
+        } else {
+            REJECT
+        }
     }
 }
 

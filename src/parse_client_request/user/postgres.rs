@@ -1,7 +1,7 @@
 //! Postgres queries
 use crate::{
     config,
-    parse_client_request::user::{OauthScope, User},
+    parse_client_request::user::{Scope, User},
 };
 use ::postgres;
 use r2d2_postgres::PostgresConnectionManager;
@@ -51,11 +51,25 @@ LIMIT 1",
             )
         .expect("Hard-coded query will return Some([0 or more rows])");
     if let Some(result_columns) = query_rows.get(0) {
-        let scope_vec: Vec<String> = result_columns
+        let mut scopes: HashSet<Scope> = result_columns
             .get::<_, String>(3)
             .split(' ')
-            .map(|s| s.to_owned())
+            .filter_map(|scope| match scope {
+                "read" => Some(Scope::All),
+                "read:statuses" => Some(Scope::Statuses),
+                "read:notifications" => Some(Scope::Notifications),
+                "read:lists" => Some(Scope::Lists),
+                unexpected => {
+                    log::warn!("Unable to parse scope `{}`, ignoring it.", unexpected);
+                    None
+                }
+            })
             .collect();
+        if scopes.remove(&Scope::All) {
+            scopes.insert(Scope::Statuses);
+            scopes.insert(Scope::Notifications);
+            scopes.insert(Scope::Lists);
+        }
         let mut allowed_langs = HashSet::new();
         if let Ok(langs_vec) = result_columns.try_get::<_, Vec<String>>(2) {
             for lang in langs_vec {
@@ -65,7 +79,7 @@ LIMIT 1",
 
         Ok(User {
             id: result_columns.get(1),
-            scopes: OauthScope::from(scope_vec),
+            scopes,
             logged_in: true,
             allowed_langs,
             ..User::default()

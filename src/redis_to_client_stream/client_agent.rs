@@ -99,17 +99,20 @@ impl futures::stream::Stream for ClientAgent {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
-        let allowed_langs = &self.current_user.allowed_langs;
-        let blocked_users = &self.current_user.blocks.user_blocks;
-        let blocked_domains = &self.current_user.blocks.domain_blocks;
-        const BLOCK_TOOT: Result<Async<Option<Message>>, Error> = Ok(NotReady);
-
+        let (allowed_langs, blocks) = (&self.current_user.allowed_langs, &self.current_user.blocks);
+        let (blocked_users, blocked_domains) = (&blocks.user_blocks, &blocks.domain_blocks);
+        let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
+        use Message::*;
         match result {
             Ok(Async::Ready(Some(json))) => match Message::from_json(json) {
-                Message::Update(toot) if toot.language_not_allowed(allowed_langs) => BLOCK_TOOT,
-                Message::Update(toot) if toot.involves_blocked_user(blocked_users) => BLOCK_TOOT,
-                Message::Update(toot) if toot.from_blocked_domain(blocked_domains) => BLOCK_TOOT,
-                other_message => Ok(Ready(Some(other_message))),
+                Update(status) if status.language_not_allowed(allowed_langs) => block,
+                Update(status) if status.involves_blocked_user(blocked_users) => block,
+                Update(status) if status.from_blocked_domain(blocked_domains) => block,
+                Update(status) => send(Update(status)),
+                Notification(notification) => send(Notification(notification)),
+                Conversation(notification) => send(Conversation(notification)),
+                Delete(status_id) => send(Delete(status_id)),
+                FiltersChanged => send(FiltersChanged),
             },
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
