@@ -1,14 +1,14 @@
 //! Postgres queries
 use crate::{
     config,
-    parse_client_request::user::{Scope, User},
+    parse_client_request::user::{Scope, UserData},
 };
 use ::postgres;
 use r2d2_postgres::PostgresConnectionManager;
 use std::collections::HashSet;
 use warp::reject::Rejection;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PgPool(pub r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>);
 impl PgPool {
     pub fn new(pg_cfg: config::PostgresConfig) -> Self {
@@ -30,12 +30,8 @@ impl PgPool {
     }
 }
 
-/// Build a user based on the result of querying Postgres with the access token
-///
-/// This does _not_ set the timeline, filter, or blocks fields.  Use the various `User`
-/// methods to do so.  In general, this function shouldn't be needed outside `User`.
-pub fn select_user(access_token: &str, pg_pool: PgPool) -> Result<User, Rejection> {
-    let mut conn = pg_pool.0.get().unwrap();
+pub fn select_user(token: &str, pool: PgPool) -> Result<UserData, Rejection> {
+    let mut conn = pool.0.get().unwrap();
     let query_rows = conn
             .query(
                 "
@@ -47,15 +43,21 @@ oauth_access_tokens.resource_owner_id = users.id
 WHERE oauth_access_tokens.token = $1
 AND oauth_access_tokens.revoked_at IS NULL
 LIMIT 1",
-                &[&access_token.to_owned()],
+                &[&token.to_owned()],
             )
         .expect("Hard-coded query will return Some([0 or more rows])");
     if let Some(result_columns) = query_rows.get(0) {
+        let id = result_columns.get(1);
+        let allowed_langs = result_columns
+            .try_get::<_, Vec<_>>(2)
+            .unwrap_or_else(|_| Vec::new())
+            .into_iter()
+            .collect();
         let mut scopes: HashSet<Scope> = result_columns
             .get::<_, String>(3)
             .split(' ')
             .filter_map(|scope| match scope {
-                "read" => Some(Scope::All),
+                "read" => Some(Scope::Read),
                 "read:statuses" => Some(Scope::Statuses),
                 "read:notifications" => Some(Scope::Notifications),
                 "read:lists" => Some(Scope::Lists),
@@ -65,27 +67,59 @@ LIMIT 1",
                 }
             })
             .collect();
-        if scopes.remove(&Scope::All) {
+        // We don't need to separately track read auth - it's just all three others
+        if scopes.remove(&Scope::Read) {
             scopes.insert(Scope::Statuses);
             scopes.insert(Scope::Notifications);
             scopes.insert(Scope::Lists);
         }
-        let mut allowed_langs = HashSet::new();
-        if let Ok(langs_vec) = result_columns.try_get::<_, Vec<String>>(2) {
-            for lang in langs_vec {
-                allowed_langs.insert(lang);
-            }
-        }
 
-        Ok(User {
-            id: result_columns.get(1),
-            scopes,
-            logged_in: true,
+        Ok(UserData {
+            id,
             allowed_langs,
-            ..User::default()
+            scopes,
         })
     } else {
         Err(warp::reject::custom("Error: Invalid access token"))
+    }
+}
+
+pub fn select_list_id(tag_name: &String, pg_pool: PgPool) -> Result<i64, Rejection> {
+    let mut conn = pg_pool.0.get().unwrap();
+    // For the Postgres query, `id` = list number; `account_id` = user.id
+    let rows = &conn
+        .query(
+            "
+SELECT id
+FROM tags
+WHERE name = $1
+LIMIT 1",
+            &[&tag_name],
+        )
+        .expect("Hard-coded query will return Some([0 or more rows])");
+
+    match rows.get(0) {
+        Some(row) => Ok(row.get(0)),
+        None => Err(warp::reject::custom("Error: Hashtag does not exist.")),
+    }
+}
+pub fn select_hashtag_name(tag_id: &i64, pg_pool: PgPool) -> Result<String, Rejection> {
+    let mut conn = pg_pool.0.get().unwrap();
+    // For the Postgres query, `id` = list number; `account_id` = user.id
+    let rows = &conn
+        .query(
+            "
+SELECT name
+FROM tags
+WHERE id = $1
+LIMIT 1",
+            &[&tag_id],
+        )
+        .expect("Hard-coded query will return Some([0 or more rows])");
+
+    match rows.get(0) {
+        Some(row) => Ok(row.get(0)),
+        None => Err(warp::reject::custom("Error: Hashtag does not exist.")),
     }
 }
 

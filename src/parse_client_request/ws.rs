@@ -1,7 +1,7 @@
 //! Filters for the WebSocket endpoint
 use super::{
     query::{self, Query},
-    user::{PgPool, User},
+    user::{PgPool, Subscription},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 
@@ -32,11 +32,13 @@ fn parse_query() -> BoxedFilter<(Query,)> {
         .boxed()
 }
 
-pub fn extract_user_and_token_or_reject(pg_pool: PgPool) -> BoxedFilter<(User, Option<String>)> {
+pub fn extract_user_and_token_or_reject(
+    pg_pool: PgPool,
+) -> BoxedFilter<(Subscription, Option<String>)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
-        .and_then(move |q| User::from_query(q, pg_pool.clone()))
+        .and_then(move |q| Subscription::from_query(q, pg_pool.clone()))
         .and(query::OptionalAccessToken::from_ws_header())
         .boxed()
 }
@@ -124,8 +126,8 @@ mod test {
 
     test_public_endpoint!(public_media {
         endpoint: "/api/v1/streaming?stream=public:media",
-        user: User {
-            target_timeline: "public:media".to_string(),
+        user: Subscription {
+            timeline: "public:media".to_string(),
             id: -1,
             email: "".to_string(),
             access_token: "".to_string(),
@@ -143,8 +145,8 @@ mod test {
     });
     test_public_endpoint!(public_local {
         endpoint: "/api/v1/streaming?stream=public:local",
-        user: User {
-            target_timeline: "public:local".to_string(),
+        user: Subscription {
+            timeline: "public:local".to_string(),
             id: -1,
             email: "".to_string(),
             access_token: "".to_string(),
@@ -162,8 +164,8 @@ mod test {
     });
     test_public_endpoint!(public_local_media {
         endpoint: "/api/v1/streaming?stream=public:local:media",
-        user: User {
-            target_timeline: "public:local:media".to_string(),
+        user: Subscription {
+            timeline: "public:local:media".to_string(),
             id: -1,
             email: "".to_string(),
             access_token: "".to_string(),
@@ -181,8 +183,8 @@ mod test {
     });
     test_public_endpoint!(hashtag {
         endpoint: "/api/v1/streaming?stream=hashtag&tag=a",
-        user: User {
-            target_timeline: "hashtag:a".to_string(),
+        user: Subscription {
+            timeline: "hashtag:a".to_string(),
             id: -1,
             email: "".to_string(),
             access_token: "".to_string(),
@@ -200,8 +202,8 @@ mod test {
     });
     test_public_endpoint!(hashtag_local {
         endpoint: "/api/v1/streaming?stream=hashtag:local&tag=a",
-        user: User {
-            target_timeline: "hashtag:local:a".to_string(),
+        user: Subscription {
+            timeline: "hashtag:local:a".to_string(),
             id: -1,
             email: "".to_string(),
             access_token: "".to_string(),
@@ -220,8 +222,8 @@ mod test {
 
     test_private_endpoint!(user {
         endpoint: "/api/v1/streaming?stream=user",
-        user: User {
-            target_timeline: "1".to_string(),
+        user: Subscription {
+            timeline: "1".to_string(),
             id: 1,
             email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
@@ -239,8 +241,8 @@ mod test {
     });
     test_private_endpoint!(user_notification {
         endpoint: "/api/v1/streaming?stream=user:notification",
-        user: User {
-            target_timeline: "1".to_string(),
+        user: Subscription {
+            timeline: "1".to_string(),
             id: 1,
             email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
@@ -258,8 +260,8 @@ mod test {
     });
     test_private_endpoint!(direct {
         endpoint: "/api/v1/streaming?stream=direct",
-        user: User {
-            target_timeline: "direct".to_string(),
+        user: Subscription {
+            timeline: "direct".to_string(),
             id: 1,
             email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),
@@ -277,8 +279,8 @@ mod test {
     });
     test_private_endpoint!(list_valid_list {
         endpoint: "/api/v1/streaming?stream=list&list=1",
-        user: User {
-            target_timeline: "list:1".to_string(),
+        user: Subscription {
+            timeline: "list:1".to_string(),
             id: 1,
             email: "user@example.com".to_string(),
             access_token: "TEST_USER".to_string(),

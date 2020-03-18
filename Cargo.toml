@@ -23,6 +23,7 @@ strum = "0.16.0"
 strum_macros = "0.16.0"
 r2d2_postgres = "0.16.0"
 r2d2 = "0.8.8"
+lru = "0.4.3"
 
 [dev-dependencies]
 criterion = "0.3"

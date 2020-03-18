@@ -39,7 +39,7 @@ impl<'a> RedisMsg<'a> {
         item
     }
 
-    pub fn extract_timeline_and_message(&mut self) -> (String, Value) {
+    pub fn extract_raw_timeline_and_message(&mut self) -> (String, Value) {
         let timeline = &self.next_field()[self.prefix_len..];
         let msg_txt = self.next_field();
         let msg_value: Value =

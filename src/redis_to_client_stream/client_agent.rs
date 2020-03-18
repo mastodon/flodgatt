@@ -16,7 +16,10 @@
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
 use super::{message::Message, receiver::Receiver};
-use crate::{config, parse_client_request::user::User};
+use crate::{
+    config,
+    parse_client_request::user::{PgPool, Subscription},
+};
 use futures::{
     Async::{self, NotReady, Ready},
     Poll,
@@ -31,18 +34,17 @@ use uuid::Uuid;
 pub struct ClientAgent {
     receiver: sync::Arc<sync::Mutex<Receiver>>,
     id: uuid::Uuid,
-    pub target_timeline: String,
-    pub current_user: User,
+    //    pub current_timeline: String,
+    subscription: Subscription,
 }
 
 impl ClientAgent {
     /// Create a new `ClientAgent` with no shared data.
-    pub fn blank(redis_cfg: config::RedisConfig) -> Self {
+    pub fn blank(redis_cfg: config::RedisConfig, pg_pool: PgPool) -> Self {
         ClientAgent {
-            receiver: sync::Arc::new(sync::Mutex::new(Receiver::new(redis_cfg))),
+            receiver: sync::Arc::new(sync::Mutex::new(Receiver::new(redis_cfg, pg_pool))),
             id: Uuid::default(),
-            target_timeline: String::new(),
-            current_user: User::default(),
+            subscription: Subscription::default(),
         }
     }
 
@@ -51,24 +53,23 @@ impl ClientAgent {
         Self {
             receiver: self.receiver.clone(),
             id: self.id,
-            target_timeline: self.target_timeline.clone(),
-            current_user: self.current_user.clone(),
+            subscription: self.subscription.clone(),
         }
     }
-    /// Initializes the `ClientAgent` with a unique ID, a `User`, and the target timeline.
-    /// Also passes values to the `Receiver` for it's initialization.
+
+    /// Initializes the `ClientAgent` with a unique ID associated with a specific user's
+    /// subscription.  Also passes values to the `Receiver` for it's initialization.
     ///
     /// Note that this *may or may not* result in a new Redis connection.
     /// If the server has already subscribed to the timeline on behalf of
     /// a different user, the `Receiver` is responsible for figuring
     /// that out and avoiding duplicated connections.  Thus, it is safe to
     /// use this method for each new client connection.
-    pub fn init_for_user(&mut self, user: User) {
+    pub fn init_for_user(&mut self, subscription: Subscription) {
         self.id = Uuid::new_v4();
-        self.target_timeline = user.target_timeline.to_owned();
-        self.current_user = user;
+        self.subscription = subscription;
         let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
-        receiver.manage_new_timeline(self.id, &self.target_timeline);
+        receiver.manage_new_timeline(self.id, self.subscription.timeline);
     }
 }
 
@@ -92,14 +93,14 @@ impl futures::stream::Stream for ClientAgent {
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
-            receiver.configure_for_polling(self.id, &self.target_timeline.clone());
+            receiver.configure_for_polling(self.id, self.subscription.timeline);
             receiver.poll()
         };
         if start_time.elapsed().as_millis() > 1 {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
-        let (allowed_langs, blocks) = (&self.current_user.allowed_langs, &self.current_user.blocks);
+        let (allowed_langs, blocks) = (&self.subscription.allowed_langs, &self.subscription.blocks);
         let (blocked_users, blocked_domains) = (&blocks.user_blocks, &blocks.domain_blocks);
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
         use Message::*;

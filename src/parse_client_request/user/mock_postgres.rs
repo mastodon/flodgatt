@@ -1,5 +1,5 @@
 //! Mock Postgres connection (for use in unit testing)
-use super::{OauthScope, User};
+use super::{OauthScope, Subscription};
 use std::collections::HashSet;
 
 #[derive(Clone)]
@@ -10,8 +10,11 @@ impl PgPool {
     }
 }
 
-pub fn select_user(access_token: &str, _pg_pool: PgPool) -> Result<User, warp::reject::Rejection> {
-    let mut user = User::default();
+pub fn select_user(
+    access_token: &str,
+    _pg_pool: PgPool,
+) -> Result<Subscription, warp::reject::Rejection> {
+    let mut user = Subscription::default();
     if access_token == "TEST_USER" {
         user.id = 1;
         user.logged_in = true;

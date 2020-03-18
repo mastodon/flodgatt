@@ -1,3 +1,4 @@
+use crate::parse_client_request::user::Timeline;
 use serde_json::Value;
 use std::{collections, time};
 use uuid::Uuid;
@@ -6,16 +7,15 @@ use uuid::Uuid;
 pub struct MsgQueue {
     pub messages: collections::VecDeque<Value>,
     last_polled_at: time::Instant,
-    pub redis_channel: String,
+    pub timeline: Timeline,
 }
 
 impl MsgQueue {
-    pub fn new(redis_channel: impl std::fmt::Display) -> Self {
-        let redis_channel = redis_channel.to_string();
+    pub fn new(timeline: Timeline) -> Self {
         MsgQueue {
             messages: collections::VecDeque::new(),
             last_polled_at: time::Instant::now(),
-            redis_channel,
+            timeline,
         }
     }
 }
@@ -29,26 +29,26 @@ impl MessageQueues {
             .and_modify(|queue| queue.last_polled_at = time::Instant::now());
     }
 
-    pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: String) -> Option<Value> {
+    pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: Timeline) -> Option<Value> {
         self.entry(id)
             .or_insert_with(|| MsgQueue::new(timeline))
             .messages
             .pop_front()
     }
-    pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: String) -> Vec<Change> {
+    pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: Timeline) -> Vec<Change> {
         let mut timelines_to_modify = Vec::new();
 
         timelines_to_modify.push(Change {
-            timeline: timeline.to_owned(),
+            timeline,
             in_subscriber_number: 1,
         });
         self.retain(|_id, msg_queue| {
             if msg_queue.last_polled_at.elapsed() < time::Duration::from_secs(30) {
                 true
             } else {
-                let timeline = &msg_queue.redis_channel;
+                let timeline = &msg_queue.timeline;
                 timelines_to_modify.push(Change {
-                    timeline: timeline.to_owned(),
+                    timeline: *timeline,
                     in_subscriber_number: -1,
                 });
                 false
@@ -58,7 +58,7 @@ impl MessageQueues {
     }
 }
 pub struct Change {
-    pub timeline: String,
+    pub timeline: Timeline,
     pub in_subscriber_number: i32,
 }
 

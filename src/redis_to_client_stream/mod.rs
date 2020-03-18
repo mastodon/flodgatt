@@ -56,10 +56,6 @@ pub fn send_updates_to_ws(
             }),
     );
 
-    let (tl, id) = (
-        client_agent.current_user.target_timeline.clone(),
-        client_agent.current_user.id,
-    );
     // Yield new events for as long as the client is still connected
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .take_while(move |_| match ws_rx.poll() {
@@ -75,7 +71,7 @@ pub fn send_updates_to_ws(
                 futures::future::ok(false)
             }
             Err(e) => {
-                log::warn!("Error in TL {}\nfor user: #{}\n{}", tl, id, e);
+                log::warn!("Error in TL {}", e);
                 futures::future::ok(false)
             }
         });
@@ -105,5 +101,5 @@ pub fn send_updates_to_ws(
             log::info!("WebSocket connection closed.");
             result
         })
-        .map_err(move |e| log::warn!("Error sending to user: {}\n{}", id, e))
+        .map_err(move |e| log::warn!("Error sending to user: {}", e))
 }
