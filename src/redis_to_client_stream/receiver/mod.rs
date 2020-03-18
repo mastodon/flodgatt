@@ -193,20 +193,3 @@ impl futures::stream::Stream for Receiver {
         }
     }
 }
-
-impl Drop for Receiver {
-    fn drop(&mut self) {
-        log::warn!(
-            "\
-                     ##########################################################
-                     #                                                        #
-                     #                       Drop triggered                   #
-                     #                         (see below)                    #
-                     ##########################################################"
-        );
-        dbg!(&self);
-        let opt_hashtag = self.if_hashtag_timeline_get_hashtag_name(self.timeline);
-        let opt_hashtag = opt_hashtag.as_ref();
-        pubsub_cmd!("unsubscribe", self, self.timeline.to_redis_str(opt_hashtag));
-    }
-}

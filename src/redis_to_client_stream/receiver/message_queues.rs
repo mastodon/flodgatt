@@ -1,13 +1,29 @@
 use crate::parse_client_request::user::Timeline;
 use serde_json::Value;
-use std::{collections, time};
+use std::{collections, fmt, time};
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MsgQueue {
+    pub timeline: Timeline,
     pub messages: collections::VecDeque<Value>,
     last_polled_at: time::Instant,
-    pub timeline: Timeline,
+}
+impl fmt::Debug for MsgQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "\
+MsgQueue {{
+    timeline: {:?},
+    messages: {:?},
+    last_polled_at: {:?},
+}}",
+            self.timeline,
+            self.messages,
+            self.last_polled_at.elapsed(),
+        )
+    }
 }
 
 impl MsgQueue {
