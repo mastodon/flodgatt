@@ -176,7 +176,10 @@ impl futures::stream::Stream for Receiver {
                 let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
                 for msg_queue in self.msg_queues.values_mut() {
                     if msg_queue.timeline == timeline {
+                        log::info!("Match between queue TL: `{:?}`\n and timeline `{:?}`\n from raw_timeline: {}", &msg_queue.timeline, timeline, &raw_timeline);
                         msg_queue.messages.push_back(msg_value.clone());
+                    } else {
+                        log::info!("NO match between queue TL: `{:?}`\n and timeline `{:?}`\n from raw_timeline: {}", &msg_queue.timeline, timeline, &raw_timeline);
                     }
                 }
             }

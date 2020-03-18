@@ -64,7 +64,7 @@ impl Timeline {
             ["public", "local", "media"] => Timeline(Public, Local, Media),
             ["hashtag", _tag] => Timeline(Hashtag(hashtag.unwrap()), Federated, All),
             ["hashtag", _tag, "local"] => Timeline(Hashtag(hashtag.unwrap()), Local, All),
-            [id] => Timeline(User(id.parse().unwrap()), Local, All),
+            [id] => Timeline(User(id.parse().unwrap()), Federated, All),
             ["list", id] => Timeline(List(id.parse().unwrap()), Federated, All),
             ["direct", id] => Timeline(Direct(id.parse().unwrap()), Federated, All),
             // Other endpoints don't exist:
