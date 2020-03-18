@@ -100,8 +100,10 @@ impl futures::stream::Stream for ClientAgent {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
         };
 
-        let (allowed_langs, blocks) = (&self.subscription.allowed_langs, &self.subscription.blocks);
-        let (blocked_users, blocked_domains) = (&blocks.user_blocks, &blocks.domain_blocks);
+        let allowed_langs = &self.subscription.allowed_langs;
+        let blocked_users = &self.subscription.blocks.blocked_users;
+        let blocking_users = &self.subscription.blocks.blocking_users;
+        let blocked_domains = &self.subscription.blocks.blocked_domains;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
         use Message::*;
         match result {
@@ -109,6 +111,7 @@ impl futures::stream::Stream for ClientAgent {
                 Update(status) if status.language_not_allowed(allowed_langs) => block,
                 Update(status) if status.involves_blocked_user(blocked_users) => block,
                 Update(status) if status.from_blocked_domain(blocked_domains) => block,
+                Update(status) if status.from_blocking_user(blocking_users) => block,
                 Update(status) => send(Update(status)),
                 Notification(notification) => send(Notification(notification)),
                 Conversation(notification) => send(Conversation(notification)),

@@ -39,8 +39,9 @@ impl Subscription {
             timeline: Timeline::from_query_and_user(&q, &user, pool.clone())?,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
-                user_blocks: postgres::select_user_blocks(user.id, pool.clone()),
-                domain_blocks: postgres::select_domain_blocks(user.id, pool.clone()),
+                blocking_users: postgres::select_blocking_users(user.id, pool.clone()),
+                blocked_users: postgres::select_blocked_users(user.id, pool.clone()),
+                blocked_domains: postgres::select_blocked_domains(user.id, pool.clone()),
             },
         })
     }
@@ -167,8 +168,9 @@ pub enum Scope {
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Blocks {
-    pub domain_blocks: HashSet<String>,
-    pub user_blocks: HashSet<i64>,
+    pub blocked_domains: HashSet<String>,
+    pub blocked_users: HashSet<i64>,
+    pub blocking_users: HashSet<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -187,43 +189,3 @@ impl UserData {
         }
     }
 }
-
-// fn set_timeline_and_filter(self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
-//         let (read_scope, f) = (self.scopes.clone(), self.allowed_langs.clone());
-//         use Scope::*;
-//         let (filter, target_timeline) = match q.stream.as_ref() {
-//             // Public endpoints:
-//             tl @ "public" | tl @ "public:local" if q.media => (f, format!("{}:media", tl)),
-//             tl @ "public:media" | tl @ "public:local:media" => (f, tl.to_string()),
-//             tl @ "public" | tl @ "public:local" => (f, tl.to_string()),
-
-//             // Hashtag endpoints:
-//             tl @ "hashtag" | tl @ "hashtag:local" => (f, format!("{}:{}", tl, q.hashtag)),
-//             // Private endpoints: User:
-//             "user" if self.logged_in && read_scope.contains(&Statuses) => {
-//                 (HashSet::new(), format!("{}", self.id))
-//             }
-//             "user:notification" if self.logged_in && read_scope.contains(&Notifications) => {
-//                 (HashSet::new(), format!("{}", self.id))
-//             }
-//             // List endpoint:
-//             "list" if self.owns_list(q.list, pool) && read_scope.contains(&Lists) => {
-//                 (HashSet::new(), format!("list:{}", q.list))
-//             }
-//             // Direct endpoint:
-//             "direct" if self.logged_in && read_scope.contains(&Statuses) => {
-//                 (HashSet::new(), "direct".to_string())
-//             }
-//             // Reject unathorized access attempts for private endpoints
-//             "user" | "user:notification" | "direct" | "list" => {
-//                 return Err(warp::reject::custom("Error: Missing access token"))
-//             }
-//             // Other endpoints don't exist:
-//             _ => return Err(warp::reject::custom("Error: Nonexistent endpoint")),
-//         };
-//         Ok(Self {
-//             target_timeline,
-//             allowed_langs: filter,
-//             ..self
-//         })
-//     }

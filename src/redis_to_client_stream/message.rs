@@ -84,8 +84,25 @@ impl Status {
             None => false, // None means the user is on the local instance, which can't be blocked
         }
     }
+    /// Returns `true` if the Status is from an account that has blocked the current user.
+    pub fn from_blocking_user(&self, blocking_users: &HashSet<i64>) -> bool {
+        let toot = self.0.clone();
+        const ALLOW: bool = false;
+        const REJECT: bool = true;
 
-    /// Returns `true` if the User's list of blocked users includes a user involved in this toot.
+        let author = toot["account"]["id"]
+            .str_to_i64()
+            .unwrap_or_else(|_| log_fatal!("Could not process `account.id` in {:?}", toot));
+
+        if blocking_users.contains(&author) {
+            REJECT
+        } else {
+            ALLOW
+        }
+    }
+
+    /// Returns `true` if the User's list of blocked and muted users includes a user
+    /// involved in this toot.
     ///
     /// A user is involved if they:
     ///  * Wrote this toot

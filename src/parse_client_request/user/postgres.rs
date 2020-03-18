@@ -127,7 +127,18 @@ LIMIT 1",
 ///
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.
-pub fn select_user_blocks(user_id: i64, pg_pool: PgPool) -> HashSet<i64> {
+pub fn select_blocked_users(user_id: i64, pg_pool: PgPool) -> HashSet<i64> {
+    //     "
+    // SELECT
+    //    1
+    //    FROM blocks
+    //    WHERE (account_id = $1 AND target_account_id IN (${placeholders(targetAccountIds, 2)}))
+    //    OR (account_id = $2 AND target_account_id = $1)
+    // UNION SELECT
+    //    1
+    //    FROM mutes
+    //    WHERE account_id = $1 AND target_account_id IN (${placeholders(targetAccountIds, 2)})`
+    // , [req.accountId, unpackedPayload.account.id].concat(targetAccountIds)),`"
     pg_pool
         .0
         .get()
@@ -147,12 +158,33 @@ UNION SELECT target_account_id
         .map(|row| row.get(0))
         .collect()
 }
+/// Query Postgres for everyone who has blocked the user
+///
+/// **NOTE**: because we check this when the user connects, it will not include any blocks
+/// the user adds until they refresh/reconnect.
+pub fn select_blocking_users(user_id: i64, pg_pool: PgPool) -> HashSet<i64> {
+    pg_pool
+        .0
+        .get()
+        .unwrap()
+        .query(
+            "
+SELECT account_id
+  FROM blocks
+  WHERE target_account_id = $1",
+            &[&user_id],
+        )
+        .expect("Hard-coded query will return Some([0 or more rows])")
+        .iter()
+        .map(|row| row.get(0))
+        .collect()
+}
 
 /// Query Postgres for all current domain blocks
 ///
 /// **NOTE**: because we check this when the user connects, it will not include any blocks
 /// the user adds until they refresh/reconnect.
-pub fn select_domain_blocks(user_id: i64, pg_pool: PgPool) -> HashSet<String> {
+pub fn select_blocked_domains(user_id: i64, pg_pool: PgPool) -> HashSet<String> {
     pg_pool
         .0
         .get()
