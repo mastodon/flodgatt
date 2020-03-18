@@ -54,7 +54,7 @@ impl Timeline {
         use {Content::*, Reach::*, Stream::*};
         Self(Unset, Local, Notification)
     }
-    pub fn from_redis_channel(raw_timeline: &str, hashtag: Option<i64>) -> Self {
+    pub fn from_redis_str(raw_timeline: &str, hashtag: Option<i64>) -> Self {
         use {Content::*, Reach::*, Stream::*};
         match raw_timeline.split(':').collect::<Vec<&str>>()[..] {
             ["public"] => Timeline(Public, Federated, All),
@@ -70,7 +70,7 @@ impl Timeline {
             [..] => log_fatal!("Unexpected channel from Redis: {}", raw_timeline),
         }
     }
-    pub fn to_redis_channel(&self, hashtag: Option<&String>) -> String {
+    pub fn to_redis_str(&self, hashtag: Option<&String>) -> String {
         use {Content::*, Reach::*, Stream::*};
         match self {
             Timeline(User(id), Federated, All) => format!("timeline:{}", id),
