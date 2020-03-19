@@ -11,13 +11,23 @@ pub enum Message {
     Notification(Value),
     Delete(String),
     FiltersChanged,
+    Announcement(AnnouncementType),
+    UnknownEvent(String, Value),
 }
 
 #[derive(Debug, Clone)]
 pub struct Status(Value);
 
+#[derive(Debug, Clone)]
+pub enum AnnouncementType {
+    New(Value),
+    Delete(String),
+    Reaction(Value),
+}
+
 impl Message {
     pub fn from_json(json: Value) -> Self {
+        use AnnouncementType::*;
         let event = json["event"]
             .as_str()
             .unwrap_or_else(|| log_fatal!("Could not process `event` in {:?}", json));
@@ -32,20 +42,48 @@ impl Message {
                     .to_string(),
             ),
             "filters_changed" => Self::FiltersChanged,
-            unsupported_event => log_fatal!(
-                "Received an unsupported `event` type from Redis: {}",
-                unsupported_event
-            ),
+            "announcement" => Self::Announcement(New(json["payload"].clone())),
+            "announcement.reaction" => Self::Announcement(Reaction(json["payload"].clone())),
+            "announcement.delete" => Self::Announcement(Delete(
+                json["payload"]
+                    .as_str()
+                    .unwrap_or_else(|| log_fatal!("Could not process `payload` in {:?}", json))
+                    .to_string(),
+            )),
+            unexpected_event => {
+                log::warn!(
+                    "Received an unexpected `event` type from Redis: {}",
+                    unexpected_event
+                );
+                Self::UnknownEvent(event.to_string(), json["payload"].clone())
+            }
         }
     }
     pub fn event(&self) -> String {
-        format!("{}", self).to_lowercase()
+        use AnnouncementType::*;
+        match self {
+            Self::Update(_) => "update",
+            Self::Conversation(_) => "conversation",
+            Self::Notification(_) => "notification",
+            Self::Announcement(New(_)) => "announcement",
+            Self::Announcement(Reaction(_)) => "announcement.reaction",
+            Self::UnknownEvent(event, _) => &event,
+            Self::Delete(_) => "delete",
+            Self::Announcement(Delete(_)) => "announcement.delete",
+            Self::FiltersChanged => "filters_changed",
+        }
+        .to_string()
     }
     pub fn payload(&self) -> String {
+        use AnnouncementType::*;
         match self {
-            Self::Delete(id) => id.clone(),
             Self::Update(status) => status.0.to_string(),
-            Self::Conversation(value) | Self::Notification(value) => value.to_string(),
+            Self::Conversation(value)
+            | Self::Notification(value)
+            | Self::Announcement(New(value))
+            | Self::Announcement(Reaction(value))
+            | Self::UnknownEvent(_, value) => value.to_string(),
+            Self::Delete(id) | Self::Announcement(Delete(id)) => id.clone(),
             Self::FiltersChanged => "".to_string(),
         }
     }
