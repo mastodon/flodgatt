@@ -117,6 +117,8 @@ impl futures::stream::Stream for ClientAgent {
                 Conversation(notification) => send(Conversation(notification)),
                 Delete(status_id) => send(Delete(status_id)),
                 FiltersChanged => send(FiltersChanged),
+                Announcement(content) => send(Announcement(content)),
+                UnknownEvent(event, payload) => send(UnknownEvent(event, payload)),
             },
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
