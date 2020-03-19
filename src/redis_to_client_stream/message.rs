@@ -25,7 +25,12 @@ impl Message {
             "update" => Self::Update(Status(json["payload"].clone())),
             "conversation" => Self::Conversation(json["payload"].clone()),
             "notification" => Self::Notification(json["payload"].clone()),
-            "delete" => Self::Delete(json["payload"].to_string()),
+            "delete" => Self::Delete(
+                json["payload"]
+                    .as_str()
+                    .unwrap_or_else(|| log_fatal!("Could not process `payload` in {:?}", json))
+                    .to_string(),
+            ),
             "filters_changed" => Self::FiltersChanged,
             unsupported_event => log_fatal!(
                 "Received an unsupported `event` type from Redis: {}",
