@@ -1,6 +1,7 @@
 use super::redis_msg::RedisMsg;
-use crate::{config::RedisNamespace, redis_to_client_stream::receiver::MessageQueues};
+use crate::config::RedisNamespace;
 use futures::{Async, Poll};
+use serde_json::Value;
 use std::{io::Read, net};
 use tokio::io::AsyncRead;
 
@@ -27,8 +28,9 @@ impl RedisStream {
     // into messages.  Incoming messages *are* guaranteed to be RESP arrays,
     // https://redis.io/topics/protocol
     /// Adds any new Redis messages to the `MsgQueue` for the appropriate `ClientAgent`.
-    pub fn poll_redis(&mut self, msg_queues: &mut MessageQueues) {
+    pub fn poll_redis(&mut self) -> Vec<(String, Value)> {
         let mut buffer = vec![0u8; 6000];
+        let mut messages = Vec::new();
 
         if let Async::Ready(num_bytes_read) = self.poll_read(&mut buffer).unwrap() {
             let raw_utf = self.as_utf8(buffer, num_bytes_read);
@@ -36,7 +38,7 @@ impl RedisStream {
 
             // Only act if we have a full message (end on a msg boundary)
             if !self.incoming_raw_msg.ends_with("}\r\n") {
-                return;
+                return messages;
             };
             let prefix_to_skip = match &*self.namespace {
                 Some(namespace) => format!("{}:timeline:", namespace),
@@ -49,12 +51,8 @@ impl RedisStream {
                 let command = msg.next_field();
                 match command.as_str() {
                     "message" => {
-                        let (timeline, msg_value) = msg.extract_timeline_and_message();
-                        for msg_queue in msg_queues.values_mut() {
-                            if msg_queue.redis_channel == timeline {
-                                msg_queue.messages.push_back(msg_value.clone());
-                            }
-                        }
+                        let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
+                        messages.push((raw_timeline, msg_value));
                     }
 
                     "subscribe" | "unsubscribe" => {
@@ -64,12 +62,13 @@ impl RedisStream {
                         let _active_subscriptions = msg.process_number();
                         msg.cursor += "\r\n".len();
                     }
-                    cmd => panic!("Invariant violation: {} is invalid Redis input", cmd),
+                    cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
                 };
                 msg = RedisMsg::from_raw(&msg.raw[msg.cursor..], msg.prefix_len);
             }
             self.incoming_raw_msg.clear();
         }
+        messages
     }
 
     fn as_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {

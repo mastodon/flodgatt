@@ -1,144 +1,195 @@
 //! `User` struct and related functionality
-#[cfg(test)]
-mod mock_postgres;
-#[cfg(test)]
-use mock_postgres as postgres;
-#[cfg(not(test))]
-mod postgres;
+// #[cfg(test)]
+// mod mock_postgres;
+// #[cfg(test)]
+// use mock_postgres as postgres;
+// #[cfg(not(test))]
+pub mod postgres;
 pub use self::postgres::PgPool;
 use super::query::Query;
+use crate::log_fatal;
 use std::collections::HashSet;
 use warp::reject::Rejection;
 
-/// The filters that can be applied to toots after they come from Redis
-#[derive(Clone, Debug, PartialEq)]
-pub enum Filter {
-    NoFilter,
-    Language,
-    Notification,
-}
-impl Default for Filter {
-    fn default() -> Self {
-        Filter::Language
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct OauthScope {
-    pub all: bool,
-    pub statuses: bool,
-    pub notify: bool,
-    pub lists: bool,
-}
-impl From<Vec<String>> for OauthScope {
-    fn from(scope_list: Vec<String>) -> Self {
-        let mut oauth_scope = OauthScope::default();
-        for scope in scope_list {
-            match scope.as_str() {
-                "read" => oauth_scope.all = true,
-                "read:statuses" => oauth_scope.statuses = true,
-                "read:notifications" => oauth_scope.notify = true,
-                "read:lists" => oauth_scope.lists = true,
-                _ => (),
-            }
-        }
-        oauth_scope
-    }
-}
-
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct Blocks {
-    pub domain_blocks: HashSet<String>,
-    pub user_blocks: HashSet<i64>,
-}
-
 /// The User (with data read from Postgres)
 #[derive(Clone, Debug, PartialEq)]
-pub struct User {
-    pub target_timeline: String,
-    pub email: String, // We only use email for logging; we could cut it for performance
-    pub access_token: String, // We only need this once (to send back with the WS reply).  Cut?
-    pub id: i64,
-    pub scopes: OauthScope,
-    pub langs: Option<Vec<String>>,
-    pub logged_in: bool,
-    pub filter: Filter,
+pub struct Subscription {
+    pub timeline: Timeline,
+    pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
 }
 
-impl Default for User {
+impl Default for Subscription {
     fn default() -> Self {
         Self {
-            id: -1,
-            email: "".to_string(),
-            access_token: "".to_string(),
-            scopes: OauthScope::default(),
-            langs: None,
-            logged_in: false,
-            target_timeline: String::new(),
-            filter: Filter::default(),
+            timeline: Timeline(Stream::Unset, Reach::Local, Content::Notification),
+            allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
         }
     }
 }
 
-impl User {
+impl Subscription {
     pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
-        println!("Creating user...");
-        let mut user: User = match q.access_token.clone() {
-            None => User::default(),
+        let user = match q.access_token.clone() {
             Some(token) => postgres::select_user(&token, pool.clone())?,
+            None => UserData::public(),
         };
-
-        user = user.set_timeline_and_filter(q, pool.clone())?;
-        user.blocks.user_blocks = postgres::select_user_blocks(user.id, pool.clone());
-        user.blocks.domain_blocks = postgres::select_domain_blocks(pool.clone());
-        dbg!(&user);
-        Ok(user)
-    }
-
-    fn set_timeline_and_filter(mut self, q: Query, pool: PgPool) -> Result<Self, Rejection> {
-        let read_scope = self.scopes.clone();
-        let timeline = match q.stream.as_ref() {
-            // Public endpoints:
-            tl @ "public" | tl @ "public:local" if q.media => format!("{}:media", tl),
-            tl @ "public:media" | tl @ "public:local:media" => tl.to_string(),
-            tl @ "public" | tl @ "public:local" => tl.to_string(),
-            // Hashtag endpoints:
-            tl @ "hashtag" | tl @ "hashtag:local" => format!("{}:{}", tl, q.hashtag),
-            // Private endpoints: User:
-            "user" if self.logged_in && (read_scope.all || read_scope.statuses) => {
-                self.filter = Filter::NoFilter;
-                format!("{}", self.id)
-            }
-            "user:notification" if self.logged_in && (read_scope.all || read_scope.notify) => {
-                self.filter = Filter::Notification;
-                format!("{}", self.id)
-            }
-            // List endpoint:
-            "list" if self.owns_list(q.list, pool) && (read_scope.all || read_scope.lists) => {
-                self.filter = Filter::NoFilter;
-                format!("list:{}", q.list)
-            }
-            // Direct endpoint:
-            "direct" if self.logged_in && (read_scope.all || read_scope.statuses) => {
-                self.filter = Filter::NoFilter;
-                "direct".to_string()
-            }
-            // Reject unathorized access attempts for private endpoints
-            "user" | "user:notification" | "direct" | "list" => {
-                return Err(warp::reject::custom("Error: Missing access token"))
-            }
-            // Other endpoints don't exist:
-            _ => return Err(warp::reject::custom("Error: Nonexistent endpoint")),
-        };
-        Ok(Self {
-            target_timeline: timeline,
-            ..self
+        Ok(Subscription {
+            timeline: Timeline::from_query_and_user(&q, &user, pool.clone())?,
+            allowed_langs: user.allowed_langs,
+            blocks: Blocks {
+                blocking_users: postgres::select_blocking_users(user.id, pool.clone()),
+                blocked_users: postgres::select_blocked_users(user.id, pool.clone()),
+                blocked_domains: postgres::select_blocked_domains(user.id, pool.clone()),
+            },
         })
     }
+}
 
-    fn owns_list(&self, list: i64, pool: PgPool) -> bool {
-        postgres::user_owns_list(self.id, list, pool)
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub struct Timeline(pub Stream, pub Reach, pub Content);
+
+impl Timeline {
+    pub fn empty() -> Self {
+        use {Content::*, Reach::*, Stream::*};
+        Self(Unset, Local, Notification)
+    }
+
+    pub fn to_redis_str(&self, hashtag: Option<&String>) -> String {
+        use {Content::*, Reach::*, Stream::*};
+        match self {
+            Timeline(Public, Federated, All) => "timeline:public".into(),
+            Timeline(Public, Local, All) => "timeline:public:local".into(),
+            Timeline(Public, Federated, Media) => "timeline:public:media".into(),
+            Timeline(Public, Local, Media) => "timeline:public:local:media".into(),
+
+            Timeline(Hashtag(id), Federated, All) => format!(
+                "timeline:hashtag:{}",
+                hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
+            ),
+            Timeline(Hashtag(id), Local, All) => format!(
+                "timeline:hashtag:{}:local",
+                hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
+            ),
+            Timeline(User(id), Federated, All) => format!("timeline:{}", id),
+            Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
+            Timeline(List(id), Federated, All) => format!("timeline:list:{}", id),
+            Timeline(Direct(id), Federated, All) => format!("timeline:direct:{}", id),
+            Timeline(one, _two, _three) => {
+                log_fatal!("Supposedly impossible timeline reached: {:?}", one)
+            }
+        }
+    }
+    pub fn from_redis_str(raw_timeline: &str, hashtag: Option<i64>) -> Self {
+        use {Content::*, Reach::*, Stream::*};
+        match raw_timeline.split(':').collect::<Vec<&str>>()[..] {
+            ["public"] => Timeline(Public, Federated, All),
+            ["public", "local"] => Timeline(Public, Local, All),
+            ["public", "media"] => Timeline(Public, Federated, Media),
+            ["public", "local", "media"] => Timeline(Public, Local, Media),
+
+            ["hashtag", _tag] => Timeline(Hashtag(hashtag.unwrap()), Federated, All),
+            ["hashtag", _tag, "local"] => Timeline(Hashtag(hashtag.unwrap()), Local, All),
+            [id] => Timeline(User(id.parse().unwrap()), Federated, All),
+            [id, "notification"] => Timeline(User(id.parse().unwrap()), Federated, Notification),
+            ["list", id] => Timeline(List(id.parse().unwrap()), Federated, All),
+            ["direct", id] => Timeline(Direct(id.parse().unwrap()), Federated, All),
+            // Other endpoints don't exist:
+            [..] => log_fatal!("Unexpected channel from Redis: {}", raw_timeline),
+        }
+    }
+    fn from_query_and_user(q: &Query, user: &UserData, pool: PgPool) -> Result<Self, Rejection> {
+        use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
+        let id_from_hashtag = || postgres::select_list_id(&q.hashtag, pool.clone());
+        let user_owns_list = || postgres::user_owns_list(user.id, q.list, pool.clone());
+
+        Ok(match q.stream.as_ref() {
+            "public" => match q.media {
+                true => Timeline(Public, Federated, Media),
+                false => Timeline(Public, Federated, All),
+            },
+            "public:local" => match q.media {
+                true => Timeline(Public, Local, Media),
+                false => Timeline(Public, Local, All),
+            },
+            "public:media" => Timeline(Public, Federated, Media),
+            "public:local:media" => Timeline(Public, Local, Media),
+
+            "hashtag" => Timeline(Hashtag(id_from_hashtag()?), Federated, All),
+            "hashtag:local" => Timeline(Hashtag(id_from_hashtag()?), Local, All),
+            "user" => match user.scopes.contains(&Statuses) {
+                true => Timeline(User(user.id), Federated, All),
+                false => Err(custom("Error: Missing access token"))?,
+            },
+            "user:notification" => match user.scopes.contains(&Statuses) {
+                true => Timeline(User(user.id), Federated, Notification),
+                false => Err(custom("Error: Missing access token"))?,
+            },
+            "list" => match user.scopes.contains(&Lists) && user_owns_list() {
+                true => Timeline(List(q.list), Federated, All),
+                false => Err(warp::reject::custom("Error: Missing access token"))?,
+            },
+            "direct" => match user.scopes.contains(&Statuses) {
+                true => Timeline(Direct(user.id), Federated, All),
+                false => Err(custom("Error: Missing access token"))?,
+            },
+            other => {
+                log::warn!("Client attempted to subscribe to: `{}`", other);
+                Err(custom("Error: Nonexistent endpoint"))?
+            }
+        })
+    }
+}
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub enum Stream {
+    User(i64),
+    List(i64),
+    Direct(i64),
+    Hashtag(i64),
+    Public,
+    Unset,
+}
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub enum Reach {
+    Local,
+    Federated,
+}
+#[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
+pub enum Content {
+    All,
+    Media,
+    Notification,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Scope {
+    Read,
+    Statuses,
+    Notifications,
+    Lists,
+}
+
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Blocks {
+    pub blocked_domains: HashSet<String>,
+    pub blocked_users: HashSet<i64>,
+    pub blocking_users: HashSet<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UserData {
+    id: i64,
+    allowed_langs: HashSet<String>,
+    scopes: HashSet<Scope>,
+}
+
+impl UserData {
+    fn public() -> Self {
+        Self {
+            id: -1,
+            allowed_langs: HashSet::new(),
+            scopes: HashSet::new(),
+        }
     }
 }

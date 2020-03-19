@@ -6,6 +6,14 @@ pub fn die_with_msg(msg: impl Display) -> ! {
     std::process::exit(1);
 }
 
+#[macro_export]
+macro_rules! log_fatal {
+    ($str:expr, $var:expr) => {{
+        log::error!($str, $var);
+        panic!();
+    };};
+}
+
 pub fn env_var_fatal(env_var: &str, supplied_value: &str, allowed_values: String) -> ! {
     eprintln!(
         r"FATAL ERROR: {var} is set to `{value}`, which is invalid.

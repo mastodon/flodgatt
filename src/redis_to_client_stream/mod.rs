@@ -1,5 +1,6 @@
 //! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 pub mod client_agent;
+pub mod message;
 pub mod receiver;
 pub mod redis;
 
@@ -17,9 +18,9 @@ pub fn send_updates_to_sse(
 ) -> impl warp::reply::Reply {
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .filter_map(move |_| match client_agent.poll() {
-            Ok(Async::Ready(Some(toot))) => Some((
-                warp::sse::event(toot.category),
-                warp::sse::data(toot.payload),
+            Ok(Async::Ready(Some(msg))) => Some((
+                warp::sse::event(msg.event()),
+                warp::sse::data(msg.payload()),
             )),
             _ => None,
         });
@@ -55,11 +56,6 @@ pub fn send_updates_to_ws(
             }),
     );
 
-    let (tl, email, id) = (
-        client_agent.current_user.target_timeline.clone(),
-        client_agent.current_user.email.clone(),
-        client_agent.current_user.id,
-    );
     // Yield new events for as long as the client is still connected
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .take_while(move |_| match ws_rx.poll() {
@@ -75,39 +71,23 @@ pub fn send_updates_to_ws(
                 futures::future::ok(false)
             }
             Err(e) => {
-                log::warn!("Error in TL {}\nfor user: {}({})\n{}", tl, email, id, e);
+                log::warn!("Error in TL {}", e);
                 futures::future::ok(false)
             }
         });
 
     let mut time = time::Instant::now();
 
-    let (tl, email, id, blocked_users, blocked_domains) = (
-        client_agent.current_user.target_timeline.clone(),
-        client_agent.current_user.email.clone(),
-        client_agent.current_user.id,
-        client_agent.current_user.blocks.user_blocks.clone(),
-        client_agent.current_user.blocks.domain_blocks.clone(),
-    );
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
-            if let Ok(Async::Ready(Some(toot))) = client_agent.poll() {
-                if blocked_domains.is_disjoint(&toot.get_originating_domain())
-                    && blocked_users.is_disjoint(&toot.get_involved_users())
-                {
-                    let txt = &toot.payload["content"];
-                    log::warn!("toot: {}\nTL: {}\nUser: {}({})", txt, tl, email, id);
-
-                    tx.unbounded_send(warp::ws::Message::text(
-                        json!({ "event": toot.category,
-                                "payload": &toot.payload.to_string() })
-                        .to_string(),
-                    ))
-                    .expect("No send error");
-                } else {
-                    log::info!("Blocked a message to {}", email);
-                }
+            if let Ok(Async::Ready(Some(msg))) = client_agent.poll() {
+                tx.unbounded_send(warp::ws::Message::text(
+                    json!({ "event": msg.event(),
+                          "payload": msg.payload() })
+                    .to_string(),
+                ))
+                .expect("No send error");
             };
             if time.elapsed() > time::Duration::from_secs(30) {
                 tx.unbounded_send(warp::ws::Message::text("{}"))
@@ -121,5 +101,5 @@ pub fn send_updates_to_ws(
             log::info!("WebSocket connection closed.");
             result
         })
-        .map_err(move |e| log::warn!("Error sending to user: {}\n{}", id, e))
+        .map_err(move |e| log::warn!("Error sending to user: {}", e))
 }

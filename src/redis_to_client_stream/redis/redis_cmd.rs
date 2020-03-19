@@ -23,7 +23,7 @@ macro_rules! pubsub_cmd {
         $self
             .secondary_redis_connection
             .write_all(&redis_cmd::set(
-                format!("subscribed:timeline:{}", $tl),
+                format!("subscribed:{}", $tl),
                 subscription_new_number,
                 namespace.clone(),
             ))
@@ -35,8 +35,8 @@ macro_rules! pubsub_cmd {
 /// Send a `SUBSCRIBE` or `UNSUBSCRIBE` command to a specific timeline
 pub fn pubsub(command: impl Display, timeline: impl Display, ns: Option<String>) -> Vec<u8> {
     let arg = match ns {
-        Some(namespace) => format!("{}:timeline:{}", namespace, timeline),
-        None => format!("timeline:{}", timeline),
+        Some(namespace) => format!("{}:{}", namespace, timeline),
+        None => format!("{}", timeline),
     };
     cmd(command, arg)
 }
