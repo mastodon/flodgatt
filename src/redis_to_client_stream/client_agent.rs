@@ -18,7 +18,7 @@
 use super::{message::Message, receiver::Receiver};
 use crate::{
     config,
-    parse_client_request::user::{PgPool, Subscription},
+    parse_client_request::user::{PgPool, Stream::Public, Subscription, Timeline},
 };
 use futures::{
     Async::{self, NotReady, Ready},
@@ -34,7 +34,6 @@ use uuid::Uuid;
 pub struct ClientAgent {
     receiver: sync::Arc<sync::Mutex<Receiver>>,
     id: uuid::Uuid,
-    //    pub current_timeline: String,
     subscription: Subscription,
 }
 
@@ -108,13 +107,15 @@ impl futures::stream::Stream for ClientAgent {
         use Message::*;
         match result {
             Ok(Async::Ready(Some(json))) => match Message::from_json(json) {
-                Update(status) if status.language_not_allowed(allowed_langs) => block,
-                Update(status) if status.involves_blocked_user(blocked_users) => block,
-                Update(status) if status.from_blocked_domain(blocked_domains) => block,
-                Update(status) if status.from_blocking_user(blocking_users) => block,
-                Update(status) => send(Update(status)),
-                Notification(notification) => send(Notification(notification)),
-                Conversation(notification) => send(Conversation(notification)),
+                Update(status) => match self.subscription.timeline {
+                    _ if status.involves_blocked_user(blocked_users) => block,
+                    _ if status.from_blocked_domain(blocked_domains) => block,
+                    _ if status.from_blocking_user(blocking_users) => block,
+                    Timeline(Public, _, _) if status.language_not_allowed(allowed_langs) => block,
+                    _ => send(Update(status)),
+                },
+                Notification(payload) => send(Notification(payload)),
+                Conversation(payload) => send(Conversation(payload)),
                 Delete(status_id) => send(Delete(status_id)),
                 FiltersChanged => send(FiltersChanged),
                 Announcement(content) => send(Announcement(content)),
