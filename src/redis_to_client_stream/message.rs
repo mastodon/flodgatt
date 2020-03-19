@@ -21,7 +21,7 @@ impl Message {
         let event = json["event"]
             .as_str()
             .unwrap_or_else(|| log_fatal!("Could not process `event` in {:?}", json));
-        match dbg!(event) {
+        match event {
             "update" => Self::Update(Status(json["payload"].clone())),
             "conversation" => Self::Conversation(json["payload"].clone()),
             "notification" => Self::Notification(json["payload"].clone()),

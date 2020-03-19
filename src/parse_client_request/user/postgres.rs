@@ -61,8 +61,9 @@ LIMIT 1",
                 "read:statuses" => Some(Scope::Statuses),
                 "read:notifications" => Some(Scope::Notifications),
                 "read:lists" => Some(Scope::Lists),
+                "write" | "follow" => None, // ignore write scopes
                 unexpected => {
-                    log::warn!("Unable to parse scope `{}`, ignoring it.", unexpected);
+                    log::warn!("Ignoring unknown scope `{}`", unexpected);
                     None
                 }
             })

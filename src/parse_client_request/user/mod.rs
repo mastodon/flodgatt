@@ -1,9 +1,9 @@
 //! `User` struct and related functionality
-#[cfg(test)]
-mod mock_postgres;
-#[cfg(test)]
-use mock_postgres as postgres;
-#[cfg(not(test))]
+// #[cfg(test)]
+// mod mock_postgres;
+// #[cfg(test)]
+// use mock_postgres as postgres;
+// #[cfg(not(test))]
 pub mod postgres;
 pub use self::postgres::PgPool;
 use super::query::Query;
@@ -55,29 +55,15 @@ impl Timeline {
         use {Content::*, Reach::*, Stream::*};
         Self(Unset, Local, Notification)
     }
-    pub fn from_redis_str(raw_timeline: &str, hashtag: Option<i64>) -> Self {
-        use {Content::*, Reach::*, Stream::*};
-        match raw_timeline.split(':').collect::<Vec<&str>>()[..] {
-            ["public"] => Timeline(Public, Federated, All),
-            ["public", "local"] => Timeline(Public, Local, All),
-            ["public", "media"] => Timeline(Public, Federated, Media),
-            ["public", "local", "media"] => Timeline(Public, Local, Media),
-            ["hashtag", _tag] => Timeline(Hashtag(hashtag.unwrap()), Federated, All),
-            ["hashtag", _tag, "local"] => Timeline(Hashtag(hashtag.unwrap()), Local, All),
-            [id] => Timeline(User(id.parse().unwrap()), Federated, All),
-            ["list", id] => Timeline(List(id.parse().unwrap()), Federated, All),
-            ["direct", id] => Timeline(Direct(id.parse().unwrap()), Federated, All),
-            // Other endpoints don't exist:
-            [..] => log_fatal!("Unexpected channel from Redis: {}", raw_timeline),
-        }
-    }
+
     pub fn to_redis_str(&self, hashtag: Option<&String>) -> String {
         use {Content::*, Reach::*, Stream::*};
         match self {
-            Timeline(User(id), Federated, All) => format!("timeline:{}", id),
-            Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
-            Timeline(List(id), Federated, All) => format!("timeline:list:{}", id),
-            Timeline(Direct(id), Federated, All) => format!("timeline:direct:{}", id),
+            Timeline(Public, Federated, All) => "timeline:public".into(),
+            Timeline(Public, Local, All) => "timeline:public:local".into(),
+            Timeline(Public, Federated, Media) => "timeline:public:media".into(),
+            Timeline(Public, Local, Media) => "timeline:public:local:media".into(),
+
             Timeline(Hashtag(id), Federated, All) => format!(
                 "timeline:hashtag:{}",
                 hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
@@ -86,22 +72,52 @@ impl Timeline {
                 "timeline:hashtag:{}:local",
                 hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
             ),
-            Timeline(Public, Federated, Media) => "timeline:public:media".into(),
-            Timeline(Public, Local, All) => "timeline:public:local".into(),
-
-            Timeline(Public, Federated, All) => "timeline:public".into(),
+            Timeline(User(id), Federated, All) => format!("timeline:{}", id),
+            Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
+            Timeline(List(id), Federated, All) => format!("timeline:list:{}", id),
+            Timeline(Direct(id), Federated, All) => format!("timeline:direct:{}", id),
             Timeline(one, _two, _three) => {
                 log_fatal!("Supposedly impossible timeline reached: {:?}", one)
             }
         }
     }
+    pub fn from_redis_str(raw_timeline: &str, hashtag: Option<i64>) -> Self {
+        use {Content::*, Reach::*, Stream::*};
+        match raw_timeline.split(':').collect::<Vec<&str>>()[..] {
+            ["public"] => Timeline(Public, Federated, All),
+            ["public", "local"] => Timeline(Public, Local, All),
+            ["public", "media"] => Timeline(Public, Federated, Media),
+            ["public", "local", "media"] => Timeline(Public, Local, Media),
 
+            ["hashtag", _tag] => Timeline(Hashtag(hashtag.unwrap()), Federated, All),
+            ["hashtag", _tag, "local"] => Timeline(Hashtag(hashtag.unwrap()), Local, All),
+            [id] => Timeline(User(id.parse().unwrap()), Federated, All),
+            [id, "notification"] => Timeline(User(id.parse().unwrap()), Federated, Notification),
+            ["list", id] => Timeline(List(id.parse().unwrap()), Federated, All),
+            ["direct", id] => Timeline(Direct(id.parse().unwrap()), Federated, All),
+            // Other endpoints don't exist:
+            [..] => log_fatal!("Unexpected channel from Redis: {}", raw_timeline),
+        }
+    }
     fn from_query_and_user(q: &Query, user: &UserData, pool: PgPool) -> Result<Self, Rejection> {
         use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
         let id_from_hashtag = || postgres::select_list_id(&q.hashtag, pool.clone());
         let user_owns_list = || postgres::user_owns_list(user.id, q.list, pool.clone());
 
         Ok(match q.stream.as_ref() {
+            "public" => match q.media {
+                true => Timeline(Public, Federated, Media),
+                false => Timeline(Public, Federated, All),
+            },
+            "public:local" => match q.media {
+                true => Timeline(Public, Local, Media),
+                false => Timeline(Public, Local, All),
+            },
+            "public:media" => Timeline(Public, Federated, Media),
+            "public:local:media" => Timeline(Public, Local, Media),
+
+            "hashtag" => Timeline(Hashtag(id_from_hashtag()?), Federated, All),
+            "hashtag:local" => Timeline(Hashtag(id_from_hashtag()?), Local, All),
             "user" => match user.scopes.contains(&Statuses) {
                 true => Timeline(User(user.id), Federated, All),
                 false => Err(custom("Error: Missing access token"))?,
@@ -118,18 +134,6 @@ impl Timeline {
                 true => Timeline(Direct(user.id), Federated, All),
                 false => Err(custom("Error: Missing access token"))?,
             },
-            "hashtag" => Timeline(Hashtag(id_from_hashtag()?), Federated, All),
-            "hashtag:local" => Timeline(Hashtag(id_from_hashtag()?), Local, All),
-            "public" => match q.media {
-                true => Timeline(Public, Federated, Media),
-                false => Timeline(Public, Federated, All),
-            },
-            "public:local" => match q.media {
-                true => Timeline(Public, Local, All),
-                false => Timeline(Public, Local, All),
-            },
-            "public:media" => Timeline(Public, Federated, Media),
-            "public:local:media" => Timeline(Public, Local, Media),
             other => {
                 log::warn!("Client attempted to subscribe to: `{}`", other);
                 Err(custom("Error: Nonexistent endpoint"))?

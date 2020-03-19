@@ -98,8 +98,8 @@ impl Receiver {
             let tag = match cached_tag {
                 Some(tag) => tag,
                 None => {
-                    let new_tag =
-                        postgres::select_hashtag_name(&id, self.pool.clone()).expect("TODO");
+                    let new_tag = postgres::select_hashtag_name(&id, self.pool.clone())
+                        .unwrap_or_else(|_| log_fatal!("No hashtag associated with tag #{}", &id));
                     self.cache.hashtag_to_id.put(new_tag.clone(), id);
                     self.cache.id_to_hashtag.put(id, new_tag.clone());
                     new_tag.to_string()
@@ -176,10 +176,7 @@ impl futures::stream::Stream for Receiver {
                 let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
                 for msg_queue in self.msg_queues.values_mut() {
                     if msg_queue.timeline == timeline {
-                        log::info!("Match between queue TL: `{:?}`\n and timeline `{:?}`\n from raw_timeline: {}", &msg_queue.timeline, timeline, &raw_timeline);
                         msg_queue.messages.push_back(msg_value.clone());
-                    } else {
-                        log::info!("NO match between queue TL: `{:?}`\n and timeline `{:?}`\n from raw_timeline: {}", &msg_queue.timeline, timeline, &raw_timeline);
                     }
                 }
             }
