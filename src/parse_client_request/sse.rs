@@ -39,7 +39,10 @@ macro_rules! parse_query {
             .boxed()
     };
 }
-pub fn extract_user_or_reject(pg_pool: PgPool) -> BoxedFilter<(Subscription,)> {
+pub fn extract_user_or_reject(
+    pg_pool: PgPool,
+    whitelist_mode: bool,
+) -> BoxedFilter<(Subscription,)> {
     any_of!(
         parse_query!(
             path => "api" / "v1" / "streaming" / "user" / "notification"
@@ -67,7 +70,7 @@ pub fn extract_user_or_reject(pg_pool: PgPool) -> BoxedFilter<(Subscription,)> {
     // parameter, we need to update our Query if the header has a token
     .and(query::OptionalAccessToken::from_sse_header())
     .and_then(Query::update_access_token)
-    .and_then(move |q| Subscription::from_query(q, pg_pool.clone()))
+    .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
     .boxed()
 }
 

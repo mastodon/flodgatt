@@ -34,8 +34,8 @@ fn main() {
     log::info!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
-    let sse_update_interval = *cfg.ws_interval;
-    let sse_routes = sse::extract_user_or_reject(pg_pool.clone())
+    let (sse_update_interval, whitelist_mode) = (*cfg.sse_interval, *cfg.whitelist_mode);
+    let sse_routes = sse::extract_user_or_reject(pg_pool.clone(), whitelist_mode)
         .and(warp::sse())
         .map(
             move |subscription: subscription::Subscription,
@@ -57,8 +57,8 @@ fn main() {
         .recover(err::handle_errors);
 
     // WebSocket
-    let ws_update_interval = *cfg.ws_interval;
-    let websocket_routes = ws::extract_user_and_token_or_reject(pg_pool.clone())
+    let (ws_update_interval, whitelist_mode) = (*cfg.ws_interval, *cfg.whitelist_mode);
+    let websocket_routes = ws::extract_user_and_token_or_reject(pg_pool.clone(), whitelist_mode)
         .and(warp::ws::ws2())
         .map(
             move |subscription: subscription::Subscription, token: Option<String>, ws: Ws2| {
