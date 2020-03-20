@@ -34,11 +34,12 @@ fn parse_query() -> BoxedFilter<(Query,)> {
 
 pub fn extract_user_and_token_or_reject(
     pg_pool: PgPool,
+    whitelist_mode: bool,
 ) -> BoxedFilter<(Subscription, Option<String>)> {
     parse_query()
         .and(query::OptionalAccessToken::from_ws_header())
         .and_then(Query::update_access_token)
-        .and_then(move |q| Subscription::from_query(q, pg_pool.clone()))
+        .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
         .and(query::OptionalAccessToken::from_ws_header())
         .boxed()
 }

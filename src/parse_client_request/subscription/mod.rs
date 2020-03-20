@@ -30,9 +30,10 @@ impl Default for Subscription {
 }
 
 impl Subscription {
-    pub fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
+    pub fn from_query(q: Query, pool: PgPool, whitelist_mode: bool) -> Result<Self, Rejection> {
         let user = match q.access_token.clone() {
             Some(token) => postgres::select_user(&token, pool.clone())?,
+            None if whitelist_mode => Err(warp::reject::custom("Error: Invalid access token"))?,
             None => UserData::public(),
         };
         Ok(Subscription {

@@ -59,6 +59,16 @@ from_env_var!(
     let (env_var, allowed_values) = ("PORT", "a number between 0 and 65535".to_string());
     let from_str = |s| s.parse().ok();
 );
+from_env_var!(
+    /// Enables [WHITELIST_MODE](https://docs.joinmastodon.org/admin/config/#whitelist_mode)
+    ///
+    /// This mode prevents non-logged in users from subscribing to any timelines
+    /// (including otherwise public timelines).
+    let name = WhitelistMode;
+    let default: bool = false;
+    let (env_var, allowed_values) = ("WHITELIST_MODE", "true or false".to_string());
+    let from_str = |s| s.parse().ok();
+);
 /// Permissions for Cross Origin Resource Sharing (CORS)
 pub struct Cors<'a> {
     pub allowed_headers: Vec<&'a str>,

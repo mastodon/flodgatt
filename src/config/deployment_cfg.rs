@@ -10,6 +10,7 @@ pub struct DeploymentConfig<'a> {
     pub cors: Cors<'a>,
     pub sse_interval: SseInterval,
     pub ws_interval: WsInterval,
+    pub whitelist_mode: WhitelistMode,
 }
 
 impl DeploymentConfig<'_> {
@@ -22,6 +23,7 @@ impl DeploymentConfig<'_> {
             unix_socket: Socket::default().maybe_update(env.get("SOCKET")),
             sse_interval: SseInterval::default().maybe_update(env.get("SSE_FREQ")),
             ws_interval: WsInterval::default().maybe_update(env.get("WS_FREQ")),
+            whitelist_mode: WhitelistMode::default().maybe_update(env.get("WHITELIST_MODE")),
             cors: Cors::default(),
         };
         cfg.env = cfg.env.maybe_update(env.get("RUST_ENV"));
