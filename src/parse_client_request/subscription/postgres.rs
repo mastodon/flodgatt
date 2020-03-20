@@ -1,7 +1,7 @@
 //! Postgres queries
 use crate::{
     config,
-    parse_client_request::user::{Scope, UserData},
+    parse_client_request::subscription::{Scope, UserData},
 };
 use ::postgres;
 use r2d2_postgres::PostgresConnectionManager;

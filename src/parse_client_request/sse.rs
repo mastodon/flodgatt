@@ -1,7 +1,7 @@
 //! Filters for all the endpoints accessible for Server Sent Event updates
 use super::{
     query::{self, Query},
-    user::{PgPool, Subscription},
+    subscription::{PgPool, Subscription},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 #[allow(dead_code)]

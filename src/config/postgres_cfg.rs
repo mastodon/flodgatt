@@ -56,9 +56,7 @@ impl PostgresConfig {
             port: PgPort::default().maybe_update(env.get("DB_PORT")),
             ssl_mode: PgSslMode::default().maybe_update(env.get("DB_SSLMODE")),
         };
-
-        log::warn!("Postgres configuration:\n{:#?}", &cfg);
-
+        log::info!("Postgres configuration:\n{:#?}", &cfg);
         cfg
     }
 

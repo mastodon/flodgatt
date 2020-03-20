@@ -1,4 +1,4 @@
-use crate::parse_client_request::user::Timeline;
+use crate::parse_client_request::subscription::Timeline;
 use serde_json::Value;
 use std::{collections, fmt, time};
 use uuid::Uuid;

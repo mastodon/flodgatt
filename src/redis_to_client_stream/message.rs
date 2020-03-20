@@ -1,5 +1,4 @@
 use crate::log_fatal;
-use log::{log_enabled, Level};
 use serde_json::Value;
 use std::{collections::HashSet, string::String};
 use strum_macros::Display;
@@ -50,11 +49,8 @@ impl Message {
                     .unwrap_or_else(|| log_fatal!("Could not process `payload` in {:?}", json))
                     .to_string(),
             )),
-            unexpected_event => {
-                log::warn!(
-                    "Received an unexpected `event` type from Redis: {}",
-                    unexpected_event
-                );
+            other => {
+                log::warn!("Received unexpected `event` from Redis: {}", other);
                 Self::UnknownEvent(event.to_string(), json["payload"].clone())
             }
         }
@@ -96,14 +92,9 @@ impl Status {
         const REJECT: bool = true;
 
         let reject_and_maybe_log = |toot_language| {
-            if log_enabled!(Level::Info) {
-                log::info!(
-                    "Language `{toot_language}` is not in list `{allowed_langs:?}`",
-                    toot_language = toot_language,
-                    allowed_langs = allowed_langs
-                );
-                log::info!("Filtering out toot from `{}`", &self.0["account"]["acct"],);
-            }
+            log::info!("Filtering out toot from `{}`", &self.0["account"]["acct"]);
+            log::info!("Toot language: `{}`", toot_language);
+            log::info!("Recipient's allowed languages: `{:?}`", allowed_langs);
             REJECT
         };
         if allowed_langs.is_empty() {

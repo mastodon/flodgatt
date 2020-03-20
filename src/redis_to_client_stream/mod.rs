@@ -3,7 +3,6 @@ pub mod client_agent;
 pub mod message;
 pub mod receiver;
 pub mod redis;
-
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
 use log;
@@ -40,6 +39,7 @@ pub fn send_updates_to_ws(
     update_interval: time::Duration,
 ) -> impl futures::future::Future<Item = (), Error = ()> {
     let (ws_tx, mut ws_rx) = socket.split();
+    let timeline = client_agent.subscription.timeline;
 
     // Create a pipe
     let (tx, rx) = futures::sync::mpsc::unbounded();
@@ -62,16 +62,16 @@ pub fn send_updates_to_ws(
             Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
             Ok(Async::Ready(None)) => {
                 // TODO: consider whether we should manually drop closed connections here
-                log::info!("Client closed WebSocket connection");
+                log::info!("Client closed WebSocket connection for {:?}", timeline);
                 futures::future::ok(false)
             }
             Err(e) if e.to_string() == "IO error: Broken pipe (os error 32)" => {
                 // no err, just closed Unix socket
-                log::info!("Client closed WebSocket connection");
+                log::info!("Client closed WebSocket connection for {:?}", timeline);
                 futures::future::ok(false)
             }
             Err(e) => {
-                log::warn!("Error in TL {}", e);
+                log::warn!("Error in {:?}: {}", timeline, e);
                 futures::future::ok(false)
             }
         });
@@ -98,8 +98,8 @@ pub fn send_updates_to_ws(
         })
         .then(move |result| {
             // TODO: consider whether we should manually drop closed connections here
-            log::info!("WebSocket connection closed.");
+            log::info!("WebSocket connection for {:?} closed.", timeline);
             result
         })
-        .map_err(move |e| log::warn!("Error sending to user: {}", e))
+        .map_err(move |e| log::warn!("Error sending to {:?}: {}", timeline, e))
 }

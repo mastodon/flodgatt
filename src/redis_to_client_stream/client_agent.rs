@@ -18,13 +18,12 @@
 use super::{message::Message, receiver::Receiver};
 use crate::{
     config,
-    parse_client_request::user::{PgPool, Stream::Public, Subscription, Timeline},
+    parse_client_request::subscription::{PgPool, Stream::Public, Subscription, Timeline},
 };
 use futures::{
     Async::{self, NotReady, Ready},
     Poll,
 };
-
 use std::sync;
 use tokio::io::Error;
 use uuid::Uuid;
@@ -34,7 +33,7 @@ use uuid::Uuid;
 pub struct ClientAgent {
     receiver: sync::Arc<sync::Mutex<Receiver>>,
     id: uuid::Uuid,
-    subscription: Subscription,
+    pub subscription: Subscription,
 }
 
 impl ClientAgent {
@@ -97,6 +96,7 @@ impl futures::stream::Stream for ClientAgent {
         };
         if start_time.elapsed().as_millis() > 1 {
             log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
+            log::info!("Longer polling yielded: {:#?}", &result);
         };
 
         let allowed_langs = &self.subscription.allowed_langs;

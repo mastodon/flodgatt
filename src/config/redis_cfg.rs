@@ -43,8 +43,7 @@ impl EnvVar {
 impl RedisConfig {
     const USER_SET_WARNING: &'static str =
         "Redis user specified, but Redis did not ask for a username.  Ignoring it.";
-    const DB_SET_WARNING: &'static str =
-        r"Redis database specified, but PubSub connections do not use databases.
+    const DB_SET_WARNING: &'static str = r"Redis database specified, but PubSub connections do not use databases.
 For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
     pub fn from_env(env: EnvVar) -> Self {
@@ -69,7 +68,7 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
         if cfg.user.is_some() {
             log::warn!("{}", Self::USER_SET_WARNING);
         }
-        log::warn!("Redis configuration:\n{:#?},", &cfg);
+        log::info!("Redis configuration:\n{:#?},", &cfg);
         cfg
     }
 }
