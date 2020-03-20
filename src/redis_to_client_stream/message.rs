@@ -102,8 +102,8 @@ impl Status {
         }
         match self.0["language"].as_str() {
             Some(toot_language) if allowed_langs.contains(toot_language) => ALLOW,
+            None | Some("") => ALLOW, // If toot language is unknown, toot is always allowed
             Some(toot_language) => reject_and_maybe_log(toot_language),
-            None => ALLOW, // If toot language is null, toot is always allowed
         }
     }
 
