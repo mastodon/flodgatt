@@ -1,6 +1,6 @@
 use flodgatt::{
     config, err,
-    parse_client_request::{sse, user, ws},
+    parse_client_request::{sse, subscription, ws},
     redis_to_client_stream::{self, ClientAgent},
 };
 use std::{collections::HashMap, env, fs, net, os::unix::fs::PermissionsExt};
@@ -18,7 +18,7 @@ fn main() {
     let env_vars = config::EnvVar::new(env_vars_map);
     pretty_env_logger::init();
 
-    log::warn!(
+    log::info!(
         "Flodgatt recognized the following environmental variables:{}",
         env_vars.clone()
     );
@@ -26,24 +26,25 @@ fn main() {
     let cfg = config::DeploymentConfig::from_env(env_vars.clone());
 
     let postgres_cfg = config::PostgresConfig::from_env(env_vars.clone());
-    let pg_pool = user::PgPool::new(postgres_cfg);
+    let pg_pool = subscription::PgPool::new(postgres_cfg);
 
     let client_agent_sse = ClientAgent::blank(redis_cfg, pg_pool.clone());
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
 
-    log::warn!("Streaming server initialized and ready to accept connections");
+    log::info!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
     let sse_update_interval = *cfg.ws_interval;
     let sse_routes = sse::extract_user_or_reject(pg_pool.clone())
         .and(warp::sse())
         .map(
-            move |user: user::Subscription, sse_connection_to_client: warp::sse::Sse| {
-                log::info!("Incoming SSE request");
+            move |subscription: subscription::Subscription,
+                  sse_connection_to_client: warp::sse::Sse| {
+                log::info!("Incoming SSE request for {:?}", subscription.timeline);
                 // Create a new ClientAgent
                 let mut client_agent = client_agent_sse.clone_with_shared_receiver();
                 // Assign ClientAgent to generate stream of updates for the user/timeline pair
-                client_agent.init_for_user(user);
+                client_agent.init_for_user(subscription);
                 // send the updates through the SSE connection
                 redis_to_client_stream::send_updates_to_sse(
                     client_agent,
@@ -60,12 +61,12 @@ fn main() {
     let websocket_routes = ws::extract_user_and_token_or_reject(pg_pool.clone())
         .and(warp::ws::ws2())
         .map(
-            move |user: user::Subscription, token: Option<String>, ws: Ws2| {
-                log::info!("Incoming websocket request");
+            move |subscription: subscription::Subscription, token: Option<String>, ws: Ws2| {
+                log::info!("Incoming websocket request for {:?}", subscription.timeline);
                 // Create a new ClientAgent
                 let mut client_agent = client_agent_ws.clone_with_shared_receiver();
                 // Assign that agent to generate a stream of updates for the user/timeline pair
-                client_agent.init_for_user(user);
+                client_agent.init_for_user(subscription);
                 // send the updates through the WS connection (along with the User's access_token
                 // which is sent for security)
 
@@ -91,7 +92,7 @@ fn main() {
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     if let Some(socket) = &*cfg.unix_socket {
-        log::warn!("Using Unix socket {}", socket);
+        log::info!("Using Unix socket {}", socket);
         fs::remove_file(socket).unwrap_or_default();
         let incoming = UnixListener::bind(socket).unwrap().incoming();
 

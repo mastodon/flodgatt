@@ -1,7 +1,7 @@
 //! Filters for the WebSocket endpoint
 use super::{
     query::{self, Query},
-    user::{PgPool, Subscription},
+    subscription::{PgPool, Subscription},
 };
 use warp::{filters::BoxedFilter, path, Filter};
 

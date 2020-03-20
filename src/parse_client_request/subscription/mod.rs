@@ -135,7 +135,7 @@ impl Timeline {
                 false => Err(custom("Error: Missing access token"))?,
             },
             other => {
-                log::warn!("Client attempted to subscribe to: `{}`", other);
+                log::warn!("Request for nonexistent endpoint: `{}`", other);
                 Err(custom("Error: Nonexistent endpoint"))?
             }
         })

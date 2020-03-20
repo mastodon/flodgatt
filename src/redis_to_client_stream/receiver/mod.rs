@@ -5,7 +5,7 @@ mod message_queues;
 use crate::{
     config::{self, RedisInterval},
     log_fatal,
-    parse_client_request::user::{self, postgres, PgPool, Timeline},
+    parse_client_request::subscription::{self, postgres, PgPool, Timeline},
     pubsub_cmd,
     redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
 };
@@ -92,7 +92,7 @@ impl Receiver {
     }
 
     fn if_hashtag_timeline_get_hashtag_name(&mut self, timeline: Timeline) -> Option<String> {
-        use user::Stream::*;
+        use subscription::Stream::*;
         if let Timeline(Hashtag(id), _, _) = timeline {
             let cached_tag = self.cache.id_to_hashtag.get(&id).map(String::from);
             let tag = match cached_tag {
