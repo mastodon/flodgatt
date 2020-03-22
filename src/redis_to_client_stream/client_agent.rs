@@ -15,9 +15,10 @@
 //! Because `StreamManagers` are lightweight data structures that do not directly
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
-use super::{message::Message, receiver::Receiver};
+use super::receiver::Receiver;
 use crate::{
     config,
+    messages::Event,
     parse_client_request::subscription::{PgPool, Stream::Public, Subscription, Timeline},
 };
 use futures::{
@@ -66,14 +67,16 @@ impl ClientAgent {
     pub fn init_for_user(&mut self, subscription: Subscription) {
         self.id = Uuid::new_v4();
         self.subscription = subscription;
+        let start_time = std::time::Instant::now();
         let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
         receiver.manage_new_timeline(self.id, self.subscription.timeline);
+        log::info!("init_for_user had lock for: {:?}", start_time.elapsed());
     }
 }
 
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
-    type Item = Message;
+    type Item = Event;
     type Error = Error;
 
     /// Checks for any new messages that should be sent to the client.
@@ -91,12 +94,18 @@ impl futures::stream::Stream for ClientAgent {
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
+            let get_lock = std::time::Instant::now();
             receiver.configure_for_polling(self.id, self.subscription.timeline);
-            receiver.poll()
-        };
-        if start_time.elapsed().as_millis() > 1 {
-            log::warn!("Polling the Receiver took: {:?}", start_time.elapsed());
-            log::info!("Longer polling yielded: {:#?}", &result);
+            let res = receiver.poll();
+            if start_time.elapsed().as_millis() > 1 {
+                log::warn!(
+                    "Polling the Receiver took: {:?}\n({:?} waiting for lock)",
+                    start_time.elapsed(),
+                    get_lock.elapsed()
+                );
+                log::info!("Longer polling yielded: {:#?}", &res);
+            };
+            res
         };
 
         let allowed_langs = &self.subscription.allowed_langs;
@@ -104,9 +113,9 @@ impl futures::stream::Stream for ClientAgent {
         let blocking_users = &self.subscription.blocks.blocking_users;
         let blocked_domains = &self.subscription.blocks.blocked_domains;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
-        use Message::*;
+        use Event::*;
         match result {
-            Ok(Async::Ready(Some(json))) => match Message::from_json(json) {
+            Ok(Async::Ready(Some(event))) => match event {
                 Update(status) => match self.subscription.timeline {
                     _ if status.involves_blocked_user(blocked_users) => block,
                     _ if status.from_blocked_domain(blocked_domains) => block,
@@ -114,12 +123,13 @@ impl futures::stream::Stream for ClientAgent {
                     Timeline(Public, _, _) if status.language_not_allowed(allowed_langs) => block,
                     _ => send(Update(status)),
                 },
-                Notification(payload) => send(Notification(payload)),
-                Conversation(payload) => send(Conversation(payload)),
-                Delete(status_id) => send(Delete(status_id)),
-                FiltersChanged => send(FiltersChanged),
-                Announcement(content) => send(Announcement(content)),
-                UnknownEvent(event, payload) => send(UnknownEvent(event, payload)),
+                Notification(_)
+                | Conversation(_)
+                | Delete(_)
+                | FiltersChanged
+                | Announcement(_)
+                | AnnouncementReaction(_)
+                | AnnouncementDelete(_) => send(event),
             },
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),

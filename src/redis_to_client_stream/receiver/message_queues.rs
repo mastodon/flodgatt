@@ -1,12 +1,12 @@
+use crate::messages::Event;
 use crate::parse_client_request::subscription::Timeline;
-use serde_json::Value;
 use std::{collections, fmt, time};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct MsgQueue {
     pub timeline: Timeline,
-    pub messages: collections::VecDeque<Value>,
+    pub messages: collections::VecDeque<Event>,
     last_polled_at: time::Instant,
 }
 impl fmt::Debug for MsgQueue {
@@ -45,7 +45,7 @@ impl MessageQueues {
             .and_modify(|queue| queue.last_polled_at = time::Instant::now());
     }
 
-    pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: Timeline) -> Option<Value> {
+    pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: Timeline) -> Option<Event> {
         self.entry(id)
             .or_insert_with(|| MsgQueue::new(timeline))
             .messages

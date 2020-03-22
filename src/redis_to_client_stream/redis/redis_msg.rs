@@ -1,4 +1,4 @@
-use serde_json::Value;
+use crate::messages::Event;
 
 #[derive(Debug)]
 pub struct RedisMsg<'a> {
@@ -39,10 +39,10 @@ impl<'a> RedisMsg<'a> {
         item
     }
 
-    pub fn extract_raw_timeline_and_message(&mut self) -> (String, Value) {
+    pub fn extract_raw_timeline_and_message(&mut self) -> (String, Event) {
         let timeline = &self.next_field()[self.prefix_len..];
         let msg_txt = self.next_field();
-        let msg_value: Value =
+        let msg_value: Event =
             serde_json::from_str(&msg_txt).expect("Invariant violation: Invalid JSON from Redis");
         (timeline.to_string(), msg_value)
     }

@@ -1,12 +1,10 @@
 //! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 pub mod client_agent;
-pub mod message;
 pub mod receiver;
 pub mod redis;
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
 use log;
-use serde_json::json;
 use std::time;
 
 /// Send a stream of replies to a Server Sent Events client.
@@ -17,9 +15,9 @@ pub fn send_updates_to_sse(
 ) -> impl warp::reply::Reply {
     let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
         .filter_map(move |_| match client_agent.poll() {
-            Ok(Async::Ready(Some(msg))) => Some((
-                warp::sse::event(msg.event()),
-                warp::sse::data(msg.payload()),
+            Ok(Async::Ready(Some(event))) => Some((
+                warp::sse::event(event.event_name()),
+                warp::sse::data(event.payload().unwrap_or_else(String::new)),
             )),
             _ => None,
         });
@@ -82,12 +80,8 @@ pub fn send_updates_to_ws(
     event_stream
         .for_each(move |_instant| {
             if let Ok(Async::Ready(Some(msg))) = client_agent.poll() {
-                tx.unbounded_send(warp::ws::Message::text(
-                    json!({ "event": msg.event(),
-                          "payload": msg.payload() })
-                    .to_string(),
-                ))
-                .expect("No send error");
+                tx.unbounded_send(warp::ws::Message::text(msg.to_json_string()))
+                    .expect("No send error");
             };
             if time.elapsed() > time::Duration::from_secs(30) {
                 tx.unbounded_send(warp::ws::Message::text("{}"))

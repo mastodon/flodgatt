@@ -5,6 +5,7 @@ mod message_queues;
 use crate::{
     config::{self, RedisInterval},
     log_fatal,
+    messages::Event,
     parse_client_request::subscription::{self, postgres, PgPool, Timeline},
     pubsub_cmd,
     redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
@@ -12,7 +13,6 @@ use crate::{
 use futures::{Async, Poll};
 use lru::LruCache;
 pub use message_queues::{MessageQueues, MsgQueue};
-use serde_json::Value;
 use std::{collections::HashMap, net, time};
 use tokio::io::Error;
 use uuid::Uuid;
@@ -145,16 +145,16 @@ impl Receiver {
 
 /// The stream that the ClientAgent polls to learn about new messages.
 impl futures::stream::Stream for Receiver {
-    type Item = Value;
+    type Item = Event;
     type Error = Error;
 
     /// Returns the oldest message in the `ClientAgent`'s queue (if any).
     ///
     /// Note: This method does **not** poll Redis every time, because polling
-    /// Redis is signifiantly more time consuming that simply returning the
+    /// Redis is significantly more time consuming that simply returning the
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
-    fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
         if self.redis_polled_at.elapsed() > *self.redis_poll_interval {
             for (raw_timeline, msg_value) in self.pubsub_connection.poll_redis() {

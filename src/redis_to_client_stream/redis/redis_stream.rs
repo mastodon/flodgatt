@@ -1,7 +1,6 @@
 use super::redis_msg::RedisMsg;
-use crate::config::RedisNamespace;
+use crate::{config::RedisNamespace, messages::Event};
 use futures::{Async, Poll};
-use serde_json::Value;
 use std::{io::Read, net};
 use tokio::io::AsyncRead;
 
@@ -28,16 +27,22 @@ impl RedisStream {
     // into messages.  Incoming messages *are* guaranteed to be RESP arrays,
     // https://redis.io/topics/protocol
     /// Adds any new Redis messages to the `MsgQueue` for the appropriate `ClientAgent`.
-    pub fn poll_redis(&mut self) -> Vec<(String, Value)> {
+    pub fn poll_redis(&mut self) -> Vec<(String, Event)> {
+        let start_time = std::time::Instant::now();
         let mut buffer = vec![0u8; 6000];
         let mut messages = Vec::new();
-
-        if let Async::Ready(num_bytes_read) = self.poll_read(&mut buffer).unwrap() {
+        let mut got_data_from_redis = std::time::Instant::now();
+        if let Ok(Async::Ready(num_bytes_read)) = self.poll_read(&mut buffer) {
+            got_data_from_redis = std::time::Instant::now();
             let raw_utf = self.as_utf8(buffer, num_bytes_read);
             self.incoming_raw_msg.push_str(&raw_utf);
 
             // Only act if we have a full message (end on a msg boundary)
             if !self.incoming_raw_msg.ends_with("}\r\n") {
+                log::warn!(
+                    "Buffer didn't end at msg boundry: {:?}",
+                    start_time.elapsed()
+                );
                 return messages;
             };
             let prefix_to_skip = match &*self.namespace {
@@ -61,6 +66,7 @@ impl RedisStream {
                         msg.cursor += ":".len();
                         let _active_subscriptions = msg.process_number();
                         msg.cursor += "\r\n".len();
+                        log::warn!("Processed a subscribe/unsubscribe cmd");
                     }
                     cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
                 };
@@ -68,6 +74,15 @@ impl RedisStream {
             }
             self.incoming_raw_msg.clear();
         }
+        if start_time.elapsed().as_micros() > 150 {
+            log::warn!(
+                ".poll_redis() took: {:?}\n({:?} waiting for Redis)\nReturning: {} message(s)",
+                start_time.elapsed(),
+                start_time.elapsed() - got_data_from_redis.elapsed(),
+                messages.len(),
+            );
+        };
+
         messages
     }
 
