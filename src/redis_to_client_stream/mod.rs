@@ -5,37 +5,41 @@ pub mod redis;
 pub use client_agent::ClientAgent;
 use futures::{future::Future, stream::Stream, Async};
 use log;
-use std::time;
+use std::time::{Duration, Instant};
 
 /// Send a stream of replies to a Server Sent Events client.
 pub fn send_updates_to_sse(
     mut client_agent: ClientAgent,
     connection: warp::sse::Sse,
-    update_interval: time::Duration,
+    update_interval: Duration,
 ) -> impl warp::reply::Reply {
-    let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
-        .filter_map(move |_| match client_agent.poll() {
-            Ok(Async::Ready(Some(event))) => Some((
-                warp::sse::event(event.event_name()),
-                warp::sse::data(event.payload().unwrap_or_else(String::new)),
-            )),
-            _ => None,
+    let event_stream =
+        tokio::timer::Interval::new(Instant::now(), update_interval).filter_map(move |_| {
+            match client_agent.poll() {
+                Ok(Async::Ready(Some(event))) => Some((
+                    warp::sse::event(event.event_name()),
+                    warp::sse::data(event.payload().unwrap_or_else(String::new)),
+                )),
+                _ => None,
+            }
         });
 
     connection.reply(
         warp::sse::keep_alive()
-            .interval(time::Duration::from_secs(30))
+            .interval(Duration::from_secs(30))
             .text("thump".to_string())
             .stream(event_stream),
     )
 }
 
+use warp::ws::WebSocket;
+
 /// Send a stream of replies to a WebSocket client.
 pub fn send_updates_to_ws(
-    socket: warp::ws::WebSocket,
+    socket: WebSocket,
     mut client_agent: ClientAgent,
-    update_interval: time::Duration,
-) -> impl futures::future::Future<Item = (), Error = ()> {
+    update_interval: Duration,
+) -> impl Future<Item = (), Error = ()> {
     let (ws_tx, mut ws_rx) = socket.split();
     let timeline = client_agent.subscription.timeline;
 
@@ -55,8 +59,8 @@ pub fn send_updates_to_ws(
     );
 
     // Yield new events for as long as the client is still connected
-    let event_stream = tokio::timer::Interval::new(time::Instant::now(), update_interval)
-        .take_while(move |_| match ws_rx.poll() {
+    let event_stream = tokio::timer::Interval::new(Instant::now(), update_interval).take_while(
+        move |_| match ws_rx.poll() {
             Ok(Async::NotReady) | Ok(Async::Ready(Some(_))) => futures::future::ok(true),
             Ok(Async::Ready(None)) => {
                 // TODO: consider whether we should manually drop closed connections here
@@ -72,10 +76,10 @@ pub fn send_updates_to_ws(
                 log::warn!("Error in {:?}: {}", timeline, e);
                 futures::future::ok(false)
             }
-        });
+        },
+    );
 
-    let mut time = time::Instant::now();
-
+    let mut time = Instant::now();
     // Every time you get an event from that stream, send it through the pipe
     event_stream
         .for_each(move |_instant| {
@@ -83,10 +87,10 @@ pub fn send_updates_to_ws(
                 tx.unbounded_send(warp::ws::Message::text(msg.to_json_string()))
                     .expect("No send error");
             };
-            if time.elapsed() > time::Duration::from_secs(30) {
+            if time.elapsed() > Duration::from_secs(30) {
                 tx.unbounded_send(warp::ws::Message::text("{}"))
                     .expect("Can ping");
-                time = time::Instant::now();
+                time = Instant::now();
             }
             Ok(())
         })

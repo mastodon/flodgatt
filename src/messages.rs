@@ -1,6 +1,6 @@
 use crate::log_fatal;
 use serde::{Deserialize, Serialize};
-use serde_json::{self, json};
+use serde_json;
 use std::boxed::Box;
 use std::{collections::HashSet, string::String};
 
@@ -8,68 +8,54 @@ use std::{collections::HashSet, string::String};
 #[rustfmt::skip]
 #[derive(Deserialize, Debug, Clone)]
 pub enum Event {
-    Update(Status),
-    Notification(Notification),
-    Delete(DeletedId),
+    Update{ payload: Status},
+    Notification{payload: Notification},
+    Delete{payload: DeletedId},
     FiltersChanged,
-    Announcement(Announcement),
+    Announcement{payload: Announcement},
     #[serde(rename(serialize = "announcement.reaction", deserialize = "announcement.reaction"))]
-    AnnouncementReaction(AnnouncementReaction),
+    AnnouncementReaction{payload: AnnouncementReaction},
     #[serde(rename(serialize = "announcement.delete", deserialize = "announcement.delete"))]
-    AnnouncementDelete(DeletedId),
-    Conversation(Conversation),
+    AnnouncementDelete{payload: DeletedId},
+    Conversation{payload: Conversation},
 }
+
 #[derive(Serialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum SendableEvent<'a> {
     WithPayload { event: &'a str, payload: String },
     NoPayload { event: &'a str },
 }
+#[rustfmt::skip]
 impl Event {
     pub fn event_name(&self) -> String {
         use Event::*;
         match self {
-            Update(_) => "update",
-            Notification(_) => "notification",
-            Delete(_) => "delete",
-            Announcement(_) => "announcement",
-            AnnouncementReaction(_) => "announcement.reaction",
-            AnnouncementDelete(_) => "announcement.delete",
-            Conversation(_) => "conversation",
+            Update { .. } => "update",
+            Notification { .. } => "notification",
+            Delete { .. } => "delete",
+            Announcement { .. } => "announcement",
+            AnnouncementReaction { .. } => "announcement.reaction",
+            AnnouncementDelete { .. } => "announcement.delete",
+            Conversation { .. } => "conversation",
             FiltersChanged => "filters_changed",
         }
         .to_string()
     }
+
+            
     pub fn payload(&self) -> Option<String> {
         use Event::*;
         match self {
-            Update(status) => Some(escaped(status)),
-            Notification(notification) => Some(escaped(notification)),
-            Delete(id) => Some(id.0.clone()),
-            Announcement(announcement) => Some(escaped(announcement)),
-            AnnouncementReaction(reaction) => Some(escaped(reaction)),
-            AnnouncementDelete(id) => Some(id.0.clone()),
-            Conversation(conversation) => Some(escaped(conversation)),
+            Update { payload: status } => Some(escaped(status)),
+            Notification { payload: notification } => Some(escaped(notification)),
+            Delete { payload: id } => Some(id.0.clone()),
+            Announcement { payload: announcement } => Some(escaped(announcement)),
+            AnnouncementReaction { payload: reaction } => Some(escaped(reaction)),
+            AnnouncementDelete { payload: id } => Some(id.0.clone()),
+            Conversation { payload: conversation} => Some(escaped(conversation)),
             FiltersChanged => None,
         }
-    }
-    pub fn to_sendable_event(&self) -> SendableEvent {
-        use Event::*;
-        let (event, payload) = match self {
-            Update(status) => ("update", escaped(status)),
-            Notification(notification) => ("notification", escaped(notification)),
-            Delete(id) => ("delete", id.0.clone()),
-            Announcement(announcement) => ("announcement", escaped(announcement)),
-            AnnouncementReaction(reaction) => ("announcement.reaction", escaped(reaction)),
-            AnnouncementDelete(id) => ("announcement.delete", id.0.clone()),
-            Conversation(conversation) => ("conversation", escaped(conversation)),
-            FiltersChanged => {
-                return SendableEvent::NoPayload {
-                    event: "filters_changed",
-                }
-            }
-        };
-        SendableEvent::WithPayload { event, payload }
     }
     pub fn to_json_string(&self) -> String {
         let event = &self.event_name();
@@ -77,7 +63,8 @@ impl Event {
             Some(payload) => SendableEvent::WithPayload { event, payload },
             None => SendableEvent::NoPayload { event },
         };
-        serde_json::to_string(&sendable_event).expect("TODO")
+        serde_json::to_string(&sendable_event)
+            .unwrap_or_else(|_| log_fatal!("Could not serialize `{:?}`", &sendable_event))
     }
 }
 
@@ -93,25 +80,9 @@ pub struct Conversation {
     unread: bool,
     last_status: Option<Status>,
 }
-impl ToSendable for Conversation {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "conversation", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "conversation", "payload": self})
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeletedId(String);
-impl ToSendable for DeletedId {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "delete", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "delete", "payload": self})
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Status {
@@ -140,15 +111,6 @@ pub struct Status {
     language: Option<String>,
     text: Option<String>,
     // plus others for Auth. users
-}
-
-impl ToSendable for Status {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "update", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "update", "payload": self})
-    }
 }
 
 #[serde(rename_all = "lowercase")]
@@ -320,14 +282,7 @@ pub struct Notification {
     account: Account,
     status: Status,
 }
-impl ToSendable for Notification {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "notification", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "notification", "payload": self})
-    }
-}
+
 #[serde(rename_all = "lowercase")]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum NotificationType {
@@ -351,27 +306,13 @@ pub struct Announcement {
     mentions: Vec<Mention>,
     reactions: Vec<AnnouncementReaction>,
 }
-impl ToSendable for Announcement {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "announcement", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "announcement", "payload": self})
-    }
-}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnnouncementReaction {
-    announcement_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    announcement_id: Option<String>,
     count: i64,
     name: String,
-}
-impl ToSendable for AnnouncementReaction {
-    fn with_escaped_payload(&self) -> serde_json::Value {
-        json!({"event": "announcement.reaction", "payload": escaped(self)})
-    }
-    fn with_payload(&self) -> serde_json::Value {
-        json!({"event": "announcement.reaction", "payload": self})
-    }
 }
 
 impl Status {

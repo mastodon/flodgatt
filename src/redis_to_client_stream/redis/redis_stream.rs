@@ -1,6 +1,10 @@
 use super::redis_msg::RedisMsg;
-use crate::{config::RedisNamespace, messages::Event};
+use crate::config::RedisNamespace;
+use crate::log_fatal;
+use crate::parse_client_request::subscription::Timeline;
+use crate::redis_to_client_stream::receiver::MessageQueues;
 use futures::{Async, Poll};
+use lru::LruCache;
 use std::{io::Read, net};
 use tokio::io::AsyncRead;
 
@@ -27,23 +31,19 @@ impl RedisStream {
     // into messages.  Incoming messages *are* guaranteed to be RESP arrays,
     // https://redis.io/topics/protocol
     /// Adds any new Redis messages to the `MsgQueue` for the appropriate `ClientAgent`.
-    pub fn poll_redis(&mut self) -> Vec<(String, Event)> {
-        let start_time = std::time::Instant::now();
+    pub fn poll_redis(
+        &mut self,
+        hashtag_to_id_cache: &mut LruCache<String, i64>,
+        queues: &mut MessageQueues,
+    ) {
         let mut buffer = vec![0u8; 6000];
-        let mut messages = Vec::new();
-        let mut got_data_from_redis = std::time::Instant::now();
         if let Ok(Async::Ready(num_bytes_read)) = self.poll_read(&mut buffer) {
-            got_data_from_redis = std::time::Instant::now();
             let raw_utf = self.as_utf8(buffer, num_bytes_read);
             self.incoming_raw_msg.push_str(&raw_utf);
 
             // Only act if we have a full message (end on a msg boundary)
             if !self.incoming_raw_msg.ends_with("}\r\n") {
-                log::warn!(
-                    "Buffer didn't end at msg boundry: {:?}",
-                    start_time.elapsed()
-                );
-                return messages;
+                return;
             };
             let prefix_to_skip = match &*self.namespace {
                 Some(namespace) => format!("{}:timeline:", namespace),
@@ -57,7 +57,13 @@ impl RedisStream {
                 match command.as_str() {
                     "message" => {
                         let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
-                        messages.push((raw_timeline, msg_value));
+                        let hashtag = hashtag_from_timeline(&raw_timeline, hashtag_to_id_cache);
+                        let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
+                        for msg_queue in queues.values_mut() {
+                            if msg_queue.timeline == timeline {
+                                msg_queue.messages.push_back(msg_value.clone());
+                            }
+                        }
                     }
 
                     "subscribe" | "unsubscribe" => {
@@ -66,7 +72,6 @@ impl RedisStream {
                         msg.cursor += ":".len();
                         let _active_subscriptions = msg.process_number();
                         msg.cursor += "\r\n".len();
-                        log::warn!("Processed a subscribe/unsubscribe cmd");
                     }
                     cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
                 };
@@ -74,16 +79,6 @@ impl RedisStream {
             }
             self.incoming_raw_msg.clear();
         }
-        if start_time.elapsed().as_micros() > 150 {
-            log::warn!(
-                ".poll_redis() took: {:?}\n({:?} waiting for Redis)\nReturning: {} message(s)",
-                start_time.elapsed(),
-                start_time.elapsed() - got_data_from_redis.elapsed(),
-                messages.len(),
-            );
-        };
-
-        messages
     }
 
     fn as_utf8(&mut self, cur_buffer: Vec<u8>, size: usize) -> String {
@@ -96,12 +91,33 @@ impl RedisStream {
     }
 }
 
+fn hashtag_from_timeline(
+    raw_timeline: &str,
+    hashtag_id_cache: &mut LruCache<String, i64>,
+) -> Option<i64> {
+    if raw_timeline.starts_with("hashtag") {
+        let tag_name = raw_timeline
+            .split(':')
+            .nth(1)
+            .unwrap_or_else(|| log_fatal!("No hashtag found in `{}`", raw_timeline))
+            .to_string();
+
+        let tag_id = *hashtag_id_cache
+            .get(&tag_name)
+            .unwrap_or_else(|| log_fatal!("No cached id for `{}`", tag_name));
+        Some(tag_id)
+    } else {
+        None
+    }
+}
+
 impl std::ops::Deref for RedisStream {
     type Target = net::TcpStream;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
+
 impl std::ops::DerefMut for RedisStream {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner

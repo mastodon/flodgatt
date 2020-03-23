@@ -65,9 +65,10 @@ impl ClientAgent {
     /// that out and avoiding duplicated connections.  Thus, it is safe to
     /// use this method for each new client connection.
     pub fn init_for_user(&mut self, subscription: Subscription) {
+        use std::time::Instant;
         self.id = Uuid::new_v4();
         self.subscription = subscription;
-        let start_time = std::time::Instant::now();
+        let start_time = Instant::now();
         let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
         receiver.manage_new_timeline(self.id, self.subscription.timeline);
         log::info!("init_for_user had lock for: {:?}", start_time.elapsed());
@@ -88,13 +89,14 @@ impl futures::stream::Stream for ClientAgent {
     /// replies with `Ok(NotReady)`.  The `ClientAgent` bubles up any
     /// errors from the underlying data structures.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let start_time = std::time::Instant::now();
+        use std::time::Instant;
+        let start_time = Instant::now();
         let result = {
             let mut receiver = self
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
-            let get_lock = std::time::Instant::now();
+            let get_lock = Instant::now();
             receiver.configure_for_polling(self.id, self.subscription.timeline);
             let res = receiver.poll();
             if start_time.elapsed().as_millis() > 1 {
@@ -116,20 +118,20 @@ impl futures::stream::Stream for ClientAgent {
         use Event::*;
         match result {
             Ok(Async::Ready(Some(event))) => match event {
-                Update(status) => match self.subscription.timeline {
+                Update { payload: status } => match self.subscription.timeline {
                     _ if status.involves_blocked_user(blocked_users) => block,
                     _ if status.from_blocked_domain(blocked_domains) => block,
                     _ if status.from_blocking_user(blocking_users) => block,
                     Timeline(Public, _, _) if status.language_not_allowed(allowed_langs) => block,
-                    _ => send(Update(status)),
+                    _ => send(Update { payload: status }),
                 },
-                Notification(_)
-                | Conversation(_)
-                | Delete(_)
+                Notification { .. }
+                | Conversation { .. }
+                | Delete { .. }
                 | FiltersChanged
-                | Announcement(_)
-                | AnnouncementReaction(_)
-                | AnnouncementDelete(_) => send(event),
+                | Announcement { .. }
+                | AnnouncementReaction { .. }
+                | AnnouncementDelete { .. } => send(event),
             },
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
