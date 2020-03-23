@@ -39,44 +39,7 @@ impl RedisStream {
         let mut buffer = vec![0u8; 6000];
         if let Ok(Async::Ready(num_bytes_read)) = self.poll_read(&mut buffer) {
             let raw_utf = self.as_utf8(buffer, num_bytes_read);
-            self.incoming_raw_msg.push_str(&raw_utf);
-
-            // Only act if we have a full message (end on a msg boundary)
-            if !self.incoming_raw_msg.ends_with("}\r\n") {
-                return;
-            };
-            let prefix_to_skip = match &*self.namespace {
-                Some(namespace) => format!("{}:timeline:", namespace),
-                None => "timeline:".to_string(),
-            };
-
-            let mut msg = RedisMsg::from_raw(&self.incoming_raw_msg, prefix_to_skip.len());
-
-            while !msg.raw.is_empty() {
-                let command = msg.next_field();
-                match command.as_str() {
-                    "message" => {
-                        let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
-                        let hashtag = hashtag_from_timeline(&raw_timeline, hashtag_to_id_cache);
-                        let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
-                        for msg_queue in queues.values_mut() {
-                            if msg_queue.timeline == timeline {
-                                msg_queue.messages.push_back(msg_value.clone());
-                            }
-                        }
-                    }
-
-                    "subscribe" | "unsubscribe" => {
-                        // No msg, so ignore & advance cursor to end
-                        let _channel = msg.next_field();
-                        msg.cursor += ":".len();
-                        let _active_subscriptions = msg.process_number();
-                        msg.cursor += "\r\n".len();
-                    }
-                    cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
-                };
-                msg = RedisMsg::from_raw(&msg.raw[msg.cursor..], msg.prefix_len);
-            }
+            process_messages(raw_utf, &*self.namespace, hashtag_to_id_cache, queues);
             self.incoming_raw_msg.clear();
         }
     }
@@ -89,6 +52,59 @@ impl RedisStream {
             self.as_utf8(buffer, size + 1)
         })
     }
+}
+
+pub fn process_messages(
+    raw_utf: String,
+    namespace: &Option<String>,
+    hashtag_id_cache: &mut LruCache<String, i64>,
+    queues: &mut MessageQueues,
+) {
+    // Only act if we have a full message (end on a msg boundary)
+    if !raw_utf.ends_with("}\r\n") {
+        return;
+    };
+    let prefix_to_skip = match namespace {
+        Some(namespace) => format!("{}:timeline:", namespace),
+        None => "timeline:".to_string(),
+    };
+
+    let mut msg = RedisMsg::from_raw(&raw_utf, prefix_to_skip.len());
+
+    while !msg.raw.is_empty() {
+        let command = msg.next_field();
+        process_msg(command, &mut msg, hashtag_id_cache, queues);
+        msg = RedisMsg::from_raw(&msg.raw[msg.cursor..], msg.prefix_len);
+    }
+}
+
+pub fn process_msg(
+    command: String,
+    msg: &mut RedisMsg,
+    hashtag_id_cache: &mut LruCache<String, i64>,
+    queues: &mut MessageQueues,
+) {
+    match command.as_str() {
+        "message" => {
+            let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
+            let hashtag = hashtag_from_timeline(&raw_timeline, hashtag_id_cache);
+            let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
+            for msg_queue in queues.values_mut() {
+                if msg_queue.timeline == timeline {
+                    msg_queue.messages.push_back(msg_value.clone());
+                }
+            }
+        }
+
+        "subscribe" | "unsubscribe" => {
+            // No msg, so ignore & advance cursor to end
+            let _channel = msg.next_field();
+            msg.cursor += ":".len();
+            let _active_subscriptions = msg.process_number();
+            msg.cursor += "\r\n".len();
+        }
+        cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
+    };
 }
 
 fn hashtag_from_timeline(

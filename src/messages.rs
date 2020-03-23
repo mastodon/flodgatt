@@ -6,7 +6,7 @@ use std::{collections::HashSet, string::String};
 
 #[serde(rename_all = "snake_case", tag = "event")]
 #[rustfmt::skip]
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 pub enum Event {
     Update{ payload: Status},
     Notification{payload: Notification},
@@ -73,7 +73,7 @@ fn escaped<T: Serialize + std::fmt::Debug>(content: T) -> String {
         .unwrap_or_else(|_| log_fatal!("Could not parse Event with: `{:?}`", &content))
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Conversation {
     id: String,
     accounts: Vec<Account>,
@@ -81,10 +81,10 @@ pub struct Conversation {
     last_status: Option<Status>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DeletedId(String);
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Status {
     id: String,
     uri: String,
@@ -110,19 +110,24 @@ pub struct Status {
     card: Option<Card>,
     language: Option<String>,
     text: Option<String>,
-    // plus others for Auth. users
+    // ↓↓↓ Only for authorized users
+    favourited: Option<bool>,
+    reblogged: Option<bool>,
+    muted: Option<bool>,
+    bookmarked: Option<bool>,
+    pinned: Option<bool>,
 }
 
 #[serde(rename_all = "lowercase")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
-enum Visibility {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum Visibility {
     Public,
     Unlisted,
     Private,
     Dirrect,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Account {
     id: String,
     username: String,
@@ -147,7 +152,7 @@ pub struct Account {
     source: Option<Source>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Attachment {
     id: String,
     r#type: AttachmentType,
@@ -162,7 +167,7 @@ struct Attachment {
 }
 
 #[serde(rename_all = "lowercase")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 enum AttachmentType {
     Unknown,
     Image,
@@ -171,8 +176,8 @@ enum AttachmentType {
     Audio,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Application {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Application {
     name: String,
     website: Option<String>,
     vapid_key: Option<String>,
@@ -180,7 +185,7 @@ struct Application {
     client_secret: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Emoji {
     shortcode: String,
     url: String,
@@ -189,14 +194,14 @@ struct Emoji {
     category: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Field {
     name: String,
     value: String,
     verified_at: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Source {
     note: String,
     fields: Vec<Field>,
@@ -206,22 +211,22 @@ struct Source {
     follow_requests_count: i64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Mention {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Mention {
     id: String,
     username: String,
     acct: String,
     url: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Tag {
     name: String,
     url: String,
     history: Option<Vec<History>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Poll {
     id: String,
     expires_at: String,
@@ -235,13 +240,13 @@ struct Poll {
     emojis: Vec<Emoji>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct PollOptions {
     title: String,
     votes_count: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Card {
     url: String,
     title: String,
@@ -259,7 +264,7 @@ struct Card {
 }
 
 #[serde(rename_all = "lowercase")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 enum CardType {
     Link,
     Photo,
@@ -267,14 +272,14 @@ enum CardType {
     Rich,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct History {
     day: String,
     uses: String,
     accounts: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Notification {
     id: String,
     r#type: NotificationType,
@@ -284,7 +289,7 @@ pub struct Notification {
 }
 
 #[serde(rename_all = "lowercase")]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 enum NotificationType {
     Follow,
     Mention,
@@ -293,7 +298,7 @@ enum NotificationType {
     Poll,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Announcement {
     id: String,
     all_day: bool,
@@ -307,7 +312,7 @@ pub struct Announcement {
     reactions: Vec<AnnouncementReaction>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AnnouncementReaction {
     #[serde(skip_serializing_if = "Option::is_none")]
     announcement_id: Option<String>,
@@ -396,5 +401,135 @@ impl Status {
         } else {
             REJECT
         }
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{parse_client_request::subscription::Timeline,
+                redis_to_client_stream::{receiver::{MsgQueue, MessageQueues}, redis::{redis_stream, redis_msg}}};
+    use lru::LruCache;
+    use uuid::Uuid;
+    use std::collections::HashMap;
+
+    /// Set up state shared between multiple tests of Redis parsing
+    pub fn shared_setup() -> (LruCache<String, i64>, MessageQueues, Uuid, Timeline) {
+        let cache: LruCache<String, i64> = LruCache::new(1000);
+        let mut queues_map = HashMap::new();
+        let id = Uuid::default();
+
+        let timeline = Timeline::from_redis_str("4", None);
+        queues_map.insert(id, MsgQueue::new(timeline));
+        let queues = MessageQueues(queues_map);
+        (cache, queues, id, timeline)
+    }
+
+    const INPUT: &str  ="*3\r\n$7\r\nmessage\r\n$10\r\ntimeline:4\r\n$1386\r\n{\"event\":\"update\",\"payload\":{\"id\":\"102866835379605039\",\"created_at\":\"2019-09-27T22:29:02.590Z\",\"in_reply_to_id\":null,\"in_reply_to_account_id\":null,\"sensitive\":false,\"spoiler_text\":\"\",\"visibility\":\"public\",\"language\":\"en\",\"uri\":\"http://localhost:3000/users/admin/statuses/102866835379605039\",\"url\":\"http://localhost:3000/@admin/102866835379605039\",\"replies_count\":0,\"reblogs_count\":0,\"favourites_count\":0,\"favourited\":false,\"reblogged\":false,\"muted\":false,\"content\":\"<p><span class=\\\"h-card\\\"><a href=\\\"http://localhost:3000/@susan\\\" class=\\\"u-url mention\\\">@<span>susan</span></a></span> hi</p>\",\"reblog\":null,\"application\":{\"name\":\"Web\",\"website\":null},\"account\":{\"id\":\"1\",\"username\":\"admin\",\"acct\":\"admin\",\"display_name\":\"\",\"locked\":false,\"bot\":false,\"created_at\":\"2019-07-04T00:21:05.890Z\",\"note\":\"<p></p>\",\"url\":\"http://localhost:3000/@admin\",\"avatar\":\"http://localhost:3000/avatars/original/missing.png\",\"avatar_static\":\"http://localhost:3000/avatars/original/missing.png\",\"header\":\"http://localhost:3000/headers/original/missing.png\",\"header_static\":\"http://localhost:3000/headers/original/missing.png\",\"followers_count\":3,\"following_count\":3,\"statuses_count\":192,\"emojis\":[],\"fields\":[]},\"media_attachments\":[],\"mentions\":[{\"id\":\"4\",\"username\":\"susan\",\"url\":\"http://localhost:3000/@susan\",\"acct\":\"susan\"}],\"tags\":[],\"emojis\":[],\"card\":null,\"poll\":null},\"queued_at\":1569623342825}\r\n";
+    
+    #[test]
+    fn parse_redis_output_into_event() {
+        let input = INPUT.to_string();
+        let (mut cache, mut queues, id, timeline) = shared_setup();
+
+        redis_stream::process_messages(input.to_string(), &mut None, &mut cache, &mut queues);
+        let parsed_event = queues
+            .oldest_msg_in_target_queue(id, timeline)
+            .unwrap();
+        let test_event = Event::Update{ payload: Status {
+            id: "102866835379605039".to_string(),
+            created_at: "2019-09-27T22:29:02.590Z".to_string(),
+            in_reply_to: None,
+            in_reply_to_account_id: None,
+            sensitive: false,
+            spoiler_text: "".to_string(),
+            visibility: Visibility::Public,
+            language: Some("en".to_string()),
+            uri: "http://localhost:3000/users/admin/statuses/102866835379605039".to_string(),
+            url: Some("http://localhost:3000/@admin/102866835379605039".to_string()),
+            replies_count: 0,
+            reblogs_count: 0,
+            favourites_count: 0,
+            favourited: Some(false),
+            reblogged: Some(false),
+            muted: Some(false),
+            bookmarked: None,
+            pinned: None,
+            content: "<p><span class=\"h-card\"><a href=\"http://localhost:3000/@susan\" class=\"u-url mention\">@<span>susan</span></a></span> hi</p>".to_string(),
+            reblog: None,
+            application: Some(Application {
+                name: "Web".to_string(),
+                website: None,
+                vapid_key: None,
+                client_id: None,
+                client_secret: None,
+            }),
+            
+            account: Account {
+                id: "1".to_string(),
+                username: "admin".to_string(),
+                acct: "admin".to_string(),
+                display_name: "".to_string(),
+                locked:false,
+                bot:Some(false),
+                created_at: "2019-07-04T00:21:05.890Z".to_string(),
+                note:"<p></p>".to_string(),
+                url:"http://localhost:3000/@admin".to_string(),
+                avatar: "http://localhost:3000/avatars/original/missing.png".to_string(),
+                avatar_static:"http://localhost:3000/avatars/original/missing.png".to_string(),
+                header: "http://localhost:3000/headers/original/missing.png".to_string(),
+                header_static:"http://localhost:3000/headers/original/missing.png".to_string(),
+                followers_count:3,
+                following_count:3,
+                statuses_count:192,
+                emojis:vec![],
+                fields:Some(vec![]),
+                moved: None,
+                discoverable: None,
+                source: None,
+                
+                    
+            },
+            media_attachments:vec![],
+            mentions: vec![ Mention {id:"4".to_string(),
+                                     username:"susan".to_string(),
+                                     url:"http://localhost:3000/@susan".to_string(),
+                                     acct:"susan".to_string()}],
+            tags:vec![],
+            emojis:vec![],
+            card:None,poll:None,
+            text: None,
+            
+            
+            
+        }};
+        dbg!(&parsed_event, &test_event);
+        assert_eq!(parsed_event, test_event);
+    }
+
+    #[test]
+    fn trivial_redis_parse() {
+        let input = "*3\r\n$9\r\nSUBSCRIBE\r\n$10\r\ntimeline:1\r\n:1\r\n";
+        let mut msg = redis_msg::RedisMsg::from_raw(input, "timeline".len());
+        let cmd = msg.next_field();
+        assert_eq!(&cmd, "SUBSCRIBE");
+        let timeline = msg.next_field();
+        assert_eq!(&timeline, "timeline:1");
+        msg.cursor += ":1\r\n".len();
+        assert_eq!(msg.cursor, input.len());
+    }
+
+    #[test]
+    fn realistic_redis_parse() {
+        let input = "*3\r\n$7\r\nmessage\r\n$10\r\ntimeline:4\r\n$1386\r\n{\"event\":\"update\",\"payload\":{\"id\":\"102866835379605039\",\"created_at\":\"2019-09-27T22:29:02.590Z\",\"in_reply_to_id\":null,\"in_reply_to_account_id\":null,\"sensitive\":false,\"spoiler_text\":\"\",\"visibility\":\"public\",\"language\":\"en\",\"uri\":\"http://localhost:3000/users/admin/statuses/102866835379605039\",\"url\":\"http://localhost:3000/@admin/102866835379605039\",\"replies_count\":0,\"reblogs_count\":0,\"favourites_count\":0,\"favourited\":false,\"reblogged\":false,\"muted\":false,\"content\":\"<p><span class=\\\"h-card\\\"><a href=\\\"http://localhost:3000/@susan\\\" class=\\\"u-url mention\\\">@<span>susan</span></a></span> hi</p>\",\"reblog\":null,\"application\":{\"name\":\"Web\",\"website\":null},\"account\":{\"id\":\"1\",\"username\":\"admin\",\"acct\":\"admin\",\"display_name\":\"\",\"locked\":false,\"bot\":false,\"created_at\":\"2019-07-04T00:21:05.890Z\",\"note\":\"<p></p>\",\"url\":\"http://localhost:3000/@admin\",\"avatar\":\"http://localhost:3000/avatars/original/missing.png\",\"avatar_static\":\"http://localhost:3000/avatars/original/missing.png\",\"header\":\"http://localhost:3000/headers/original/missing.png\",\"header_static\":\"http://localhost:3000/headers/original/missing.png\",\"followers_count\":3,\"following_count\":3,\"statuses_count\":192,\"emojis\":[],\"fields\":[]},\"media_attachments\":[],\"mentions\":[{\"id\":\"4\",\"username\":\"susan\",\"url\":\"http://localhost:3000/@susan\",\"acct\":\"susan\"}],\"tags\":[],\"emojis\":[],\"card\":null,\"poll\":null},\"queued_at\":1569623342825}\r\n";
+        let mut msg = redis_msg::RedisMsg::from_raw(input, "timeline".len());
+        let cmd = msg.next_field();
+        assert_eq!(&cmd, "message");
+        let timeline = msg.next_field();
+        assert_eq!(&timeline, "timeline:4");
+        let message_str = msg.next_field();
+        assert_eq!(message_str, input[41..input.len() - 2]);
+        assert_eq!(msg.cursor, input.len());
     }
 }
