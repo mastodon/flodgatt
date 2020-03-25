@@ -57,7 +57,7 @@ impl Timeline {
         Self(Unset, Local, Notification)
     }
 
-    pub fn to_redis_str(&self, hashtag: Option<&String>) -> String {
+    pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> String {
         use {Content::*, Reach::*, Stream::*};
         match self {
             Timeline(Public, Federated, All) => "timeline:public".into(),
@@ -82,7 +82,7 @@ impl Timeline {
             }
         }
     }
-    pub fn from_redis_str(raw_timeline: &str, hashtag: Option<i64>) -> Self {
+    pub fn from_redis_raw_timeline(raw_timeline: &str, hashtag: Option<i64>) -> Self {
         use {Content::*, Reach::*, Stream::*};
         match raw_timeline.split(':').collect::<Vec<&str>>()[..] {
             ["public"] => Timeline(Public, Federated, All),

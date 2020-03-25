@@ -5,6 +5,7 @@ mod message_queues;
 use crate::{
     config::{self, RedisInterval},
     log_fatal,
+    messages::Event,
     parse_client_request::subscription::{self, postgres, PgPool, Timeline},
     pubsub_cmd,
     redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
@@ -12,8 +13,7 @@ use crate::{
 use futures::{Async, Poll};
 use lru::LruCache;
 pub use message_queues::{MessageQueues, MsgQueue};
-use serde_json::Value;
-use std::{collections::HashMap, net, time};
+use std::{collections::HashMap, net, time::Instant};
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -23,7 +23,7 @@ pub struct Receiver {
     pub pubsub_connection: RedisStream,
     secondary_redis_connection: net::TcpStream,
     redis_poll_interval: RedisInterval,
-    redis_polled_at: time::Instant,
+    redis_polled_at: Instant,
     timeline: Timeline,
     manager_id: Uuid,
     pub msg_queues: MessageQueues,
@@ -32,9 +32,9 @@ pub struct Receiver {
     pool: PgPool,
 }
 #[derive(Debug)]
-struct Cache {
+pub struct Cache {
     id_to_hashtag: LruCache<i64, String>,
-    hashtag_to_id: LruCache<String, i64>,
+    pub hashtag_to_id: LruCache<String, i64>,
 }
 impl Cache {
     fn new(size: usize) -> Self {
@@ -60,7 +60,7 @@ impl Receiver {
                 .with_namespace(redis_namespace),
             secondary_redis_connection,
             redis_poll_interval,
-            redis_polled_at: time::Instant::now(),
+            redis_polled_at: Instant::now(),
             timeline: Timeline::empty(),
             manager_id: Uuid::default(),
             msg_queues: MessageQueues(HashMap::new()),
@@ -115,14 +115,14 @@ impl Receiver {
     /// that there's a subscription to the current one.  If there isn't, then
     /// subscribe to it.
     fn subscribe_or_unsubscribe_as_needed(&mut self, timeline: Timeline) {
-        let start_time = std::time::Instant::now();
+        let start_time = Instant::now();
         let timelines_to_modify = self.msg_queues.calculate_timelines_to_add_or_drop(timeline);
 
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
             let timeline = change.timeline;
-            let opt_hashtag = self.if_hashtag_timeline_get_hashtag_name(timeline);
-            let opt_hashtag = opt_hashtag.as_ref();
+            let hashtag = self.if_hashtag_timeline_get_hashtag_name(timeline);
+            let hashtag = hashtag.as_ref();
 
             let count_of_subscribed_clients = self
                 .clients_per_timeline
@@ -132,9 +132,9 @@ impl Receiver {
 
             // If no clients, unsubscribe from the channel
             if *count_of_subscribed_clients <= 0 {
-                pubsub_cmd!("unsubscribe", self, timeline.to_redis_str(opt_hashtag));
+                pubsub_cmd!("unsubscribe", self, timeline.to_redis_raw_timeline(hashtag));
             } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
-                pubsub_cmd!("subscribe", self, timeline.to_redis_str(opt_hashtag));
+                pubsub_cmd!("subscribe", self, timeline.to_redis_raw_timeline(hashtag));
             }
         }
         if start_time.elapsed().as_millis() > 1 {
@@ -145,42 +145,22 @@ impl Receiver {
 
 /// The stream that the ClientAgent polls to learn about new messages.
 impl futures::stream::Stream for Receiver {
-    type Item = Value;
+    type Item = Event;
     type Error = Error;
 
     /// Returns the oldest message in the `ClientAgent`'s queue (if any).
     ///
     /// Note: This method does **not** poll Redis every time, because polling
-    /// Redis is signifiantly more time consuming that simply returning the
+    /// Redis is significantly more time consuming that simply returning the
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
-    fn poll(&mut self) -> Poll<Option<Value>, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
+
         if self.redis_polled_at.elapsed() > *self.redis_poll_interval {
-            for (raw_timeline, msg_value) in self.pubsub_connection.poll_redis() {
-                let hashtag = if raw_timeline.starts_with("hashtag") {
-                    let tag_name = raw_timeline
-                        .split(':')
-                        .nth(1)
-                        .unwrap_or_else(|| log_fatal!("No hashtag found in `{}`", raw_timeline))
-                        .to_string();
-                    let tag_id = *self
-                        .cache
-                        .hashtag_to_id
-                        .get(&tag_name)
-                        .unwrap_or_else(|| log_fatal!("No cached id for `{}`", tag_name));
-                    Some(tag_id)
-                } else {
-                    None
-                };
-                let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
-                for msg_queue in self.msg_queues.values_mut() {
-                    if msg_queue.timeline == timeline {
-                        msg_queue.messages.push_back(msg_value.clone());
-                    }
-                }
-            }
-            self.redis_polled_at = time::Instant::now();
+            self.pubsub_connection
+                .poll_redis(&mut self.cache.hashtag_to_id, &mut self.msg_queues);
+            self.redis_polled_at = Instant::now();
         }
 
         // Record current time as last polled time
