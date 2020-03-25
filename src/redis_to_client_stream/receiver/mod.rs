@@ -121,8 +121,8 @@ impl Receiver {
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
             let timeline = change.timeline;
-            let opt_hashtag = self.if_hashtag_timeline_get_hashtag_name(timeline);
-            let opt_hashtag = opt_hashtag.as_ref();
+            let hashtag = self.if_hashtag_timeline_get_hashtag_name(timeline);
+            let hashtag = hashtag.as_ref();
 
             let count_of_subscribed_clients = self
                 .clients_per_timeline
@@ -132,9 +132,9 @@ impl Receiver {
 
             // If no clients, unsubscribe from the channel
             if *count_of_subscribed_clients <= 0 {
-                pubsub_cmd!("unsubscribe", self, timeline.to_redis_str(opt_hashtag));
+                pubsub_cmd!("unsubscribe", self, timeline.to_redis_raw_timeline(hashtag));
             } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
-                pubsub_cmd!("subscribe", self, timeline.to_redis_str(opt_hashtag));
+                pubsub_cmd!("subscribe", self, timeline.to_redis_raw_timeline(hashtag));
             }
         }
         if start_time.elapsed().as_millis() > 1 {
@@ -156,6 +156,7 @@ impl futures::stream::Stream for Receiver {
     /// been polled lately.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
+
         if self.redis_polled_at.elapsed() > *self.redis_poll_interval {
             self.pubsub_connection
                 .poll_redis(&mut self.cache.hashtag_to_id, &mut self.msg_queues);

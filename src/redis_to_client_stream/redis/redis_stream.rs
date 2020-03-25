@@ -1,11 +1,10 @@
-use super::redis_msg::RedisMsg;
+use super::redis_msg::{ParseErr, RedisMsg};
 use crate::config::RedisNamespace;
 use crate::log_fatal;
-use crate::parse_client_request::subscription::Timeline;
 use crate::redis_to_client_stream::receiver::MessageQueues;
 use futures::{Async, Poll};
 use lru::LruCache;
-use std::{io::Read, net};
+use std::{error::Error, io::Read, net};
 use tokio::io::AsyncRead;
 
 #[derive(Debug)]
@@ -26,10 +25,10 @@ impl RedisStream {
     pub fn with_namespace(self, namespace: RedisNamespace) -> Self {
         RedisStream { namespace, ..self }
     }
-    // Text comes in from redis as a raw stream, which could be more than one message
-    // and is not guaranteed to end on a message boundary.  We need to break it down
-    // into messages.  Incoming messages *are* guaranteed to be RESP arrays,
-    // https://redis.io/topics/protocol
+    // Text comes in from redis as a raw stream, which could be more than one message and
+    // is not guaranteed to end on a message boundary.  We need to break it down into
+    // messages.  Incoming messages *are* guaranteed to be RESP arrays (though still not
+    // guaranteed to end at an array boundary).  See https://redis.io/topics/protocol
     /// Adds any new Redis messages to the `MsgQueue` for the appropriate `ClientAgent`.
     pub fn poll_redis(
         &mut self,
@@ -39,8 +38,20 @@ impl RedisStream {
         let mut buffer = vec![0u8; 6000];
         if let Ok(Async::Ready(num_bytes_read)) = self.poll_read(&mut buffer) {
             let raw_utf = self.as_utf8(buffer, num_bytes_read);
-            process_messages(raw_utf, &*self.namespace, hashtag_to_id_cache, queues);
-            self.incoming_raw_msg.clear();
+            self.incoming_raw_msg.push_str(&raw_utf);
+            match process_messages(
+                self.incoming_raw_msg.clone(),
+                &mut self.namespace.0,
+                hashtag_to_id_cache,
+                queues,
+            ) {
+                Ok(None) => self.incoming_raw_msg.clear(),
+                Ok(Some(msg_fragment)) => self.incoming_raw_msg = msg_fragment,
+                Err(e) => {
+                    log::error!("{}", e);
+                    log_fatal!("Could not process RedisStream: {:?}", &self);
+                }
+            }
         }
     }
 
@@ -54,77 +65,37 @@ impl RedisStream {
     }
 }
 
+type HashtagCache = LruCache<String, i64>;
 pub fn process_messages(
-    raw_utf: String,
-    namespace: &Option<String>,
-    hashtag_id_cache: &mut LruCache<String, i64>,
+    raw_msg: String,
+    namespace: &mut Option<String>,
+    cache: &mut HashtagCache,
     queues: &mut MessageQueues,
-) {
-    // Only act if we have a full message (end on a msg boundary)
-    if !raw_utf.ends_with("}\r\n") {
-        return;
-    };
-    let prefix_to_skip = match namespace {
-        Some(namespace) => format!("{}:timeline:", namespace),
-        None => "timeline:".to_string(),
+) -> Result<Option<String>, Box<dyn Error>> {
+    let prefix_len = match namespace {
+        Some(namespace) => format!("{}:timeline:", namespace).len(),
+        None => "timeline:".len(),
     };
 
-    let mut msg = RedisMsg::from_raw(&raw_utf, prefix_to_skip.len());
-
-    while !msg.raw.is_empty() {
-        let command = msg.next_field();
-        process_msg(command, &mut msg, hashtag_id_cache, queues);
-        msg = RedisMsg::from_raw(&msg.raw[msg.cursor..], msg.prefix_len);
-    }
-}
-
-pub fn process_msg(
-    command: String,
-    msg: &mut RedisMsg,
-    hashtag_id_cache: &mut LruCache<String, i64>,
-    queues: &mut MessageQueues,
-) {
-    match command.as_str() {
-        "message" => {
-            let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
-            let hashtag = hashtag_from_timeline(&raw_timeline, hashtag_id_cache);
-            let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
-            for msg_queue in queues.values_mut() {
-                if msg_queue.timeline == timeline {
-                    msg_queue.messages.push_back(msg_value.clone());
+    let mut input = raw_msg.as_str();
+    loop {
+        let rest = match RedisMsg::from_raw(&input, cache, prefix_len) {
+            Ok((RedisMsg::EventMsg(timeline, event), rest)) => {
+                for msg_queue in queues.values_mut() {
+                    if msg_queue.timeline == timeline {
+                        msg_queue.messages.push_back(event.clone());
+                    }
                 }
+                rest
             }
-        }
-
-        "subscribe" | "unsubscribe" => {
-            // No msg, so ignore & advance cursor to end
-            let _channel = msg.next_field();
-            msg.cursor += ":".len();
-            let _active_subscriptions = msg.process_number();
-            msg.cursor += "\r\n".len();
-        }
-        cmd => panic!("Invariant violation: {} is unexpected Redis output", cmd),
-    };
-}
-
-fn hashtag_from_timeline(
-    raw_timeline: &str,
-    hashtag_id_cache: &mut LruCache<String, i64>,
-) -> Option<i64> {
-    if raw_timeline.starts_with("hashtag") {
-        let tag_name = raw_timeline
-            .split(':')
-            .nth(1)
-            .unwrap_or_else(|| log_fatal!("No hashtag found in `{}`", raw_timeline))
-            .to_string();
-
-        let tag_id = *hashtag_id_cache
-            .get(&tag_name)
-            .unwrap_or_else(|| log_fatal!("No cached id for `{}`", tag_name));
-        Some(tag_id)
-    } else {
-        None
+            Ok((RedisMsg::SubscriptionMsg, rest)) => rest,
+            Err(ParseErr::Incomplete) => break,
+            Err(ParseErr::Unrecoverable) => log_fatal!("Failed parsing Redis msg: {}", &input),
+        };
+        input = rest
     }
+
+    Ok(Some(input.to_string()))
 }
 
 impl std::ops::Deref for RedisStream {

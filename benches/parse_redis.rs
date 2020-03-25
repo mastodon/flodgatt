@@ -88,7 +88,7 @@ mod flodgatt_parse_event {
     pub fn setup() -> MessageQueues {
         let mut queues_map = HashMap::new();
         let id = Uuid::default();
-        let timeline = Timeline::from_redis_str("1", None);
+        let timeline = Timeline::from_redis_raw_timeline("1", None);
         queues_map.insert(id, MsgQueue::new(timeline));
         let queues = MessageQueues(queues_map);
         queues
@@ -101,7 +101,7 @@ mod flodgatt_parse_event {
         id: Uuid,
         timeline: Timeline,
     ) -> Event {
-        redis_stream::process_messages(input, &mut None, &mut cache, &mut queues);
+        redis_stream::process_messages(input, &mut None, &mut cache, &mut queues).unwrap();
         queues
             .oldest_msg_in_target_queue(id, timeline)
             .expect("In test")
@@ -238,7 +238,7 @@ mod flodgatt_parse_value {
                 "message" => {
                     let (raw_timeline, msg_value) = msg.extract_raw_timeline_and_message();
                     let hashtag = hashtag_from_timeline(&raw_timeline, hashtag_id_cache);
-                    let timeline = Timeline::from_redis_str(&raw_timeline, hashtag);
+                    let timeline = Timeline::from_redis_raw_timeline(&raw_timeline, hashtag);
                     for msg_queue in queues.values_mut() {
                         if msg_queue.timeline == timeline {
                             msg_queue.messages.push_back(msg_value.clone());
@@ -282,7 +282,7 @@ mod flodgatt_parse_value {
         let cache: LruCache<String, i64> = LruCache::new(1000);
         let mut queues_map = HashMap::new();
         let id = Uuid::default();
-        let timeline = Timeline::from_redis_str("1", None);
+        let timeline = Timeline::from_redis_raw_timeline("1", None);
         queues_map.insert(id, MsgQueue::new(timeline));
         let queues = MessageQueues(queues_map);
         (cache, queues, id, timeline)
@@ -303,12 +303,12 @@ mod flodgatt_parse_value {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS.to_string();
+    let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS.to_string(); //INPUT.to_string();
     let mut group = c.benchmark_group("Parse redis RESP array");
 
-    group.bench_function("parse to Value with a regex", |b| {
-        b.iter(|| regex_parse::to_json_value(black_box(input.clone())))
-    });
+    // group.bench_function("parse to Value with a regex", |b| {
+    //     b.iter(|| regex_parse::to_json_value(black_box(input.clone())))
+    // });
     group.bench_function("parse to Value inline", |b| {
         b.iter(|| parse_inline::to_json_value(black_box(input.clone())))
     });

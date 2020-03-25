@@ -1,12 +1,12 @@
 [package]
 name = "flodgatt"
 description = "A blazingly fast drop-in replacement for the Mastodon streaming api server"
-version = "0.6.4"
+version = "0.6.5"
 authors = ["Daniel Long Sockwell <daniel@codesections.com", "Julian Laubstein <contact@julianlaubstein.de>"]
 edition = "2018"
 
 [dependencies]
-log = "0.4.6"
+log = { version = "0.4.6", features = ["release_max_level_info"] }
 futures = "0.1.26"
 tokio = "0.1.19"
 warp = { git = "https://github.com/seanmonstar/warp.git"}

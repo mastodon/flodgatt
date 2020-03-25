@@ -50,10 +50,13 @@ impl MessageQueues {
     }
 
     pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: Timeline) -> Option<Event> {
-        self.entry(id)
-            .or_insert_with(|| MsgQueue::new(timeline))
-            .messages
-            .pop_front()
+        let msg_qs_entry = self.entry(id);
+        let mut inserted_tl = false;
+        let msg_q = msg_qs_entry.or_insert_with(|| {
+            inserted_tl = true;
+            MsgQueue::new(timeline)
+        });
+        msg_q.messages.pop_front()
     }
     pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: Timeline) -> Vec<Change> {
         let mut timelines_to_modify = Vec::new();

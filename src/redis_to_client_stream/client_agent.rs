@@ -89,25 +89,13 @@ impl futures::stream::Stream for ClientAgent {
     /// replies with `Ok(NotReady)`.  The `ClientAgent` bubles up any
     /// errors from the underlying data structures.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        use std::time::Instant;
-        let start_time = Instant::now();
         let result = {
             let mut receiver = self
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
-            let get_lock = Instant::now();
             receiver.configure_for_polling(self.id, self.subscription.timeline);
-            let res = receiver.poll();
-            if start_time.elapsed().as_millis() > 1 {
-                log::warn!(
-                    "Polling the Receiver took: {:?}\n({:?} waiting for lock)",
-                    start_time.elapsed(),
-                    get_lock.elapsed()
-                );
-                log::info!("Longer polling yielded: {:#?}", &res);
-            };
-            res
+            receiver.poll()
         };
 
         let allowed_langs = &self.subscription.allowed_langs;
@@ -118,12 +106,17 @@ impl futures::stream::Stream for ClientAgent {
         use Event::*;
         match result {
             Ok(Async::Ready(Some(event))) => match event {
-                Update { payload: status } => match self.subscription.timeline {
+                Update {
+                    payload: status, ..
+                } => match self.subscription.timeline {
                     _ if status.involves_blocked_user(blocked_users) => block,
                     _ if status.from_blocked_domain(blocked_domains) => block,
                     _ if status.from_blocking_user(blocking_users) => block,
                     Timeline(Public, _, _) if status.language_not_allowed(allowed_langs) => block,
-                    _ => send(Update { payload: status }),
+                    _ => send(Update {
+                        payload: status,
+                        queued_at: None,
+                    }),
                 },
                 Notification { .. }
                 | Conversation { .. }
