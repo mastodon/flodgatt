@@ -4,20 +4,55 @@
 // #[cfg(test)]
 // use mock_postgres as postgres;
 // #[cfg(not(test))]
-pub mod postgres;
-pub use self::postgres::PgPool;
+
+use super::postgres::PgPool;
 use super::query::Query;
 use crate::log_fatal;
 use std::collections::HashSet;
 use warp::reject::Rejection;
 
-/// The User (with data read from Postgres)
+use super::query;
+use warp::{filters::BoxedFilter, path, Filter};
+
+/// Helper macro to match on the first of any of the provided filters
+macro_rules! any_of {
+    ($filter:expr, $($other_filter:expr),*) => {
+        $filter$(.or($other_filter).unify())*.boxed()
+    };
+}
+macro_rules! parse_sse_query {
+    (path => $start:tt $(/ $next:tt)*
+     endpoint => $endpoint:expr) => {
+        path!($start $(/ $next)*)
+            .and(query::Auth::to_filter())
+            .and(query::Media::to_filter())
+            .and(query::Hashtag::to_filter())
+            .and(query::List::to_filter())
+            .map(
+                |auth: query::Auth,
+                 media: query::Media,
+                 hashtag: query::Hashtag,
+                 list: query::List| {
+                    Query {
+                        access_token: auth.access_token,
+                        stream: $endpoint.to_string(),
+                        media: media.is_truthy(),
+                        hashtag: hashtag.tag,
+                        list: list.list,
+                    }
+                 },
+            )
+            .boxed()
+    };
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subscription {
     pub timeline: Timeline,
     pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
     pub hashtag_name: Option<String>,
+    pub access_token: Option<String>,
 }
 
 impl Default for Subscription {
@@ -27,14 +62,54 @@ impl Default for Subscription {
             allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
             hashtag_name: None,
+            access_token: None,
         }
     }
 }
 
 impl Subscription {
-    pub fn from_query(q: Query, pool: PgPool, whitelist_mode: bool) -> Result<Self, Rejection> {
+    pub fn from_ws_request(pg_pool: PgPool, whitelist_mode: bool) -> BoxedFilter<(Subscription,)> {
+        parse_ws_query()
+            .and(query::OptionalAccessToken::from_ws_header())
+            .and_then(Query::update_access_token)
+            .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
+            .boxed()
+    }
+
+    pub fn from_sse_query(pg_pool: PgPool, whitelist_mode: bool) -> BoxedFilter<(Subscription,)> {
+        any_of!(
+            parse_sse_query!(
+            path => "api" / "v1" / "streaming" / "user" / "notification"
+            endpoint => "user:notification" ),
+            parse_sse_query!(
+            path => "api" / "v1" / "streaming" / "user"
+            endpoint => "user"),
+            parse_sse_query!(
+            path => "api" / "v1" / "streaming" / "public" / "local"
+            endpoint => "public:local"),
+            parse_sse_query!(
+            path => "api" / "v1" / "streaming" / "public"
+            endpoint => "public"),
+            parse_sse_query!(
+            path => "api" / "v1" / "streaming" / "direct"
+            endpoint => "direct"),
+            parse_sse_query!(path => "api" / "v1" / "streaming" / "hashtag" / "local"
+                     endpoint => "hashtag:local"),
+            parse_sse_query!(path => "api" / "v1" / "streaming" / "hashtag"
+                     endpoint => "hashtag"),
+            parse_sse_query!(path => "api" / "v1" / "streaming" / "list"
+                endpoint => "list")
+        )
+        // because SSE requests place their `access_token` in the header instead of in a query
+        // parameter, we need to update our Query if the header has a token
+        .and(query::OptionalAccessToken::from_sse_header())
+        .and_then(Query::update_access_token)
+        .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
+        .boxed()
+    }
+    fn from_query(q: Query, pool: PgPool, whitelist_mode: bool) -> Result<Self, Rejection> {
         let user = match q.access_token.clone() {
-            Some(token) => postgres::select_user(&token, pool.clone())?,
+            Some(token) => pool.clone().select_user(&token)?,
             None if whitelist_mode => Err(warp::reject::custom("Error: Invalid access token"))?,
             None => UserData::public(),
         };
@@ -48,13 +123,40 @@ impl Subscription {
             timeline,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
-                blocking_users: postgres::select_blocking_users(user.id, pool.clone()),
-                blocked_users: postgres::select_blocked_users(user.id, pool.clone()),
-                blocked_domains: postgres::select_blocked_domains(user.id, pool.clone()),
+                blocking_users: pool.clone().select_blocking_users(user.id),
+                blocked_users: pool.clone().select_blocked_users(user.id),
+                blocked_domains: pool.clone().select_blocked_domains(user.id),
             },
             hashtag_name,
+            access_token: q.access_token,
         })
     }
+}
+
+fn parse_ws_query() -> BoxedFilter<(Query,)> {
+    path!("api" / "v1" / "streaming")
+        .and(path::end())
+        .and(warp::query())
+        .and(query::Auth::to_filter())
+        .and(query::Media::to_filter())
+        .and(query::Hashtag::to_filter())
+        .and(query::List::to_filter())
+        .map(
+            |stream: query::Stream,
+             auth: query::Auth,
+             media: query::Media,
+             hashtag: query::Hashtag,
+             list: query::List| {
+                Query {
+                    access_token: auth.access_token,
+                    stream: stream.stream,
+                    media: media.is_truthy(),
+                    hashtag: hashtag.tag,
+                    list: list.list,
+                }
+            },
+        )
+        .boxed()
 }
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
@@ -111,8 +213,8 @@ impl Timeline {
     }
     fn from_query_and_user(q: &Query, user: &UserData, pool: PgPool) -> Result<Self, Rejection> {
         use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
-        let id_from_hashtag = || postgres::select_hashtag_id(&q.hashtag, pool.clone());
-        let user_owns_list = || postgres::user_owns_list(user.id, q.list, pool.clone());
+        let id_from_hashtag = || pool.clone().select_hashtag_id(&q.hashtag);
+        let user_owns_list = || pool.clone().user_owns_list(user.id, q.list);
 
         Ok(match q.stream.as_ref() {
             "public" => match q.media {
@@ -189,9 +291,9 @@ pub struct Blocks {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserData {
-    id: i64,
-    allowed_langs: HashSet<String>,
-    scopes: HashSet<Scope>,
+    pub id: i64,
+    pub allowed_langs: HashSet<String>,
+    pub scopes: HashSet<Scope>,
 }
 
 impl UserData {

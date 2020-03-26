@@ -1,13 +1,13 @@
 use super::redis_cmd;
-use crate::config::{RedisConfig, RedisInterval, RedisNamespace};
+use crate::config::RedisConfig;
 use crate::err;
-use std::{io::Read, io::Write, net, time};
+use std::{io::Read, io::Write, net, time::Duration};
 
 pub struct RedisConn {
     pub primary: net::TcpStream,
     pub secondary: net::TcpStream,
-    pub namespace: RedisNamespace,
-    pub polling_interval: RedisInterval,
+    pub namespace: Option<String>,
+    pub polling_interval: Duration,
 }
 
 fn send_password(mut conn: net::TcpStream, password: &str) -> net::TcpStream {
@@ -68,7 +68,7 @@ impl RedisConn {
                 conn = send_password(conn, &password);
             }
             conn = send_test_ping(conn);
-            conn.set_read_timeout(Some(time::Duration::from_millis(10)))
+            conn.set_read_timeout(Some(Duration::from_millis(10)))
                 .expect("Can set read timeout for Redis connection");
             if let Some(db) = &*redis_cfg.db {
                 conn = set_db(conn, db);
@@ -86,8 +86,8 @@ impl RedisConn {
         Self {
             primary: primary_conn,
             secondary: secondary_conn,
-            namespace: redis_cfg.namespace,
-            polling_interval: redis_cfg.polling_interval,
+            namespace: redis_cfg.namespace.clone(),
+            polling_interval: *redis_cfg.polling_interval,
         }
     }
 }

@@ -19,7 +19,7 @@ use super::receiver::Receiver;
 use crate::{
     config,
     messages::Event,
-    parse_client_request::subscription::{Stream::Public, Subscription, Timeline},
+    parse_client_request::{Stream::Public, Subscription, Timeline},
 };
 use futures::{
     Async::{self, NotReady, Ready},

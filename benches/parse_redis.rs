@@ -77,7 +77,7 @@ mod parse_inline {
 mod flodgatt_parse_event {
     use flodgatt::{messages::Event, redis_to_client_stream::receiver::MessageQueues};
     use flodgatt::{
-        parse_client_request::subscription::Timeline,
+        parse_client_request::Timeline,
         redis_to_client_stream::{receiver::MsgQueue, redis::redis_stream},
     };
     use lru::LruCache;
@@ -114,7 +114,7 @@ mod flodgatt_parse_event {
 /// the performance we would see if we used serde's built-in method for handling weakly
 /// typed JSON instead of our own strongly typed struct.
 mod flodgatt_parse_value {
-    use flodgatt::{log_fatal, parse_client_request::subscription::Timeline};
+    use flodgatt::{log_fatal, parse_client_request::Timeline};
     use lru::LruCache;
     use serde_json::Value;
     use std::{

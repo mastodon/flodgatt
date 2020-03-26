@@ -3,7 +3,7 @@
 //! unsubscriptions to/from Redis.
 mod message_queues;
 use crate::{
-    config::{self, RedisInterval},
+    config,
     messages::Event,
     parse_client_request::{Stream, Timeline},
     pubsub_cmd,
@@ -12,7 +12,11 @@ use crate::{
 use futures::{Async, Poll};
 use lru::LruCache;
 pub use message_queues::{MessageQueues, MsgQueue};
-use std::{collections::HashMap, net, time::Instant};
+use std::{
+    collections::HashMap,
+    net,
+    time::{Duration, Instant},
+};
 use tokio::io::Error;
 use uuid::Uuid;
 
@@ -21,7 +25,7 @@ use uuid::Uuid;
 pub struct Receiver {
     pub pubsub_connection: RedisStream,
     secondary_redis_connection: net::TcpStream,
-    redis_poll_interval: RedisInterval,
+    redis_poll_interval: Duration,
     redis_polled_at: Instant,
     timeline: Timeline,
     manager_id: Uuid,
@@ -29,8 +33,12 @@ pub struct Receiver {
     clients_per_timeline: HashMap<Timeline, i32>,
     cache: Cache,
 }
+
 #[derive(Debug)]
 pub struct Cache {
+    // TODO: eventually, it might make sense to have Mastodon publish to timelines with
+    //       the tag number instead of the tag name.  This would save us from dealing
+    //       with a cache here and would be consistent with how lists/users are handled.
     id_to_hashtag: LruCache<i64, String>,
     pub hashtag_to_id: LruCache<String, i64>,
 }
@@ -135,7 +143,7 @@ impl futures::stream::Stream for Receiver {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
 
-        if self.redis_polled_at.elapsed() > *self.redis_poll_interval {
+        if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             self.pubsub_connection
                 .poll_redis(&mut self.cache.hashtag_to_id, &mut self.msg_queues);
             self.redis_polled_at = Instant::now();

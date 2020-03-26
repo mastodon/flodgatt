@@ -1,7 +1,6 @@
 use super::super::receiver::MessageQueues;
 use super::redis_msg::{ParseErr, RedisMsg};
-use crate::{config::RedisNamespace, log_fatal};
-
+use crate::log_fatal;
 use futures::{Async, Poll};
 use lru::LruCache;
 use std::{error::Error, io::Read, net};
@@ -11,7 +10,7 @@ use tokio::io::AsyncRead;
 pub struct RedisStream {
     pub inner: net::TcpStream,
     incoming_raw_msg: String,
-    pub namespace: RedisNamespace,
+    pub namespace: Option<String>,
 }
 
 impl RedisStream {
@@ -19,10 +18,10 @@ impl RedisStream {
         RedisStream {
             inner,
             incoming_raw_msg: String::new(),
-            namespace: RedisNamespace(None),
+            namespace: None,
         }
     }
-    pub fn with_namespace(self, namespace: RedisNamespace) -> Self {
+    pub fn with_namespace(self, namespace: Option<String>) -> Self {
         RedisStream { namespace, ..self }
     }
     // Text comes in from redis as a raw stream, which could be more than one message and
@@ -41,7 +40,7 @@ impl RedisStream {
             self.incoming_raw_msg.push_str(&raw_utf);
             match process_messages(
                 self.incoming_raw_msg.clone(),
-                &mut self.namespace.0,
+                &mut self.namespace,
                 hashtag_to_id_cache,
                 queues,
             ) {

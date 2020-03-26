@@ -18,7 +18,7 @@
 //! three characters, the second is a bulk string with ten characters, and the third is a
 //! bulk string with 1,386 characters.
 
-use crate::{log_fatal, messages::Event, parse_client_request::subscription::Timeline};
+use crate::{log_fatal, messages::Event, parse_client_request::Timeline};
 use lru::LruCache;
 type Parser<'a, Item> = Result<(Item, &'a str), ParseErr>;
 #[derive(Debug)]
