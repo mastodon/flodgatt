@@ -85,9 +85,8 @@ LIMIT 1",
     }
 }
 
-pub fn select_list_id(tag_name: &String, pg_pool: PgPool) -> Result<i64, Rejection> {
+pub fn select_hashtag_id(tag_name: &String, pg_pool: PgPool) -> Result<i64, Rejection> {
     let mut conn = pg_pool.0.get().unwrap();
-    // For the Postgres query, `id` = list number; `account_id` = user.id
     let rows = &conn
         .query(
             "

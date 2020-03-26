@@ -28,7 +28,7 @@ fn main() {
     let postgres_cfg = config::PostgresConfig::from_env(env_vars.clone());
     let pg_pool = subscription::PgPool::new(postgres_cfg);
 
-    let client_agent_sse = ClientAgent::blank(redis_cfg, pg_pool.clone());
+    let client_agent_sse = ClientAgent::blank(redis_cfg);
     let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
 
     log::info!("Streaming server initialized and ready to accept connections");

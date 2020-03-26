@@ -1,7 +1,7 @@
+use super::super::receiver::MessageQueues;
 use super::redis_msg::{ParseErr, RedisMsg};
-use crate::config::RedisNamespace;
-use crate::log_fatal;
-use crate::redis_to_client_stream::receiver::MessageQueues;
+use crate::{config::RedisNamespace, log_fatal};
+
 use futures::{Async, Poll};
 use lru::LruCache;
 use std::{error::Error, io::Read, net};

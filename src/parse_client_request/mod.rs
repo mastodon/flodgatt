@@ -3,3 +3,5 @@ pub mod query;
 pub mod sse;
 pub mod subscription;
 pub mod ws;
+
+pub use subscription::{Stream, Timeline};

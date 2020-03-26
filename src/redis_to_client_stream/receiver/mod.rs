@@ -4,9 +4,8 @@
 mod message_queues;
 use crate::{
     config::{self, RedisInterval},
-    log_fatal,
     messages::Event,
-    parse_client_request::subscription::{self, postgres, PgPool, Timeline},
+    parse_client_request::{Stream, Timeline},
     pubsub_cmd,
     redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
 };
@@ -29,25 +28,17 @@ pub struct Receiver {
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
     cache: Cache,
-    pool: PgPool,
 }
 #[derive(Debug)]
 pub struct Cache {
     id_to_hashtag: LruCache<i64, String>,
     pub hashtag_to_id: LruCache<String, i64>,
 }
-impl Cache {
-    fn new(size: usize) -> Self {
-        Self {
-            id_to_hashtag: LruCache::new(size),
-            hashtag_to_id: LruCache::new(size),
-        }
-    }
-}
+
 impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-    pub fn new(redis_cfg: config::RedisConfig, pool: PgPool) -> Self {
+    pub fn new(redis_cfg: config::RedisConfig) -> Self {
         let RedisConn {
             primary: pubsub_connection,
             secondary: secondary_redis_connection,
@@ -65,8 +56,10 @@ impl Receiver {
             manager_id: Uuid::default(),
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
-            cache: Cache::new(1000), // should this be a run-time option?
-            pool,
+            cache: Cache {
+                id_to_hashtag: LruCache::new(1000),
+                hashtag_to_id: LruCache::new(1000),
+            }, // should these be run-time options?
         }
     }
 
@@ -76,12 +69,15 @@ impl Receiver {
     /// Note: this method calls `subscribe_or_unsubscribe_as_needed`,
     /// so Redis PubSub subscriptions are only updated when a new timeline
     /// comes under management for the first time.
-    pub fn manage_new_timeline(&mut self, manager_id: Uuid, timeline: Timeline) {
-        self.manager_id = manager_id;
-        self.timeline = timeline;
-        self.msg_queues
-            .insert(self.manager_id, MsgQueue::new(timeline));
-        self.subscribe_or_unsubscribe_as_needed(timeline);
+    pub fn manage_new_timeline(&mut self, id: Uuid, tl: Timeline, hashtag: Option<String>) {
+        self.timeline = tl;
+        if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (hashtag, tl) {
+            self.cache.id_to_hashtag.put(id, hashtag.clone());
+            self.cache.hashtag_to_id.put(hashtag, id);
+        };
+
+        self.msg_queues.insert(id, MsgQueue::new(tl));
+        self.subscribe_or_unsubscribe_as_needed(tl);
     }
 
     /// Set the `Receiver`'s manager_id and target_timeline fields to the appropriate
@@ -89,26 +85,6 @@ impl Receiver {
     pub fn configure_for_polling(&mut self, manager_id: Uuid, timeline: Timeline) {
         self.manager_id = manager_id;
         self.timeline = timeline;
-    }
-
-    fn if_hashtag_timeline_get_hashtag_name(&mut self, timeline: Timeline) -> Option<String> {
-        use subscription::Stream::*;
-        if let Timeline(Hashtag(id), _, _) = timeline {
-            let cached_tag = self.cache.id_to_hashtag.get(&id).map(String::from);
-            let tag = match cached_tag {
-                Some(tag) => tag,
-                None => {
-                    let new_tag = postgres::select_hashtag_name(&id, self.pool.clone())
-                        .unwrap_or_else(|_| log_fatal!("No hashtag associated with tag #{}", &id));
-                    self.cache.hashtag_to_id.put(new_tag.clone(), id);
-                    self.cache.id_to_hashtag.put(id, new_tag.clone());
-                    new_tag.to_string()
-                }
-            };
-            Some(tag)
-        } else {
-            None
-        }
     }
 
     /// Drop any PubSub subscriptions that don't have active clients and check
@@ -121,8 +97,10 @@ impl Receiver {
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
             let timeline = change.timeline;
-            let hashtag = self.if_hashtag_timeline_get_hashtag_name(timeline);
-            let hashtag = hashtag.as_ref();
+            let hashtag = match timeline {
+                Timeline(Stream::Hashtag(id), _, _) => self.cache.id_to_hashtag.get(&id),
+                _non_hashtag_timeline => None,
+            };
 
             let count_of_subscribed_clients = self
                 .clients_per_timeline

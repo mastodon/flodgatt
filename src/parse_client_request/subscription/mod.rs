@@ -17,6 +17,7 @@ pub struct Subscription {
     pub timeline: Timeline,
     pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
+    pub hashtag_name: Option<String>,
 }
 
 impl Default for Subscription {
@@ -25,6 +26,7 @@ impl Default for Subscription {
             timeline: Timeline(Stream::Unset, Reach::Local, Content::Notification),
             allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
+            hashtag_name: None,
         }
     }
 }
@@ -36,14 +38,21 @@ impl Subscription {
             None if whitelist_mode => Err(warp::reject::custom("Error: Invalid access token"))?,
             None => UserData::public(),
         };
+        let timeline = Timeline::from_query_and_user(&q, &user, pool.clone())?;
+        let hashtag_name = match timeline {
+            Timeline(Stream::Hashtag(_), _, _) => Some(q.hashtag),
+            _non_hashtag_timeline => None,
+        };
+
         Ok(Subscription {
-            timeline: Timeline::from_query_and_user(&q, &user, pool.clone())?,
+            timeline,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
                 blocking_users: postgres::select_blocking_users(user.id, pool.clone()),
                 blocked_users: postgres::select_blocked_users(user.id, pool.clone()),
                 blocked_domains: postgres::select_blocked_domains(user.id, pool.clone()),
             },
+            hashtag_name,
         })
     }
 }
@@ -102,7 +111,7 @@ impl Timeline {
     }
     fn from_query_and_user(q: &Query, user: &UserData, pool: PgPool) -> Result<Self, Rejection> {
         use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
-        let id_from_hashtag = || postgres::select_list_id(&q.hashtag, pool.clone());
+        let id_from_hashtag = || postgres::select_hashtag_id(&q.hashtag, pool.clone());
         let user_owns_list = || postgres::user_owns_list(user.id, q.list, pool.clone());
 
         Ok(match q.stream.as_ref() {
