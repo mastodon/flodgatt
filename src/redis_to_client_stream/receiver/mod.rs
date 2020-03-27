@@ -2,18 +2,25 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod message_queues;
+
+pub use message_queues::{MessageQueues, MsgQueue};
+
 use crate::{
     config,
+    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream, Timeline},
     pubsub_cmd,
-    redis_to_client_stream::redis::{redis_cmd, RedisConn, RedisStream},
+    redis_to_client_stream::redis::redis_msg::RedisMsg,
+    redis_to_client_stream::redis::{redis_cmd, RedisConn},
 };
 use futures::{Async, Poll};
 use lru::LruCache;
-pub use message_queues::{MessageQueues, MsgQueue};
+use tokio::io::AsyncRead;
+
 use std::{
     collections::HashMap,
+    io::Read,
     net,
     time::{Duration, Instant},
 };
@@ -23,7 +30,7 @@ use uuid::Uuid;
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
-    pub pubsub_connection: RedisStream,
+    pub pubsub_connection: net::TcpStream,
     secondary_redis_connection: net::TcpStream,
     redis_poll_interval: Duration,
     redis_polled_at: Instant,
@@ -32,6 +39,8 @@ pub struct Receiver {
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
     cache: Cache,
+    redis_input: String,
+    redis_namespace: Option<String>,
 }
 
 #[derive(Debug)]
@@ -47,16 +56,16 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn new(redis_cfg: config::RedisConfig) -> Self {
+        let redis_namespace = redis_cfg.namespace.clone();
+
         let RedisConn {
             primary: pubsub_connection,
             secondary: secondary_redis_connection,
-            namespace: redis_namespace,
             polling_interval: redis_poll_interval,
         } = RedisConn::new(redis_cfg);
 
         Self {
-            pubsub_connection: RedisStream::from_stream(pubsub_connection)
-                .with_namespace(redis_namespace),
+            pubsub_connection,
             secondary_redis_connection,
             redis_poll_interval,
             redis_polled_at: Instant::now(),
@@ -68,6 +77,8 @@ impl Receiver {
                 id_to_hashtag: LruCache::new(1000),
                 hashtag_to_id: LruCache::new(1000),
             }, // should these be run-time options?
+            redis_input: String::new(),
+            redis_namespace,
         }
     }
 
@@ -144,9 +155,36 @@ impl futures::stream::Stream for Receiver {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
 
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
-            self.pubsub_connection
-                .poll_redis(&mut self.cache.hashtag_to_id, &mut self.msg_queues);
-            self.redis_polled_at = Instant::now();
+            let mut buffer = vec![0u8; 6000];
+            if let Ok(Async::Ready(bytes_read)) = self.poll_read(&mut buffer) {
+                let raw_utf = String::from_utf8(buffer[..bytes_read].to_vec())
+                    .expect("TODO: Get next byte if not on Unicode boundary");
+                let (mut cache, namespace) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
+                self.redis_input.push_str(&raw_utf);
+                let mut input = self.redis_input.as_str();
+
+                use RedisMsg::*;
+                loop {
+                    match RedisMsg::from_raw(&mut input, &mut cache, namespace) {
+                        Ok((EventMsg(timeline, event), rest)) => {
+                            for msg_queue in self.msg_queues.values_mut() {
+                                if msg_queue.timeline == timeline {
+                                    msg_queue.messages.push_back(event.clone());
+                                }
+                            }
+                            input = rest;
+                        }
+                        Ok((SubscriptionMsg, rest)) | Ok((MsgForDifferentNamespace, rest)) => {
+                            input = rest;
+                        }
+                        Err(RedisParseErr::Incomplete) => break,
+                        Err(RedisParseErr::Unrecoverable) => {
+                            panic!("Failed parsing Redis msg: {}", &self.redis_input)
+                        }
+                    };
+                }
+                self.redis_input = input.to_string();
+            }
         }
 
         // Record current time as last polled time
@@ -156,6 +194,21 @@ impl futures::stream::Stream for Receiver {
         match self.msg_queues.oldest_msg_in_target_queue(id, timeline) {
             Some(value) => Ok(Async::Ready(Some(value))),
             _ => Ok(Async::NotReady),
+        }
+    }
+}
+
+impl Read for Receiver {
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+        self.pubsub_connection.read(buffer)
+    }
+}
+
+impl AsyncRead for Receiver {
+    fn poll_read(&mut self, buf: &mut [u8]) -> Poll<usize, std::io::Error> {
+        match self.read(buf) {
+            Ok(t) => Ok(Async::Ready(t)),
+            Err(_) => Ok(Async::NotReady),
         }
     }
 }

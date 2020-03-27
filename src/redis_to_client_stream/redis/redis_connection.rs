@@ -6,7 +6,6 @@ use std::{io::Read, io::Write, net, time::Duration};
 pub struct RedisConn {
     pub primary: net::TcpStream,
     pub secondary: net::TcpStream,
-    pub namespace: Option<String>,
     pub polling_interval: Duration,
 }
 
@@ -86,7 +85,6 @@ impl RedisConn {
         Self {
             primary: primary_conn,
             secondary: secondary_conn,
-            namespace: redis_cfg.namespace.clone(),
             polling_interval: *redis_cfg.polling_interval,
         }
     }

@@ -7,7 +7,9 @@ macro_rules! pubsub_cmd {
     ($cmd:expr, $self:expr, $tl:expr) => {{
         use std::io::Write;
         log::info!("Sending {} command to {}", $cmd, $tl);
-        let namespace = $self.pubsub_connection.namespace.clone();
+        //        let namespace = $self.pubsub_connection.namespace.clone();
+        // TODO: fixme
+        let namespace = None;
 
         $self
             .pubsub_connection

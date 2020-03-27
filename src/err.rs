@@ -12,3 +12,20 @@ macro_rules! log_fatal {
         panic!();
     };};
 }
+
+#[derive(Debug)]
+pub enum RedisParseErr {
+    Incomplete,
+    Unrecoverable,
+}
+
+pub enum TimelineErr {
+    RedisNamespaceMismatch,
+    InvalidInput,
+}
+
+impl From<std::num::ParseIntError> for TimelineErr {
+    fn from(_error: std::num::ParseIntError) -> Self {
+        Self::InvalidInput
+    }
+}
