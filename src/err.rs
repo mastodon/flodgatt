@@ -19,6 +19,7 @@ pub enum RedisParseErr {
     Unrecoverable,
 }
 
+#[derive(Debug)]
 pub enum TimelineErr {
     RedisNamespaceMismatch,
     InvalidInput,

@@ -1,10 +1,14 @@
 //! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 mod client_agent;
+mod event_stream;
 mod receiver;
 mod redis;
-mod event_stream;
 
 pub use {client_agent::ClientAgent, event_stream::EventStream};
 
-
-
+#[cfg(test)]
+pub use receiver::process_messages;
+#[cfg(test)]
+pub use receiver::{MessageQueues, MsgQueue};
+#[cfg(test)]
+pub use redis::redis_msg::RedisMsg;

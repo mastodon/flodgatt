@@ -249,14 +249,12 @@ impl Timeline {
                 
 
                 [n, "timeline", "list", id] if ns == n => (List(id.parse()?), Federated, All),
-                [_, "timeline", "list", _id] | ["timeline", "list", _id] => {
-                    Err(RedisNamespaceMismatch)?
-                }
+                [_, "timeline", "list", _id]
+                 | ["timeline", "list", _id] => Err(RedisNamespaceMismatch)?,
 
                 [n, "timeline", "direct", id] if ns == n => (Direct(id.parse()?), Federated, All),
-                [_, "timeline", "direct", _id] | ["timeline", "direct", _id] => {
-                    Err(RedisNamespaceMismatch)?
-                }
+                [_, "timeline", "direct", _id] 
+                 | ["timeline", "direct", _id] => Err(RedisNamespaceMismatch)?,
 
                 [..] => log_fatal!("Unexpected channel from Redis: {:?}", timeline_slice),
             }
@@ -287,7 +285,7 @@ impl Timeline {
                 ["timeline", id, "notification"] => {
                     (User(id.parse().unwrap()), Federated, Notification)
                 }
-                [_, "timeline", _id, "notification"] => panic!("todo"),
+                [_, "timeline", _id, "notification"] => Err(RedisNamespaceMismatch)?,
 
                 ["timeline", "list", id] => (List(id.parse().unwrap()), Federated, All),
                 [_, "timeline", "list", _id] => Err(RedisNamespaceMismatch)?,
@@ -296,7 +294,7 @@ impl Timeline {
                 [_, "timeline", "direct", _id] => Err(RedisNamespaceMismatch)?,
 
                 // Other endpoints don't exist:
-                [..] => log_fatal!("Unexpected channel from Redis: {:?}", timeline_slice),
+                [..] => Err(TimelineErr::InvalidInput)?,
             }
         };
 
