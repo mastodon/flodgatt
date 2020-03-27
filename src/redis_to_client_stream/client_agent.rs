@@ -19,29 +19,29 @@ use super::receiver::Receiver;
 use crate::{
     config,
     messages::Event,
-    parse_client_request::subscription::{PgPool, Stream::Public, Subscription, Timeline},
+    parse_client_request::{Stream::Public, Subscription, Timeline},
 };
 use futures::{
     Async::{self, NotReady, Ready},
     Poll,
 };
-use std::sync;
+use std::sync::{Arc, Mutex};
 use tokio::io::Error;
 use uuid::Uuid;
 
 /// Struct for managing all Redis streams.
 #[derive(Clone, Debug)]
 pub struct ClientAgent {
-    receiver: sync::Arc<sync::Mutex<Receiver>>,
-    id: uuid::Uuid,
+    receiver: Arc<Mutex<Receiver>>,
+    id: Uuid,
     pub subscription: Subscription,
 }
 
 impl ClientAgent {
     /// Create a new `ClientAgent` with no shared data.
-    pub fn blank(redis_cfg: config::RedisConfig, pg_pool: PgPool) -> Self {
+    pub fn blank(redis_cfg: config::RedisConfig) -> Self {
         ClientAgent {
-            receiver: sync::Arc::new(sync::Mutex::new(Receiver::new(redis_cfg, pg_pool))),
+            receiver: Arc::new(Mutex::new(Receiver::new(redis_cfg))),
             id: Uuid::default(),
             subscription: Subscription::default(),
         }
@@ -70,7 +70,11 @@ impl ClientAgent {
         self.subscription = subscription;
         let start_time = Instant::now();
         let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
-        receiver.manage_new_timeline(self.id, self.subscription.timeline);
+        receiver.manage_new_timeline(
+            self.id,
+            self.subscription.timeline,
+            self.subscription.hashtag_name.clone(),
+        );
         log::info!("init_for_user had lock for: {:?}", start_time.elapsed());
     }
 }

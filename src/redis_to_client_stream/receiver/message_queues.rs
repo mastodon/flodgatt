@@ -1,5 +1,5 @@
 use crate::messages::Event;
-use crate::parse_client_request::subscription::Timeline;
+use crate::parse_client_request::Timeline;
 use std::{
     collections::{HashMap, VecDeque},
     fmt,

@@ -18,26 +18,31 @@
 //! three characters, the second is a bulk string with ten characters, and the third is a
 //! bulk string with 1,386 characters.
 
-use crate::{log_fatal, messages::Event, parse_client_request::subscription::Timeline};
+use crate::{
+    err::{RedisParseErr, TimelineErr},
+    messages::Event,
+    parse_client_request::Timeline,
+};
 use lru::LruCache;
-type Parser<'a, Item> = Result<(Item, &'a str), ParseErr>;
-#[derive(Debug)]
-pub enum ParseErr {
-    Incomplete,
-    Unrecoverable,
-}
-use ParseErr::*;
+
+type Parser<'a, Item> = Result<(Item, &'a str), RedisParseErr>;
 
 /// A message that has been parsed from an incoming raw message from Redis.
 #[derive(Debug, Clone)]
 pub enum RedisMsg {
     EventMsg(Timeline, Event),
     SubscriptionMsg,
+    MsgForDifferentNamespace,
 }
 
+use RedisParseErr::*;
 type Hashtags = LruCache<String, i64>;
 impl RedisMsg {
-    pub fn from_raw<'a>(input: &'a str, cache: &mut Hashtags, prefix: usize) -> Parser<'a, Self> {
+    pub fn from_raw<'a>(
+        input: &'a str,
+        cache: &mut Hashtags,
+        namespace: &Option<String>,
+    ) -> Parser<'a, Self> {
         // No need to parse the Redis Array header, just skip it
         let input = input.get("*3\r\n".len()..).ok_or(Incomplete)?;
         let (command, rest) = parse_redis_bulk_string(&input)?;
@@ -46,14 +51,16 @@ impl RedisMsg {
                 // Messages look like;
                 // $10\r\ntimeline:4\r\n
                 // $1386\r\n{\"event\":\"update\",\"payload\"...\"queued_at\":1569623342825}\r\n
-                let (raw_timeline, rest) = parse_redis_bulk_string(&rest)?;
+                let (timeline, rest) = parse_redis_bulk_string(&rest)?;
                 let (msg_txt, rest) = parse_redis_bulk_string(&rest)?;
+                let event: Event = serde_json::from_str(&msg_txt).map_err(|_| Unrecoverable)?;
 
-                let raw_timeline = &raw_timeline.get(prefix..).ok_or(Unrecoverable)?;
-                let event: Event = serde_json::from_str(&msg_txt).unwrap();
-                let hashtag = hashtag_from_timeline(&raw_timeline, cache);
-                let timeline = Timeline::from_redis_raw_timeline(&raw_timeline, hashtag);
-                Ok((Self::EventMsg(timeline, event), rest))
+                use TimelineErr::*;
+                match Timeline::from_redis_raw_timeline(timeline, cache, namespace) {
+                    Ok(timeline) => Ok((Self::EventMsg(timeline, event), rest)),
+                    Err(RedisNamespaceMismatch) => Ok((Self::MsgForDifferentNamespace, rest)),
+                    Err(InvalidInput) => Err(RedisParseErr::Unrecoverable),
+                }
             }
             "subscribe" | "unsubscribe" => {
                 // subscription statuses look like:
@@ -100,19 +107,4 @@ fn parse_number_at(input: &str) -> Parser<usize> {
     let number = input[..number_len].parse().map_err(|_| Unrecoverable)?;
     let rest = &input.get(number_len..).ok_or(Incomplete)?;
     Ok((number, rest))
-}
-fn hashtag_from_timeline(raw_timeline: &str, hashtag_id_cache: &mut Hashtags) -> Option<i64> {
-    if raw_timeline.starts_with("hashtag") {
-        let tag_name = raw_timeline
-            .split(':')
-            .nth(1)
-            .unwrap_or_else(|| log_fatal!("No hashtag found in `{}`", raw_timeline))
-            .to_string();
-        let tag_id = *hashtag_id_cache
-            .get(&tag_name)
-            .unwrap_or_else(|| log_fatal!("No cached id for `{}`", tag_name));
-        Some(tag_id)
-    } else {
-        None
-    }
 }

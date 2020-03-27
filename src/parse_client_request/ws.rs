@@ -1,48 +1,9 @@
 //! Filters for the WebSocket endpoint
-use super::{
-    query::{self, Query},
-    subscription::{PgPool, Subscription},
-};
-use warp::{filters::BoxedFilter, path, Filter};
 
-/// WebSocket filters
-fn parse_query() -> BoxedFilter<(Query,)> {
-    path!("api" / "v1" / "streaming")
-        .and(path::end())
-        .and(warp::query())
-        .and(query::Auth::to_filter())
-        .and(query::Media::to_filter())
-        .and(query::Hashtag::to_filter())
-        .and(query::List::to_filter())
-        .map(
-            |stream: query::Stream,
-             auth: query::Auth,
-             media: query::Media,
-             hashtag: query::Hashtag,
-             list: query::List| {
-                Query {
-                    access_token: auth.access_token,
-                    stream: stream.stream,
-                    media: media.is_truthy(),
-                    hashtag: hashtag.tag,
-                    list: list.list,
-                }
-            },
-        )
-        .boxed()
-}
 
-pub fn extract_user_and_token_or_reject(
-    pg_pool: PgPool,
-    whitelist_mode: bool,
-) -> BoxedFilter<(Subscription, Option<String>)> {
-    parse_query()
-        .and(query::OptionalAccessToken::from_ws_header())
-        .and_then(Query::update_access_token)
-        .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
-        .and(query::OptionalAccessToken::from_ws_header())
-        .boxed()
-}
+
+
+
 
 // #[cfg(test)]
 // mod test {

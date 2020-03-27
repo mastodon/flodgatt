@@ -28,6 +28,12 @@ impl Query {
 }
 
 macro_rules! make_query_type {
+    (Stream => $parameter:tt:$type:ty) => {
+        #[derive(Deserialize, Debug, Default)]
+        pub struct Stream {
+            pub $parameter: $type,
+        }
+    };
     ($name:tt => $parameter:tt:$type:ty) => {
         #[derive(Deserialize, Debug, Default)]
         pub struct $name {
@@ -59,14 +65,14 @@ impl ToString for Stream {
     }
 }
 
-pub fn optional_media_query() -> BoxedFilter<(Media,)> {
-    warp::query()
-        .or(warp::any().map(|| Media {
-            only_media: "false".to_owned(),
-        }))
-        .unify()
-        .boxed()
-}
+// pub fn optional_media_query() -> BoxedFilter<(Media,)> {
+//     warp::query()
+//         .or(warp::any().map(|| Media {
+//             only_media: "false".to_owned(),
+//         }))
+//         .unify()
+//         .boxed()
+// }
 
 pub struct OptionalAccessToken;
 
