@@ -6,8 +6,10 @@ use criterion::Criterion;
 /// Parse using Flodgatt's current functions
 mod flodgatt_parse_event {
     use flodgatt::{
+        err::RedisParseErr,
         messages::Event,
         parse_client_request::Timeline,
+        redis_to_client_stream::redis_msg::{RedisBytes, RedisParsed},
         redis_to_client_stream::{process_messages, MessageQueues, MsgQueue},
     };
     use lru::LruCache;
@@ -38,11 +40,44 @@ mod flodgatt_parse_event {
             .oldest_msg_in_target_queue(id, timeline)
             .expect("In test")
     }
+
+    pub fn mutistep(
+        input: String,
+        mut cache: &mut LruCache<String, i64>,
+    ) -> Result<RedisParsed, RedisParseErr> {
+        Ok(RedisBytes::new(input.as_bytes())
+            .into_redis_utf8()
+            .try_into_redis_reply()?
+            .try_into_parsed(&mut cache, &None)?)
+    }
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
+    use flodgatt::redis_to_client_stream::redis_msg::RedisParsed;
     let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS.to_string();
     let mut group = c.benchmark_group("Parse redis RESP array");
+
+    let (mut cache, mut queues, id, timeline) = flodgatt_parse_event::setup();
+    group.bench_function(
+        "parse to Event using Flodgatt new, multi-step function",
+        |b| {
+            b.iter(|| {
+                let RedisParsed(timeline, event) = black_box(
+                    flodgatt_parse_event::mutistep(black_box(input.clone()), black_box(&mut cache))
+                        .unwrap(),
+                );
+
+                for msg_queue in queues.values_mut() {
+                    if msg_queue.timeline == timeline {
+                        msg_queue.messages.push_back(event.clone());
+                    }
+                }
+                queues
+                    .oldest_msg_in_target_queue(id, timeline)
+                    .expect("In test")
+            })
+        },
+    );
 
     let (mut cache, mut queues, id, timeline) = flodgatt_parse_event::setup();
     group.bench_function("parse to Event using Flodgatt functions", |b| {

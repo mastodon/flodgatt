@@ -6,9 +6,12 @@ mod redis;
 
 pub use {client_agent::ClientAgent, event_stream::EventStream};
 
-#[cfg(test)]
+// TODO remove
+pub use redis::redis_msg::{self, RedisMsg, RedisUtf8};
+
+//#[cfg(test)]
 pub use receiver::process_messages;
-#[cfg(test)]
+//#[cfg(test)]
 pub use receiver::{MessageQueues, MsgQueue};
-#[cfg(test)]
-pub use redis::redis_msg::RedisMsg;
+//#[cfg(test)]
+//pub use redis::redis_msg::{RedisMsg, RedisUtf8};
