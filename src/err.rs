@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::{error::Error, fmt};
 
-pub fn die_with_msg(msg: impl Display) -> ! {
+pub fn die_with_msg(msg: impl fmt::Display) -> ! {
     eprintln!("FATAL ERROR: {}", msg);
     std::process::exit(1);
 }
@@ -13,10 +13,31 @@ macro_rules! log_fatal {
     };};
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RedisParseErr {
     Incomplete,
-    Unrecoverable,
+    InvalidNumber(std::num::ParseIntError),
+    NonNumericInput,
+    InvalidLineStart(String),
+    IncorrectRedisType,
+}
+
+impl fmt::Display for RedisParseErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", match self {
+            Self::Incomplete => "The input from Redis does not form a complete message, likely because the input buffer filled partway through a message.  Save this input and try again with additional input from Redis.".to_string(),
+            Self::InvalidNumber(e) => format!( "Redis input cannot be parsed: {}", e),
+            _ => "TODO".to_string(),
+        })
+    }
+}
+
+impl Error for RedisParseErr {}
+
+impl From<std::num::ParseIntError> for RedisParseErr {
+    fn from(error: std::num::ParseIntError) -> Self {
+        Self::InvalidNumber(error)
+    }
 }
 
 #[derive(Debug)]

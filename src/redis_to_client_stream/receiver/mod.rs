@@ -7,11 +7,10 @@ pub use message_queues::{MessageQueues, MsgQueue};
 
 use crate::{
     config,
-    err::{RedisParseErr, TimelineErr},
+    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream, Timeline},
     pubsub_cmd,
-    redis_to_client_stream::redis::redis_msg::RedisMsg,
     redis_to_client_stream::redis::{redis_cmd, RedisConn},
 };
 use futures::{Async, Poll};
@@ -170,9 +169,9 @@ impl futures::stream::Stream for Receiver {
                 let (cache, namespace) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
 
                 let remaining_input =
-                    process_messages(input, cache, namespace, &mut self.msg_queues);
+                    process_messages(input, cache, namespace, &mut self.msg_queues).expect("TODO");
 
-                self.redis_input.extend_from_slice(remaining_input);
+                self.redis_input.extend_from_slice(&remaining_input);
                 self.redis_input.extend_from_slice(extra_bytes);
             }
         }
@@ -209,34 +208,23 @@ pub fn process_messages<'a>(
     cache: &mut LruCache<String, i64>,
     namespace: &Option<String>,
     msg_queues: &mut MessageQueues,
-) -> &'a [u8] {
-    let mut remaining_input = input;
-    use RedisMsg::*;
-    match RedisMsg::from_raw(&mut remaining_input) {
-        Ok((EventMsg { tl_txt, event_txt }, rest)) => {
-            use TimelineErr::*;
-            let timeline = match Timeline::from_redis_raw_timeline(tl_txt, cache, namespace) {
-                Ok(timeline) => timeline,
-                Err(RedisNamespaceMismatch) => todo!(),
-                Err(InvalidInput) => todo!(),
-            };
-            let event: Event = serde_json::from_str(&event_txt).expect("TODO");
+) -> Result<Vec<u8>, RedisParseErr> {
+    use crate::redis_to_client_stream::redis::redis_msg::RedisBytes;
+    let r_msg = RedisBytes::new(input.as_bytes())
+        .into_redis_utf8()
+        .try_into_redis_structured_text()?
+        .try_into_redis_message()?;
 
-            for msg_queue in msg_queues.values_mut() {
-                if msg_queue.timeline == timeline {
-                    msg_queue.messages.push_back(event.clone());
-                }
-            }
-            remaining_input = rest;
-        }
-        Ok((SubscriptionMsg, rest)) => {
-            remaining_input = rest;
-        }
-        Err(RedisParseErr::Incomplete) => (),
-        Err(RedisParseErr::Unrecoverable) => {
-            panic!("Failed parsing Redis msg: {}", &remaining_input)
-        }
-    };
+    let (timeline, event) = (
+        r_msg.parse_timeline(cache, namespace)?,
+        r_msg.parse_event()?,
+    );
 
-    remaining_input.as_bytes()
+    for msg_queue in msg_queues.values_mut() {
+        if msg_queue.timeline == timeline {
+            msg_queue.messages.push_back(event.clone());
+        }
+    }
+
+    Ok(r_msg.leftover_input.as_leftover_bytes())
 }
