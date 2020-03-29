@@ -19,6 +19,7 @@ pub enum RedisParseErr {
     InvalidNumber(std::num::ParseIntError),
     NonNumericInput,
     InvalidLineStart(String),
+    InvalidLineEnd,
     IncorrectRedisType,
 }
 

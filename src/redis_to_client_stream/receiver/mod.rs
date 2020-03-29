@@ -13,7 +13,7 @@ use crate::{
     pubsub_cmd,
     redis_to_client_stream::redis::{
         redis_cmd,
-        redis_msg::{RedisMsg, RedisParseOutput, RedisUtf8},
+        redis_msg::{RedisMsg, RedisParseOutput},
         RedisConn,
     },
 };
@@ -25,7 +25,7 @@ use std::{
     collections::HashMap,
     convert::TryFrom,
     io::Read,
-    net,
+    net, str,
     time::{Duration, Instant},
 };
 use tokio::io::Error;
@@ -164,9 +164,10 @@ impl futures::stream::Stream for Receiver {
                 let (cache, ns) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
 
                 use TimelineErr::*;
-                let mut remaining_input = RedisUtf8::from(&buffer[..bytes_read]);
+                let mut remaining_input =
+                    str::from_utf8(&buffer[..bytes_read]).expect("TODO: handle partial characters");
+                use RedisParseOutput::*;
                 loop {
-                    use RedisParseOutput::*;
                     match RedisParseOutput::try_from(remaining_input) {
                         Ok(Msg(msg)) => {
                             let timeline =
@@ -214,13 +215,14 @@ impl futures::stream::Stream for Receiver {
                             );
                             break;
                         }
-                    };
+                    }
                 }
 
                 self.redis_input
-                    .extend_from_slice(remaining_input.valid_utf8.as_bytes());
-                self.redis_input
-                    .extend_from_slice(remaining_input.leftover_bytes);
+                    .extend_from_slice(remaining_input.as_bytes());
+
+                // self.redis_input.extend_from_slice(remaining_input);
+                // TODO add partial chars: ^^^^
             }
         }
 

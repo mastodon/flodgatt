@@ -27,87 +27,35 @@ use std::{
     str,
 };
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub struct RedisUtf8<'a> {
-    pub valid_utf8: &'a str,
-    pub leftover_bytes: &'a [u8],
-}
-
-impl<'a> From<&'a [u8]> for RedisUtf8<'a> {
-    fn from(bytes: &'a [u8]) -> Self {
-        match str::from_utf8(bytes) {
-            Ok(valid_utf8) => Self {
-                valid_utf8,
-                leftover_bytes: "".as_bytes(),
-            },
-            Err(e) => {
-                let (valid, after_valid) = bytes.split_at(e.valid_up_to());
-                Self {
-                    valid_utf8: str::from_utf8(valid).expect("Guaranteed by `.valid_up_to`"),
-                    leftover_bytes: after_valid,
-                }
-            }
-        }
-    }
-}
-
-impl<'a> Default for RedisUtf8<'a> {
-    fn default() -> Self {
-        Self::from("".as_bytes())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum RedisParseOutput<'a> {
     Msg(RedisMsg<'a>),
-    NonMsg(RedisUtf8<'a>),
+    NonMsg(&'a str),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RedisMsg<'a> {
     pub timeline_txt: &'a str,
     pub event_txt: &'a str,
-    pub leftover_input: RedisUtf8<'a>,
+    pub leftover_input: &'a str,
 }
 
 impl<'a> TryFrom<&'a str> for RedisParseOutput<'a> {
     type Error = RedisParseErr;
     fn try_from(utf8: &'a str) -> Result<RedisParseOutput<'a>, Self::Error> {
-        let (structured_txt, leftover_utf8) = utf8_to_redis_data(utf8.valid_utf8)?;
+        let (structured_txt, leftover_utf8) = utf8_to_redis_data(utf8)?;
         let structured_txt = RedisStructuredText {
             structured_txt,
-            leftover_input: RedisUtf8 {
-                valid_utf8: leftover_utf8,
-                leftover_bytes: utf8.leftover_bytes,
-            },
+            leftover_input: leftover_utf8,
         };
         Ok(structured_txt.try_into()?)
     }
 }
-
-impl<'a> TryFrom<RedisUtf8<'a>> for RedisParseOutput<'a> {
-    type Error = RedisParseErr;
-    fn try_from(utf8: RedisUtf8<'a>) -> Result<RedisParseOutput<'a>, Self::Error> {
-        let (structured_txt, leftover_utf8) = utf8_to_redis_data(utf8.valid_utf8)?;
-        let structured_txt = RedisStructuredText {
-            structured_txt,
-            leftover_input: RedisUtf8 {
-                valid_utf8: leftover_utf8,
-                leftover_bytes: utf8.leftover_bytes,
-            },
-        };
-        Ok(structured_txt.try_into()?)
-    }
-}
-
-use RedisData::*;
-use RedisParseErr::*;
-type RedisParser<'a, Item> = Result<Item, RedisParseErr>;
 
 #[derive(Debug, Clone, PartialEq)]
 struct RedisStructuredText<'a> {
     structured_txt: RedisData<'a>,
-    leftover_input: RedisUtf8<'a>,
+    leftover_input: &'a str,
 }
 #[derive(Debug, Clone, PartialEq)]
 enum RedisData<'a> {
@@ -117,6 +65,9 @@ enum RedisData<'a> {
     Uninitilized,
 }
 
+use RedisData::*;
+use RedisParseErr::*;
+type RedisParser<'a, Item> = Result<Item, RedisParseErr>;
 fn utf8_to_redis_data<'a>(s: &'a str) -> Result<(RedisData, &'a str), RedisParseErr> {
     if s.len() < 4 {
         Err(Incomplete)?
@@ -134,7 +85,11 @@ fn utf8_to_redis_data<'a>(s: &'a str) -> Result<(RedisData, &'a str), RedisParse
 }
 
 fn after_newline_at<'a>(s: &'a str, start: usize) -> RedisParser<'a, &'a str> {
-    Ok(s.get(start + "\r\n".len()..).ok_or(Incomplete)?)
+    let s = s.get(start..).ok_or(Incomplete)?;
+    if !s.starts_with("\r\n") {
+        return Err(RedisParseErr::InvalidLineEnd);
+    }
+    Ok(s.get("\r\n".len()..).ok_or(Incomplete)?)
 }
 
 fn parse_number_at<'a>(s: &'a str) -> RedisParser<(usize, &'a str)> {
@@ -190,7 +145,6 @@ impl<'a> TryFrom<RedisStructuredText<'a>> for RedisParseOutput<'a> {
     fn try_from(input: RedisStructuredText<'a>) -> Result<RedisParseOutput<'a>, Self::Error> {
         if let RedisData::RedisArray(mut redis_strings) = input.structured_txt {
             let command = redis_strings.pop().expect("TODO").try_into()?;
-            dbg!(&command);
             match command {
                 // subscription statuses look like:
                 // $14\r\ntimeline:local\r\n
@@ -217,25 +171,85 @@ mod test {
     use super::*;
 
     #[test]
-    fn parse_redis_int() -> Result<(), RedisParseErr> {
+    fn parse_redis_subscribe() -> Result<(), RedisParseErr> {
         let input = "*3\r\n$9\r\nsubscribe\r\n$15\r\ntimeline:public\r\n:1\r\n";
 
-        let r_txt = RedisUtf8::from(input.as_bytes());
-        assert_eq!(
-            r_txt.valid_utf8,
-            "*3\r\n$9\r\nsubscribe\r\n$15\r\ntimeline:public\r\n:1\r\n"
-        );
-
-        let r_msg: RedisMsg = r_txt.try_into()?;
-        assert!(r_msg.leftover_input.valid_utf8.is_empty());
-        assert!(r_msg.leftover_input.leftover_bytes.is_empty());
-
-        assert_eq!(r_msg.timeline_txt, "timeline:308");
-        assert_eq!(
-            r_msg.event_txt,
-            "{\"event\":\"announcement.delete\",\"payload\":\"5\"}"
-        );
+        let r_subscribe = match RedisParseOutput::try_from(input) {
+            Ok(NonMsg(leftover)) => leftover,
+            Ok(Msg(msg)) => panic!("unexpectedly got a msg: {:?}", msg),
+            Err(e) => panic!("Error in parsing subscribe command: {:?}", e),
+        };
+        assert!(r_subscribe.is_empty());
 
         Ok(())
     }
+
+    #[test]
+    fn parse_redis_detects_non_newline() -> Result<(), RedisParseErr> {
+        let input =
+            "*3QQ$7\r\nmessage\r\n$12\r\ntimeline:308\r\n$38\r\n{\"event\":\"delete\",\"payload\":\"1038647\"}\r\n";
+
+        match RedisParseOutput::try_from(input) {
+            Ok(NonMsg(leftover)) => panic!(
+                "Parsed an invalid msg as a non-msg.\nInput `{}` parsed to NonMsg({:?})",
+                &input, leftover
+            ),
+            Ok(Msg(msg)) => panic!(
+                "Parsed an invalid msg as a msg.\nInput `{:?}` parsed to {:?}",
+                &input, msg
+            ),
+            Err(_) => (), // should err
+        };
+
+        Ok(())
+    }
+
+    fn parse_redis_msg() -> Result<(), RedisParseErr> {
+        let input =
+            "*3\r\n$7\r\nmessage\r\n$12\r\ntimeline:308\r\n$38\r\n{\"event\":\"delete\",\"payload\":\"1038647\"}\r\n";
+
+        let r_msg = match RedisParseOutput::try_from(input) {
+            Ok(NonMsg(leftover)) => panic!(
+                "Parsed a msg as a non-msg.\nInput `{}` parsed to NonMsg({:?})",
+                &input, leftover
+            ),
+            Ok(Msg(msg)) => msg,
+            Err(e) => panic!("Error in parsing subscribe command: {:?}", e),
+        };
+
+        assert!(r_msg.leftover_input.is_empty());
+        assert_eq!(r_msg.timeline_txt, "timeline:308");
+        assert_eq!(r_msg.event_txt, r#"{"event":"delete","payload":"1038647"}"#);
+        Ok(())
+    }
 }
+
+// #[derive(Debug, Clone, PartialEq, Copy)]
+// pub struct RedisUtf8<'a> {
+//     pub valid_utf8: &'a str,
+//     pub leftover_bytes: &'a [u8],
+// }
+
+// impl<'a> From<&'a [u8]> for RedisUtf8<'a> {
+//     fn from(bytes: &'a [u8]) -> Self {
+//         match str::from_utf8(bytes) {
+//             Ok(valid_utf8) => Self {
+//                 valid_utf8,
+//                 leftover_bytes: "".as_bytes(),
+//             },
+//             Err(e) => {
+//                 let (valid, after_valid) = bytes.split_at(e.valid_up_to());
+//                 Self {
+//                     valid_utf8: str::from_utf8(valid).expect("Guaranteed by `.valid_up_to`"),
+//                     leftover_bytes: after_valid,
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// impl<'a> Default for RedisUtf8<'a> {
+//     fn default() -> Self {
+//         Self::from("".as_bytes())
+//     }
+// }
