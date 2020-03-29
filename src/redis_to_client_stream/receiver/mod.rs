@@ -7,11 +7,15 @@ pub use message_queues::{MessageQueues, MsgQueue};
 
 use crate::{
     config,
-    err::RedisParseErr,
+    err::{RedisParseErr, TimelineErr},
     messages::Event,
     parse_client_request::{Stream, Timeline},
     pubsub_cmd,
-    redis_to_client_stream::redis::{redis_cmd, RedisConn},
+    redis_to_client_stream::redis::{
+        redis_cmd,
+        redis_msg::{RedisMsg, RedisParseOutput, RedisUtf8},
+        RedisConn,
+    },
 };
 use futures::{Async, Poll};
 use lru::LruCache;
@@ -19,8 +23,9 @@ use tokio::io::AsyncRead;
 
 use std::{
     collections::HashMap,
+    convert::TryFrom,
     io::Read,
-    net, str,
+    net,
     time::{Duration, Instant},
 };
 use tokio::io::Error;
@@ -156,23 +161,66 @@ impl futures::stream::Stream for Receiver {
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             let mut buffer = vec![0u8; 6000];
             if let Ok(Async::Ready(bytes_read)) = self.poll_read(&mut buffer) {
-                let binary_input = buffer[..bytes_read].to_vec();
-                let (input, extra_bytes) = match str::from_utf8(&binary_input) {
-                    Ok(input) => (input, "".as_bytes()),
-                    Err(e) => {
-                        let (valid, after_valid) = binary_input.split_at(e.valid_up_to());
-                        let input = str::from_utf8(valid).expect("Guaranteed by `.valid_up_to`");
-                        (input, after_valid)
-                    }
-                };
+                let (cache, ns) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
 
-                let (cache, namespace) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
+                use TimelineErr::*;
+                let mut remaining_input = RedisUtf8::from(&buffer[..bytes_read]);
+                loop {
+                    use RedisParseOutput::*;
+                    match RedisParseOutput::try_from(remaining_input) {
+                        Ok(Msg(msg)) => {
+                            let timeline =
+                                match Timeline::from_redis_text(msg.timeline_txt, cache, ns) {
+                                    Ok(timeline) => timeline,
+                                    Err(TimelineErr::RedisNamespaceMismatch) => {
+                                        remaining_input = msg.leftover_input;
+                                        break;
+                                    }
+                                    Err(TimelineErr::InvalidInput) => {
+                                        log::error!("{:?}\n{:?}", InvalidInput, msg);
+                                        remaining_input = msg.leftover_input;
+                                        break;
+                                    }
+                                };
 
-                let remaining_input =
-                    process_messages(input, cache, namespace, &mut self.msg_queues).expect("TODO");
+                            let event: Event = serde_json::from_str(msg.event_txt).expect("TODO");
 
-                self.redis_input.extend_from_slice(&remaining_input);
-                self.redis_input.extend_from_slice(extra_bytes);
+                            for msg_queue in self.msg_queues.values_mut() {
+                                if msg_queue.timeline == timeline {
+                                    msg_queue.messages.push_back(event.clone());
+                                }
+                            }
+                            log::info!("Got a msg from Redis for {:?}", timeline);
+                            remaining_input = msg.leftover_input;
+                            continue;
+                        }
+                        Ok(NonMsg(leftover_input)) => {
+                            log::info!("Got a non-msg from Redis.");
+                            remaining_input = leftover_input;
+                            continue;
+                        }
+                        Err(RedisParseErr::Incomplete) => {
+                            log::info!(
+                                "Got an incomplete msg from Redis: {:?}",
+                                String::from_utf8_lossy(&buffer[..bytes_read])
+                            );
+                            break;
+                        }
+                        Err(other) => {
+                            log::error!(
+                                "{:?}\nRedis input: {:?}",
+                                other,
+                                String::from_utf8_lossy(&buffer[..bytes_read])
+                            );
+                            break;
+                        }
+                    };
+                }
+
+                self.redis_input
+                    .extend_from_slice(remaining_input.valid_utf8.as_bytes());
+                self.redis_input
+                    .extend_from_slice(remaining_input.leftover_bytes);
             }
         }
 
@@ -202,29 +250,23 @@ impl AsyncRead for Receiver {
     }
 }
 
-#[must_use]
-pub fn process_messages<'a>(
-    input: &'a str,
-    cache: &mut LruCache<String, i64>,
-    namespace: &Option<String>,
-    msg_queues: &mut MessageQueues,
-) -> Result<Vec<u8>, RedisParseErr> {
-    use crate::redis_to_client_stream::redis::redis_msg::RedisBytes;
-    let r_msg = RedisBytes::new(input.as_bytes())
-        .into_redis_utf8()
-        .try_into_redis_structured_text()?
-        .try_into_redis_message()?;
+// #[must_use]
+// pub fn process_messages<'a>(
+//     input: RedisUtf8<'a>,
+//     cache: &mut LruCache<String, i64>,
+//     namespace: &Option<String>,
+//     msg_queues: &mut MessageQueues,
+// ) -> Result<RedisUtf8<'a>, RedisParseErr> {
+//     let r_msg = RedisMsg::try_from(RedisUtf8::from(input))?;
+//     let timeline = Timeline::from_redis_text(r_msg.timeline_txt, cache, namespace)
+//         .expect("TODO and handle timelines we skip");
+//     let event: Event = serde_json::from_str(r_msg.event_txt).expect("TODO");
 
-    let (timeline, event) = (
-        r_msg.parse_timeline(cache, namespace)?,
-        r_msg.parse_event()?,
-    );
+//     for msg_queue in msg_queues.values_mut() {
+//         if msg_queue.timeline == timeline {
+//             msg_queue.messages.push_back(event.clone());
+//         }
+//     }
 
-    for msg_queue in msg_queues.values_mut() {
-        if msg_queue.timeline == timeline {
-            msg_queue.messages.push_back(event.clone());
-        }
-    }
-
-    Ok(r_msg.leftover_input.as_leftover_bytes())
-}
+//     Ok(r_msg.leftover_input)
+// }

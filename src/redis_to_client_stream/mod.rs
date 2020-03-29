@@ -10,7 +10,7 @@ pub use {client_agent::ClientAgent, event_stream::EventStream};
 pub use redis::redis_msg::{self, RedisUtf8};
 
 //#[cfg(test)]
-pub use receiver::process_messages;
+//pub use receiver::process_messages;
 //#[cfg(test)]
 pub use receiver::{MessageQueues, MsgQueue};
 //#[cfg(test)]

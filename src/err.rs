@@ -13,7 +13,7 @@ macro_rules! log_fatal {
     };};
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RedisParseErr {
     Incomplete,
     InvalidNumber(std::num::ParseIntError),

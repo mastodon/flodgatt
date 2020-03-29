@@ -196,7 +196,7 @@ impl Timeline {
         }
     }
 
-    pub fn from_redis_raw_timeline(
+    pub fn from_redis_text(
         timeline: &str,
         cache: &mut LruCache<String, i64>,
         namespace: &Option<String>,
@@ -243,10 +243,9 @@ impl Timeline {
 
                 [n, "timeline", id, "notification"] if ns == n =>
                     (User(id.parse()?), Federated, Notification),
-                    
+
                 [_, "timeline", _id, "notification"]
                  | ["timeline", _id, "notification"] => Err(RedisNamespaceMismatch)?,
-                
 
                 [n, "timeline", "list", id] if ns == n => (List(id.parse()?), Federated, All),
                 [_, "timeline", "list", _id]
