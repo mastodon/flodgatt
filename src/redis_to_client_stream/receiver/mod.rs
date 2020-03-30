@@ -7,15 +7,14 @@ pub use message_queues::{MessageQueues, MsgQueue};
 
 use crate::{
     config,
+    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream, Timeline},
     redis_to_client_stream::redis::RedisConn,
 };
 use futures::{Async, Poll};
 use lru::LruCache;
-
 use std::{collections::HashMap, time::Instant};
-use tokio::io::Error;
 use uuid::Uuid;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
@@ -26,17 +25,10 @@ pub struct Receiver {
     manager_id: Uuid,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
-    cache: Cache,
-    // TODO remove items ^^^^^  moved to RedisConn
-}
-
-#[derive(Debug)]
-pub struct Cache {
+    hashtag_cache: LruCache<i64, String>,
     // TODO: eventually, it might make sense to have Mastodon publish to timelines with
     //       the tag number instead of the tag name.  This would save us from dealing
     //       with a cache here and would be consistent with how lists/users are handled.
-    id_to_hashtag: LruCache<i64, String>,
-    pub hashtag_to_id: LruCache<String, i64>,
 }
 
 impl Receiver {
@@ -51,10 +43,8 @@ impl Receiver {
             manager_id: Uuid::default(),
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
-            cache: Cache {
-                id_to_hashtag: LruCache::new(1000),
-                hashtag_to_id: LruCache::new(1000),
-            }, // should these be run-time options?
+            hashtag_cache: LruCache::new(1000),
+            // should this be a run-time option?
         }
     }
 
@@ -67,8 +57,7 @@ impl Receiver {
     pub fn manage_new_timeline(&mut self, id: Uuid, tl: Timeline, hashtag: Option<String>) {
         self.timeline = tl;
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (hashtag, tl) {
-            self.cache.id_to_hashtag.put(id, hashtag.clone());
-            self.cache.hashtag_to_id.put(hashtag.clone(), id);
+            self.hashtag_cache.put(id, hashtag.clone());
             self.redis_connection.update_cache(hashtag, id);
         };
 
@@ -94,7 +83,7 @@ impl Receiver {
         for change in timelines_to_modify {
             let timeline = change.timeline;
             let hashtag = match timeline {
-                Timeline(Stream::Hashtag(id), _, _) => self.cache.id_to_hashtag.get(&id),
+                Timeline(Stream::Hashtag(id), _, _) => self.hashtag_cache.get(&id),
                 _non_hashtag_timeline => None,
             };
 
@@ -122,7 +111,7 @@ impl Receiver {
 /// The stream that the ClientAgent polls to learn about new messages.
 impl futures::stream::Stream for Receiver {
     type Item = Event;
-    type Error = Error;
+    type Error = RedisParseErr;
 
     /// Returns the oldest message in the `ClientAgent`'s queue (if any).
     ///
@@ -143,7 +132,7 @@ impl futures::stream::Stream for Receiver {
                     }),
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(None)) => (),
-                Err(_) => todo!(),
+                Err(err) => Err(err)?,
             }
         }
 

@@ -13,7 +13,7 @@ macro_rules! log_fatal {
     };};
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum RedisParseErr {
     Incomplete,
     InvalidNumber(std::num::ParseIntError),
@@ -21,6 +21,9 @@ pub enum RedisParseErr {
     InvalidLineStart(String),
     InvalidLineEnd,
     IncorrectRedisType,
+    MissingField,
+    UnsupportedTimeline,
+    UnsupportedEvent(serde_json::Error),
 }
 
 impl fmt::Display for RedisParseErr {
@@ -28,7 +31,13 @@ impl fmt::Display for RedisParseErr {
         write!(f, "{}", match self {
             Self::Incomplete => "The input from Redis does not form a complete message, likely because the input buffer filled partway through a message.  Save this input and try again with additional input from Redis.".to_string(),
             Self::InvalidNumber(e) => format!( "Redis input cannot be parsed: {}", e),
-            _ => "TODO".to_string(),
+            Self::NonNumericInput => "Received non-numeric input when expecting a Redis number".to_string(),
+            Self::InvalidLineStart(s) => format!("Got `{}` as a line start from Redis", s),
+            Self::InvalidLineEnd => "Redis input ended before promised length".to_string(),
+            Self::IncorrectRedisType => "Received a non-array when expecting a Redis array".to_string(),
+            Self::MissingField => "Redis input was missing a required field".to_string(),
+            Self::UnsupportedTimeline => "The raw timeline received from Redis could not be parsed into a supported timeline".to_string(),
+            Self::UnsupportedEvent(e) => format!("The event text from Redis could not be parsed into a valid event: {}", e)
         })
     }
 }
@@ -38,6 +47,18 @@ impl Error for RedisParseErr {}
 impl From<std::num::ParseIntError> for RedisParseErr {
     fn from(error: std::num::ParseIntError) -> Self {
         Self::InvalidNumber(error)
+    }
+}
+
+impl From<serde_json::Error> for RedisParseErr {
+    fn from(error: serde_json::Error) -> Self {
+        Self::UnsupportedEvent(error)
+    }
+}
+
+impl From<TimelineErr> for RedisParseErr {
+    fn from(_: TimelineErr) -> Self {
+        Self::UnsupportedTimeline
     }
 }
 

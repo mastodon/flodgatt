@@ -144,7 +144,7 @@ impl<'a> TryFrom<RedisStructuredText<'a>> for RedisParseOutput<'a> {
 
     fn try_from(input: RedisStructuredText<'a>) -> Result<RedisParseOutput<'a>, Self::Error> {
         if let RedisData::RedisArray(mut redis_strings) = input.structured_txt {
-            let command = redis_strings.pop().expect("TODO").try_into()?;
+            let command = redis_strings.pop().ok_or(MissingField)?.try_into()?;
             match command {
                 // subscription statuses look like:
                 // $14\r\ntimeline:local\r\n
@@ -154,14 +154,14 @@ impl<'a> TryFrom<RedisStructuredText<'a>> for RedisParseOutput<'a> {
                 // $10\r\ntimeline:4\r\n
                 // $1386\r\n{\"event\":\"update\",\"payload\"...\"queued_at\":1569623342825}\r\n
                 "message" => Ok(Msg(RedisMsg {
-                    timeline_txt: redis_strings.pop().expect("TODO").try_into()?,
-                    event_txt: redis_strings.pop().expect("TODO").try_into()?,
+                    timeline_txt: redis_strings.pop().ok_or(MissingField)?.try_into()?,
+                    event_txt: redis_strings.pop().ok_or(MissingField)?.try_into()?,
                     leftover_input: input.leftover_input,
                 })),
-                _cmd => Err(Incomplete)?,
+                _cmd => Err(Incomplete),
             }
         } else {
-            panic!("TODO");
+            Err(IncorrectRedisType)
         }
     }
 }

@@ -1,12 +1,12 @@
-use super::{
-    redis_cmd,
-    redis_msg::{RedisMsg, RedisParseOutput},
+use super::{redis_cmd, redis_msg::RedisParseOutput};
+use crate::{
+    config::RedisConfig,
+    err::{self, RedisParseErr},
+    messages::Event,
+    parse_client_request::Timeline,
+    pubsub_cmd,
 };
-use crate::config::RedisConfig;
-use crate::err::{self, RedisParseErr};
-use crate::messages::Event;
-use crate::parse_client_request::Timeline;
-use crate::pubsub_cmd;
+
 use futures::{Async, Poll};
 use lru::LruCache;
 use std::{
@@ -78,48 +78,42 @@ impl RedisConn {
         }
         let input = self.redis_input.clone();
         self.redis_input.clear();
-        let (input, invalid_bytes) = match str::from_utf8(&input) {
-            Ok(input) => (input, None),
-            Err(e) => {
-                let (valid, invalid) = input.split_at(e.valid_up_to());
-                (str::from_utf8(valid).expect("Guaranteed ^"), Some(invalid))
-            }
-        };
 
-        let (cache, ns) = (&mut self.cache, &self.redis_namespace);
+        let (input, invalid_bytes) = str::from_utf8(&input)
+            .map(|input| (input, "".as_bytes()))
+            .unwrap_or_else(|e| {
+                let (valid, invalid) = input.split_at(e.valid_up_to());
+                (str::from_utf8(valid).expect("Guaranteed by ^^^^"), invalid)
+            });
 
         use {Async::*, RedisParseOutput::*};
-
         let (res, leftover) = match RedisParseOutput::try_from(input) {
-            Ok(Msg(msg)) => match ns {
+            Ok(Msg(msg)) => match &self.redis_namespace {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
                     let tl = Timeline::from_redis_text(
                         &msg.timeline_txt[ns.len() + ":timeline:".len()..],
-                        cache,
-                    )
-                    .unwrap_or_else(|_| todo!());
-                    let event: Event = serde_json::from_str(msg.event_txt).expect("TODO");
+                        &mut self.cache,
+                    )?;
+                    let event: Event = serde_json::from_str(msg.event_txt)?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 None => {
-                    let tl =
-                        Timeline::from_redis_text(&msg.timeline_txt["timeline:".len()..], cache)
-                            .unwrap_or_else(|_| todo!());
+                    let tl = Timeline::from_redis_text(
+                        &msg.timeline_txt["timeline:".len()..],
+                        &mut self.cache,
+                    )?;
 
-                    let event: Event = serde_json::from_str(msg.event_txt).expect("TODO");
-
+                    let event: Event = serde_json::from_str(msg.event_txt)?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
             },
             Ok(NonMsg(leftover)) => (Ok(Ready(None)), leftover),
             Err(RedisParseErr::Incomplete) => (Ok(NotReady), input),
-            Err(_other) => todo!(),
+            Err(other) => (Err(other), input),
         };
         self.redis_input.extend_from_slice(leftover.as_bytes());
-        if let Some(bytes) = invalid_bytes {
-            self.redis_input.extend_from_slice(bytes);
-        };
+        self.redis_input.extend_from_slice(invalid_bytes);
         res
     }
 
