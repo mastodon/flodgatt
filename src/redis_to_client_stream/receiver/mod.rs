@@ -7,44 +7,27 @@ pub use message_queues::{MessageQueues, MsgQueue};
 
 use crate::{
     config,
-    err::{RedisParseErr, TimelineErr},
     messages::Event,
     parse_client_request::{Stream, Timeline},
-    pubsub_cmd,
-    redis_to_client_stream::redis::{
-        redis_cmd,
-        redis_msg::{RedisMsg, RedisParseOutput},
-        RedisConn,
-    },
+    redis_to_client_stream::redis::RedisConn,
 };
 use futures::{Async, Poll};
 use lru::LruCache;
-use tokio::io::AsyncRead;
 
-use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    io::Read,
-    net, str,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::Instant};
 use tokio::io::Error;
 use uuid::Uuid;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
-    pub pubsub_connection: net::TcpStream,
-    secondary_redis_connection: net::TcpStream,
-    redis_poll_interval: Duration,
-    redis_polled_at: Instant,
+    redis_connection: RedisConn,
     timeline: Timeline,
     manager_id: Uuid,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
     cache: Cache,
-    redis_input: Vec<u8>,
-    redis_namespace: Option<String>,
+    // TODO remove items ^^^^^  moved to RedisConn
 }
 
 #[derive(Debug)]
@@ -60,19 +43,10 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn new(redis_cfg: config::RedisConfig) -> Self {
-        let redis_namespace = redis_cfg.namespace.clone();
-
-        let RedisConn {
-            primary: pubsub_connection,
-            secondary: secondary_redis_connection,
-            polling_interval: redis_poll_interval,
-        } = RedisConn::new(redis_cfg);
+        let redis_connection = RedisConn::new(redis_cfg);
 
         Self {
-            pubsub_connection,
-            secondary_redis_connection,
-            redis_poll_interval,
-            redis_polled_at: Instant::now(),
+            redis_connection,
             timeline: Timeline::empty(),
             manager_id: Uuid::default(),
             msg_queues: MessageQueues(HashMap::new()),
@@ -81,8 +55,6 @@ impl Receiver {
                 id_to_hashtag: LruCache::new(1000),
                 hashtag_to_id: LruCache::new(1000),
             }, // should these be run-time options?
-            redis_input: Vec::new(),
-            redis_namespace,
         }
     }
 
@@ -96,7 +68,8 @@ impl Receiver {
         self.timeline = tl;
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (hashtag, tl) {
             self.cache.id_to_hashtag.put(id, hashtag.clone());
-            self.cache.hashtag_to_id.put(hashtag, id);
+            self.cache.hashtag_to_id.put(hashtag.clone(), id);
+            self.redis_connection.update_cache(hashtag, id);
         };
 
         self.msg_queues.insert(id, MsgQueue::new(tl));
@@ -133,9 +106,11 @@ impl Receiver {
 
             // If no clients, unsubscribe from the channel
             if *count_of_subscribed_clients <= 0 {
-                pubsub_cmd!("unsubscribe", self, timeline.to_redis_raw_timeline(hashtag));
+                self.redis_connection
+                    .send_unsubscribe_cmd(&timeline.to_redis_raw_timeline(hashtag));
             } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
-                pubsub_cmd!("subscribe", self, timeline.to_redis_raw_timeline(hashtag));
+                self.redis_connection
+                    .send_subscribe_cmd(&timeline.to_redis_raw_timeline(hashtag));
             }
         }
         if start_time.elapsed().as_millis() > 1 {
@@ -157,72 +132,18 @@ impl futures::stream::Stream for Receiver {
     /// been polled lately.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let (timeline, id) = (self.timeline.clone(), self.manager_id);
-
-        if self.redis_polled_at.elapsed() > self.redis_poll_interval {
-            let mut buffer = vec![0u8; 6000];
-            if let Ok(Async::Ready(bytes_read)) = self.poll_read(&mut buffer) {
-                let (cache, ns) = (&mut self.cache.hashtag_to_id, &self.redis_namespace);
-
-                use TimelineErr::*;
-                let mut remaining_input =
-                    str::from_utf8(&buffer[..bytes_read]).expect("TODO: handle partial characters");
-                use RedisParseOutput::*;
-                loop {
-                    match RedisParseOutput::try_from(remaining_input) {
-                        Ok(Msg(msg)) => {
-                            let timeline =
-                                match Timeline::from_redis_text(msg.timeline_txt, cache, ns) {
-                                    Ok(timeline) => timeline,
-                                    Err(TimelineErr::RedisNamespaceMismatch) => {
-                                        remaining_input = msg.leftover_input;
-                                        break;
-                                    }
-                                    Err(TimelineErr::InvalidInput) => {
-                                        log::error!("{:?}\n{:?}", InvalidInput, msg);
-                                        remaining_input = msg.leftover_input;
-                                        break;
-                                    }
-                                };
-
-                            let event: Event = serde_json::from_str(msg.event_txt).expect("TODO");
-
-                            for msg_queue in self.msg_queues.values_mut() {
-                                if msg_queue.timeline == timeline {
-                                    msg_queue.messages.push_back(event.clone());
-                                }
-                            }
-                            log::info!("Got a msg from Redis for {:?}", timeline);
-                            remaining_input = msg.leftover_input;
-                            continue;
-                        }
-                        Ok(NonMsg(leftover_input)) => {
-                            log::info!("Got a non-msg from Redis.");
-                            remaining_input = leftover_input;
-                            continue;
-                        }
-                        Err(RedisParseErr::Incomplete) => {
-                            log::info!(
-                                "Got an incomplete msg from Redis: {:?}",
-                                String::from_utf8_lossy(&buffer[..bytes_read])
-                            );
-                            break;
-                        }
-                        Err(other) => {
-                            log::error!(
-                                "{:?}\nRedis input: {:?}",
-                                other,
-                                String::from_utf8_lossy(&buffer[..bytes_read])
-                            );
-                            break;
-                        }
-                    }
-                }
-
-                self.redis_input
-                    .extend_from_slice(remaining_input.as_bytes());
-
-                // self.redis_input.extend_from_slice(remaining_input);
-                // TODO add partial chars: ^^^^
+        loop {
+            match self.redis_connection.poll_redis() {
+                Ok(Async::Ready(Some((timeline, event)))) => self
+                    .msg_queues
+                    .values_mut()
+                    .filter(|msg_queue| msg_queue.timeline == timeline)
+                    .for_each(|msg_queue| {
+                        msg_queue.messages.push_back(event.clone());
+                    }),
+                Ok(Async::NotReady) => break,
+                Ok(Async::Ready(None)) => (),
+                Err(_) => todo!(),
             }
         }
 
@@ -236,39 +157,3 @@ impl futures::stream::Stream for Receiver {
         }
     }
 }
-
-impl Read for Receiver {
-    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
-        self.pubsub_connection.read(buffer)
-    }
-}
-
-impl AsyncRead for Receiver {
-    fn poll_read(&mut self, buf: &mut [u8]) -> Poll<usize, std::io::Error> {
-        match self.read(buf) {
-            Ok(t) => Ok(Async::Ready(t)),
-            Err(_) => Ok(Async::NotReady),
-        }
-    }
-}
-
-// #[must_use]
-// pub fn process_messages<'a>(
-//     input: RedisUtf8<'a>,
-//     cache: &mut LruCache<String, i64>,
-//     namespace: &Option<String>,
-//     msg_queues: &mut MessageQueues,
-// ) -> Result<RedisUtf8<'a>, RedisParseErr> {
-//     let r_msg = RedisMsg::try_from(RedisUtf8::from(input))?;
-//     let timeline = Timeline::from_redis_text(r_msg.timeline_txt, cache, namespace)
-//         .expect("TODO and handle timelines we skip");
-//     let event: Event = serde_json::from_str(r_msg.event_txt).expect("TODO");
-
-//     for msg_queue in msg_queues.values_mut() {
-//         if msg_queue.timeline == timeline {
-//             msg_queue.messages.push_back(event.clone());
-//         }
-//     }
-
-//     Ok(r_msg.leftover_input)
-// }
