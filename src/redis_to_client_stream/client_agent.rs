@@ -18,6 +18,7 @@
 use super::receiver::Receiver;
 use crate::{
     config,
+    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream::Public, Subscription, Timeline},
 };
@@ -26,7 +27,6 @@ use futures::{
     Poll,
 };
 use std::sync::{Arc, Mutex};
-use tokio::io::Error;
 use uuid::Uuid;
 
 /// Struct for managing all Redis streams.
@@ -82,7 +82,7 @@ impl ClientAgent {
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
     type Item = Event;
-    type Error = Error;
+    type Error = RedisParseErr;
 
     /// Checks for any new messages that should be sent to the client.
     ///

@@ -1,60 +1,46 @@
-use criterion::black_box;
-use criterion::criterion_group;
-use criterion::criterion_main;
-use criterion::Criterion;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use flodgatt::{
+    messages::Event,
+    parse_client_request::{Content::*, Reach::*, Stream::*, Timeline},
+    redis_to_client_stream::redis_msg::{RedisMsg, RedisParseOutput},
+};
+use lru::LruCache;
+use std::convert::TryFrom;
 
-/// Parse using Flodgatt's current functions
-mod flodgatt_parse_event {
-    use flodgatt::{
-        messages::Event,
-        parse_client_request::Timeline,
-        redis_to_client_stream::{process_messages, MessageQueues, MsgQueue},
-    };
-    use lru::LruCache;
-    use std::collections::HashMap;
-    use uuid::Uuid;
-
-    /// One-time setup, not included in testing time.
-    pub fn setup() -> (LruCache<String, i64>, MessageQueues, Uuid, Timeline) {
-        let mut cache: LruCache<String, i64> = LruCache::new(1000);
-        let mut queues_map = HashMap::new();
-        let id = Uuid::default();
-        let timeline =
-            Timeline::from_redis_raw_timeline("timeline:1", &mut cache, &None).expect("In test");
-        queues_map.insert(id, MsgQueue::new(timeline));
-        let queues = MessageQueues(queues_map);
-        (cache, queues, id, timeline)
-    }
-
-    pub fn to_event_struct(
-        input: String,
-        mut cache: &mut LruCache<String, i64>,
-        mut queues: &mut MessageQueues,
-        id: Uuid,
-        timeline: Timeline,
-    ) -> Event {
-        process_messages(&input, &mut cache, &mut None, &mut queues);
-        queues
-            .oldest_msg_in_target_queue(id, timeline)
-            .expect("In test")
+fn parse_long_redis_input<'a>(input: &'a str) -> RedisMsg<'a> {
+    if let RedisParseOutput::Msg(msg) = RedisParseOutput::try_from(input).unwrap() {
+        assert_eq!(msg.timeline_txt, "timeline:1");
+        msg
+    } else {
+        panic!()
     }
 }
 
+fn parse_to_timeline(msg: RedisMsg) -> Timeline {
+    let tl = Timeline::from_redis_text(msg.timeline_txt, &mut LruCache::new(1000), &None).unwrap();
+    assert_eq!(tl, Timeline(User(1), Federated, All));
+    tl
+}
+
+fn parse_to_event(msg: RedisMsg) -> Event {
+    serde_json::from_str(msg.event_txt).unwrap()
+}
+
 fn criterion_benchmark(c: &mut Criterion) {
-    let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS.to_string();
+    let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS;
     let mut group = c.benchmark_group("Parse redis RESP array");
 
-    let (mut cache, mut queues, id, timeline) = flodgatt_parse_event::setup();
-    group.bench_function("parse to Event using Flodgatt functions", |b| {
-        b.iter(|| {
-            black_box(flodgatt_parse_event::to_event_struct(
-                black_box(input.clone()),
-                black_box(&mut cache),
-                black_box(&mut queues),
-                black_box(id),
-                black_box(timeline),
-            ))
-        })
+    group.bench_function("parse redis input to RedisMsg", |b| {
+        b.iter(|| black_box(parse_long_redis_input(input)))
+    });
+
+    let msg = parse_long_redis_input(input);
+    group.bench_function("parse RedisMsg to Timeline", |b| {
+        b.iter(|| black_box(parse_to_timeline(msg.clone())))
+    });
+
+    group.bench_function("parse RedisMsg to Event", |b| {
+        b.iter(|| black_box(parse_to_event(msg.clone())))
     });
 }
 

@@ -10,7 +10,7 @@ macro_rules! pubsub_cmd {
         let namespace = $self.redis_namespace.clone();
 
         $self
-            .pubsub_connection
+            .primary
             .write_all(&redis_cmd::pubsub($cmd, $tl, namespace.clone()))
             .expect("Can send command to Redis");
         // Because we keep track of the number of clients subscribed to a channel on our end,
@@ -21,7 +21,7 @@ macro_rules! pubsub_cmd {
             _ => panic!("Given unacceptable PUBSUB command"),
         };
         $self
-            .secondary_redis_connection
+            .secondary
             .write_all(&redis_cmd::set(
                 format!("subscribed:{}", $tl),
                 subscription_new_number,
@@ -29,7 +29,7 @@ macro_rules! pubsub_cmd {
             ))
             .expect("Can set Redis");
 
-        log::info!("Now subscribed to: {:#?}", $self.msg_queues);
+        // TODO: re-enable info logging >>>   log::info!("Now subscribed to: {:#?}", $self.msg_queues);
     }};
 }
 /// Send a `SUBSCRIBE` or `UNSUBSCRIBE` command to a specific timeline
