@@ -109,6 +109,7 @@ impl Subscription {
         .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
         .boxed()
     }
+
     fn from_query(q: Query, pool: PgPool, whitelist_mode: bool) -> Result<Self, Rejection> {
         let user = match q.access_token.clone() {
             Some(token) => pool.clone().select_user(&token)?,
@@ -220,97 +221,8 @@ impl Timeline {
             // Other endpoints don't exist:
             [..] => Err(TimelineErr::InvalidInput)?,
         })
-        // let (stream, reach, content) = if let Some(ns) = namespace {
-        //     match timeline_slice {
-        //         [n, "timeline", "public"] if n == ns => (Public, Federated, All),
-        //         [_, "timeline", "public"]
-        //          | ["timeline", "public"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "public", "local"] if ns == n => (Public, Local, All),
-        //         [_, "timeline", "public", "local"]
-        //          | ["timeline", "public", "local"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "public", "media"] if ns == n => (Public, Federated, Media),
-        //         [_, "timeline", "public", "media"]
-        //          | ["timeline", "public", "media"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "public", "local", "media"] if ns == n => (Public, Local, Media),
-        //         [_, "timeline", "public", "local", "media"]
-        //          | ["timeline", "public", "local", "media"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "hashtag", tag_name] if ns == n => {
-        //             let tag_id = *cache
-        //                 .get(&tag_name.to_string())
-        //                 .unwrap_or_else(|| log_fatal!("No cached id for `{}`", tag_name));
-        //             (Hashtag(tag_id), Federated, All)
-        //         }
-        //         [_, "timeline", "hashtag", _tag]
-        //          | ["timeline", "hashtag", _tag] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "hashtag", _tag, "local"] if ns == n => (Hashtag(0), Local, All),
-        //         [_, "timeline", "hashtag", _tag, "local"]
-        //          | ["timeline", "hashtag", _tag, "local"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", id] if ns == n => (User(id.parse().unwrap()), Federated, All),
-        //         [_, "timeline", _id]
-        //          | ["timeline", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", id, "notification"] if ns == n =>
-        //             (User(id.parse()?), Federated, Notification),
-
-        //         [_, "timeline", _id, "notification"]
-        //          | ["timeline", _id, "notification"] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "list", id] if ns == n => (List(id.parse()?), Federated, All),
-        //         [_, "timeline", "list", _id]
-        //          | ["timeline", "list", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         [n, "timeline", "direct", id] if ns == n => (Direct(id.parse()?), Federated, All),
-        //         [_, "timeline", "direct", _id]
-        //          | ["timeline", "direct", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         [..] => log_fatal!("Unexpected channel from Redis: {:?}", timeline_slice),
-        //     }
-        // } else {
-        //     match timeline_slice {
-        //         ["timeline", "public"] => (Public, Federated, All),
-        //         [_, "timeline", "public"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "public", "local"] => (Public, Local, All),
-        //         [_, "timeline", "public", "local"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "public", "media"] => (Public, Federated, Media),
-
-        //         [_, "timeline", "public", "media"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "public", "local", "media"] => (Public, Local, Media),
-        //         [_, "timeline", "public", "local", "media"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "hashtag", _tag] => (Hashtag(0), Federated, All),
-        //         [_, "timeline", "hashtag", _tag] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "hashtag", _tag, "local"] => (Hashtag(0), Local, All),
-        //         [_, "timeline", "hashtag", _tag, "local"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", id] => (User(id.parse().unwrap()), Federated, All),
-        //         [_, "timeline", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", id, "notification"] => {
-        //             (User(id.parse().unwrap()), Federated, Notification)
-        //         }
-        //         [_, "timeline", _id, "notification"] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "list", id] => (List(id.parse().unwrap()), Federated, All),
-        //         [_, "timeline", "list", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         ["timeline", "direct", id] => (Direct(id.parse().unwrap()), Federated, All),
-        //         [_, "timeline", "direct", _id] => Err(RedisNamespaceMismatch)?,
-
-        //         // Other endpoints don't exist:
-        //         [..] => Err(TimelineErr::InvalidInput)?,
-        //     }
-        // };
     }
+
     fn from_query_and_user(q: &Query, user: &UserData, pool: PgPool) -> Result<Self, Rejection> {
         use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
         let id_from_hashtag = || pool.clone().select_hashtag_id(&q.hashtag);
@@ -353,6 +265,7 @@ impl Timeline {
         })
     }
 }
+
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub enum Stream {
     User(i64),
@@ -362,11 +275,13 @@ pub enum Stream {
     Public,
     Unset,
 }
+
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub enum Reach {
     Local,
     Federated,
 }
+
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub enum Content {
     All,

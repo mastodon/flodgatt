@@ -107,19 +107,7 @@ LIMIT 1",
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocked_users(self, user_id: i64) -> HashSet<i64> {
-        //     "
-        // SELECT
-        //    1
-        //    FROM blocks
-        //    WHERE (account_id = $1 AND target_account_id IN (${placeholders(targetAccountIds, 2)}))
-        //    OR (account_id = $2 AND target_account_id = $1)
-        // UNION SELECT
-        //    1
-        //    FROM mutes
-        //    WHERE account_id = $1 AND target_account_id IN (${placeholders(targetAccountIds, 2)})`
-        // , [req.accountId, unpackedPayload.account.id].concat(targetAccountIds)),`"
-        self
-            .0
+        self.0
             .get()
             .unwrap()
             .query(
@@ -142,8 +130,7 @@ UNION SELECT target_account_id
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocking_users(self, user_id: i64) -> HashSet<i64> {
-        self
-            .0
+        self.0
             .get()
             .unwrap()
             .query(
@@ -164,8 +151,7 @@ SELECT account_id
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocked_domains(self, user_id: i64) -> HashSet<String> {
-        self
-            .0
+        self.0
             .get()
             .unwrap()
             .query(
