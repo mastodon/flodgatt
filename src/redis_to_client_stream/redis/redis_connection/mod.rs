@@ -2,11 +2,12 @@ mod err;
 pub use err::RedisConnErr;
 
 use super::super::receiver::ReceiverErr;
-use super::{
-    redis_cmd,
-    redis_msg::{RedisParseErr, RedisParseOutput},
+use super::redis_msg::{RedisParseErr, RedisParseOutput};
+use crate::{
+    config::RedisConfig,
+    messages::Event,
+    parse_client_request::{Stream, Timeline},
 };
-use crate::{config::RedisConfig, messages::Event, parse_client_request::Timeline, pubsub_cmd};
 
 use std::{
     convert::TryFrom,
@@ -22,29 +23,27 @@ use lru::LruCache;
 #[derive(Debug)]
 pub struct RedisConn {
     primary: TcpStream,
-    //    secondary: TcpStream,
+    secondary: TcpStream,
     redis_poll_interval: Duration,
     redis_polled_at: Instant,
     redis_namespace: Option<String>,
-    cache: LruCache<String, i64>,
+    tag_id_cache: LruCache<String, i64>,
+    tag_name_cache: LruCache<i64, String>,
     redis_input: Vec<u8>,
 }
 
 impl RedisConn {
     pub fn new(redis_cfg: RedisConfig) -> Result<Self, RedisConnErr> {
         let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
-        let password = redis_cfg.password.as_ref();
-
-        let primary_conn = Self::new_connection(&addr, &password)?;
-
-        primary_conn
-            .set_nonblocking(true)
+        let conn = Self::new_connection(&addr, &redis_cfg.password.as_ref())?;
+        conn.set_nonblocking(true)
             .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
 
         Ok(Self {
-            primary: primary_conn,
-            //          secondary: Self::new_connection(&addr, &password)?,
-            cache: LruCache::new(1000),
+            primary: conn,
+            secondary: Self::new_connection(&addr, &redis_cfg.password.as_ref())?,
+            tag_id_cache: LruCache::new(1000),
+            tag_name_cache: LruCache::new(1000),
             redis_namespace: redis_cfg.namespace.clone(),
             redis_poll_interval: *redis_cfg.polling_interval,
             redis_input: Vec::new(),
@@ -75,13 +74,13 @@ impl RedisConn {
             Ok(Msg(msg)) => match &self.redis_namespace {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
                     let trimmed_tl_txt = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
-                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.cache)?;
+                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
                     let event: Event = serde_json::from_str(msg.event_txt)?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 None => {
                     let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
-                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.cache)?;
+                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
                     let event: Event = serde_json::from_str(msg.event_txt)?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
@@ -97,14 +96,8 @@ impl RedisConn {
     }
 
     pub fn update_cache(&mut self, hashtag: String, id: i64) {
-        self.cache.put(hashtag, id);
-    }
-
-    pub fn send_unsubscribe_cmd(&mut self, timeline: &str) {
-        pubsub_cmd!("unsubscribe", self, timeline);
-    }
-    pub fn send_subscribe_cmd(&mut self, timeline: &str) {
-        pubsub_cmd!("subscribe", self, timeline);
+        self.tag_id_cache.put(hashtag.clone(), id);
+        self.tag_name_cache.put(id, hashtag);
     }
 
     fn new_connection(addr: &String, pass: &Option<&String>) -> Result<TcpStream, RedisConnErr> {
@@ -123,7 +116,7 @@ impl RedisConn {
         }
     }
     fn auth_connection(conn: &mut TcpStream, addr: &str, pass: &str) -> Result<(), RedisConnErr> {
-        conn.write_all(&redis_cmd::cmd("auth", pass))
+        conn.write_all(&format!("*2\r\n$4\r\nauth\r\n${}\r\n{}\r\n", pass.len(), pass).as_bytes())
             .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
         let mut buffer = vec![0u8; 5];
         conn.read_exact(&mut buffer)
@@ -150,4 +143,35 @@ impl RedisConn {
             _ => Err(RedisConnErr::UnknownRedisErr(reply.to_string())),
         }
     }
+
+    pub fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<(), RedisConnErr> {
+        let hashtag = match timeline {
+            Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
+            _non_hashtag_timeline => None,
+        };
+        let tl = timeline.to_redis_raw_timeline(hashtag);
+
+        let (primary_cmd, secondary_cmd) = match cmd {
+            RedisCmd::Subscribe => (
+                format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),
+                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n1\r\n", tl.len(), tl),
+            ),
+            RedisCmd::Unsubscribe => (
+                format!("*2\r\n$11\r\nunsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),
+                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n0\r\n", tl.len(), tl),
+            ),
+        };
+        self.secondary
+            .write_all(&primary_cmd.as_bytes())
+            .expect("TODO");
+        self.secondary
+            .write_all(&secondary_cmd.as_bytes())
+            .expect("TODO");
+        Ok(())
+    }
+}
+
+pub enum RedisCmd {
+    Subscribe,
+    Unsubscribe,
 }

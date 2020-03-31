@@ -7,7 +7,7 @@ mod message_queues;
 pub use err::ReceiverErr;
 pub use message_queues::{MessageQueues, MsgQueue};
 
-use super::redis::RedisConn;
+use super::redis::{redis_connection::RedisCmd, RedisConn};
 
 use crate::{
     config,
@@ -16,7 +16,6 @@ use crate::{
 };
 
 use futures::{Async, Poll};
-use lru::LruCache;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -26,7 +25,7 @@ pub struct Receiver {
     redis_connection: RedisConn,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
-    hashtag_cache: LruCache<i64, String>,
+    //    hashtag_cache: LruCache<i64, String>,
     // TODO: eventually, it might make sense to have Mastodon publish to timelines with
     //       the tag number instead of the tag name.  This would save us from dealing
     //       with a cache here and would be consistent with how lists/users are handled.
@@ -42,7 +41,6 @@ impl Receiver {
             redis_connection,
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
-            hashtag_cache: LruCache::new(1000),
             // should this be a run-time option?
         }
     }
@@ -55,7 +53,6 @@ impl Receiver {
     /// comes under management for the first time.
     pub fn manage_new_timeline(&mut self, id: Uuid, tl: Timeline, hashtag: Option<String>) {
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (hashtag, tl) {
-            self.hashtag_cache.put(id, hashtag.clone());
             self.redis_connection.update_cache(hashtag, id);
         };
 
@@ -111,10 +108,6 @@ impl Receiver {
         // Record the lower number of clients subscribed to that channel
         for change in timelines_to_modify {
             let timeline = change.timeline;
-            let hashtag = match timeline {
-                Timeline(Stream::Hashtag(id), _, _) => self.hashtag_cache.get(&id),
-                _non_hashtag_timeline => None,
-            };
 
             let count_of_subscribed_clients = self
                 .clients_per_timeline
@@ -123,12 +116,15 @@ impl Receiver {
                 .or_insert_with(|| 1);
 
             // If no clients, unsubscribe from the channel
+            use RedisCmd::*;
             if *count_of_subscribed_clients <= 0 {
                 self.redis_connection
-                    .send_unsubscribe_cmd(&timeline.to_redis_raw_timeline(hashtag));
+                    .send_cmd(Unsubscribe, &timeline)
+                    .expect("TODO");
             } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
                 self.redis_connection
-                    .send_subscribe_cmd(&timeline.to_redis_raw_timeline(hashtag));
+                    .send_cmd(Subscribe, &timeline)
+                    .expect("TODO");
             }
         }
     }
