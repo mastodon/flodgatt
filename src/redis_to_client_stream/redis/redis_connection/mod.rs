@@ -1,11 +1,14 @@
-use super::{redis_cmd, redis_msg::RedisParseOutput};
+mod err;
+
+use super::{
+    redis_cmd,
+    redis_msg::{RedisParseErr, RedisParseOutput},
+};
 use crate::{
-    config::RedisConfig,
-    err::{self, RedisParseErr},
-    messages::Event,
-    parse_client_request::Timeline,
+    config::RedisConfig, err::die_with_msg, messages::Event, parse_client_request::Timeline,
     pubsub_cmd,
 };
+pub use err::RedisConnErr;
 
 use futures::{Async, Poll};
 use lru::LruCache;
@@ -33,7 +36,7 @@ impl RedisConn {
     pub fn new(redis_cfg: RedisConfig) -> Self {
         let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
         let conn_err = |e| {
-            err::die_with_msg(format!(
+            die_with_msg(format!(
                 "Could not connect to Redis at {}:{}.\n             Error detail: {}",
                 *redis_cfg.host, *redis_cfg.port, e,
             ))
@@ -69,7 +72,7 @@ impl RedisConn {
         }
     }
 
-    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, RedisParseErr> {
+    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, RedisConnErr> {
         let mut buffer = vec![0u8; 6000];
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             if let Ok(Async::Ready(bytes_read)) = self.poll_read(&mut buffer) {
@@ -110,7 +113,7 @@ impl RedisConn {
             },
             Ok(NonMsg(leftover)) => (Ok(Ready(None)), leftover),
             Err(RedisParseErr::Incomplete) => (Ok(NotReady), input),
-            Err(other) => (Err(other), input),
+            Err(other_parse_err) => (Err(RedisConnErr::RedisParseErr(other_parse_err)), input),
         };
         self.redis_input.extend_from_slice(leftover.as_bytes());
         self.redis_input.extend_from_slice(invalid_bytes);
@@ -135,7 +138,7 @@ fn send_password(mut conn: net::TcpStream, password: &str) -> net::TcpStream {
     conn.read_exact(&mut buffer).unwrap();
     let reply = String::from_utf8(buffer.to_vec()).unwrap();
     if reply != "+OK\r\n" {
-        err::die_with_msg(format!(
+        die_with_msg(format!(
             r"Incorrect Redis password.  You supplied `{}`.
              Please supply correct password with REDIS_PASSWORD environmental variable.",
             password,
@@ -156,16 +159,16 @@ fn send_test_ping(mut conn: net::TcpStream) -> net::TcpStream {
     let reply = String::from_utf8(buffer.to_vec()).unwrap();
     match reply.as_str() {
         "+PONG\r\n" => (),
-        "-NOAUTH" => err::die_with_msg(
+        "-NOAUTH" => die_with_msg(
             r"Invalid authentication for Redis.
              Redis reports that it needs a password, but you did not provide one.
              You can set a password with the REDIS_PASSWORD environmental variable.",
         ),
-        "HTTP/1." => err::die_with_msg(
+        "HTTP/1." => die_with_msg(
             r"The server at REDIS_HOST and REDIS_PORT is not a Redis server.
              Please update the REDIS_HOST and/or REDIS_PORT environmental variables.",
         ),
-        _ => err::die_with_msg(format!(
+        _ => die_with_msg(format!(
             "Could not connect to Redis for unknown reason.  Expected `+PONG` reply but got {}",
             reply
         )),

@@ -15,10 +15,9 @@
 //! Because `StreamManagers` are lightweight data structures that do not directly
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
-use super::receiver::Receiver;
+use super::{receiver::Receiver, redis::RedisConnErr};
 use crate::{
     config,
-    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream::Public, Subscription, Timeline},
 };
@@ -82,7 +81,7 @@ impl ClientAgent {
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
     type Item = Event;
-    type Error = RedisParseErr;
+    type Error = RedisConnErr;
 
     /// Checks for any new messages that should be sent to the client.
     ///
@@ -98,8 +97,7 @@ impl futures::stream::Stream for ClientAgent {
                 .receiver
                 .lock()
                 .expect("ClientAgent: No other thread panic");
-            receiver.configure_for_polling(self.id, self.subscription.timeline);
-            receiver.poll()
+            receiver.poll_for(self.id, self.subscription.timeline)
         };
 
         let allowed_langs = &self.subscription.allowed_langs;
@@ -107,6 +105,7 @@ impl futures::stream::Stream for ClientAgent {
         let blocking_users = &self.subscription.blocks.blocking_users;
         let blocked_domains = &self.subscription.blocks.blocked_domains;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
+
         use Event::*;
         match result {
             Ok(Async::Ready(Some(event))) => match event {

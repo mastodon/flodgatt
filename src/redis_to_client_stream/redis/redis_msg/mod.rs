@@ -20,8 +20,11 @@
 //! three characters, the second is a bulk string with ten characters, and the third is a
 //! bulk string with 1,386 characters.
 
+mod err;
+pub use err::RedisParseErr;
+
 use self::RedisParseOutput::*;
-use crate::err::RedisParseErr;
+
 use std::{
     convert::{TryFrom, TryInto},
     str,
@@ -93,10 +96,7 @@ fn after_newline_at<'a>(s: &'a str, start: usize) -> RedisParser<'a, &'a str> {
 }
 
 fn parse_number_at<'a>(s: &'a str) -> RedisParser<(usize, &'a str)> {
-    let len = s
-        .chars()
-        .position(|c| !c.is_numeric())
-        .ok_or(NonNumericInput)?;
+    let len = s.chars().position(|c| !c.is_numeric()).ok_or(Incomplete)?;
     Ok((s[..len].parse()?, after_newline_at(s, len)?))
 }
 

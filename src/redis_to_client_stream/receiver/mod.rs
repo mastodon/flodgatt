@@ -5,24 +5,23 @@ mod message_queues;
 
 pub use message_queues::{MessageQueues, MsgQueue};
 
+use super::redis::{RedisConn, RedisConnErr};
+
 use crate::{
     config,
-    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream, Timeline},
-    redis_to_client_stream::redis::RedisConn,
 };
+
 use futures::{Async, Poll};
 use lru::LruCache;
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
 pub struct Receiver {
     redis_connection: RedisConn,
-    timeline: Timeline,
-    manager_id: Uuid,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
     hashtag_cache: LruCache<i64, String>,
@@ -39,8 +38,6 @@ impl Receiver {
 
         Self {
             redis_connection,
-            timeline: Timeline::empty(),
-            manager_id: Uuid::default(),
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
             hashtag_cache: LruCache::new(1000),
@@ -55,7 +52,6 @@ impl Receiver {
     /// so Redis PubSub subscriptions are only updated when a new timeline
     /// comes under management for the first time.
     pub fn manage_new_timeline(&mut self, id: Uuid, tl: Timeline, hashtag: Option<String>) {
-        self.timeline = tl;
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (hashtag, tl) {
             self.hashtag_cache.put(id, hashtag.clone());
             self.redis_connection.update_cache(hashtag, id);
@@ -65,18 +61,49 @@ impl Receiver {
         self.subscribe_or_unsubscribe_as_needed(tl);
     }
 
-    /// Set the `Receiver`'s manager_id and target_timeline fields to the appropriate
-    /// value to be polled by the current `StreamManager`.
-    pub fn configure_for_polling(&mut self, manager_id: Uuid, timeline: Timeline) {
-        self.manager_id = manager_id;
-        self.timeline = timeline;
+    /// Returns the oldest message in the `ClientAgent`'s queue (if any).
+    ///
+    /// Note: This method does **not** poll Redis every time, because polling
+    /// Redis is significantly more time consuming that simply returning the
+    /// message already in a queue.  Thus, we only poll Redis if it has not
+    /// been polled lately.
+    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, RedisConnErr> {
+        loop {
+            match self.redis_connection.poll_redis() {
+                Ok(Async::Ready(Some((timeline, event)))) => self
+                    .msg_queues
+                    .values_mut()
+                    .filter(|msg_queue| msg_queue.timeline == timeline)
+                    .for_each(|msg_queue| {
+                        msg_queue.messages.push_back(event.clone());
+                    }),
+                Ok(Async::NotReady) => break,
+                Ok(Async::Ready(None)) => (),
+                Err(err) => Err(err)?,
+            }
+        }
+
+        // If the `msg_queue` being polled has any new messages, return the first (oldest) one
+        match self.msg_queues.get_mut(&id) {
+            Some(msg_q) => {
+                msg_q.update_polled_at_time();
+                match msg_q.messages.pop_front() {
+                    Some(event) => Ok(Async::Ready(Some(event))),
+                    None => Ok(Async::NotReady),
+                }
+            }
+            None => {
+                log::error!("Polled a MsgQueue that had not been set up.  Setting it up now.");
+                self.msg_queues.insert(id, MsgQueue::new(timeline));
+                Ok(Async::NotReady)
+            }
+        }
     }
 
     /// Drop any PubSub subscriptions that don't have active clients and check
     /// that there's a subscription to the current one.  If there isn't, then
     /// subscribe to it.
     fn subscribe_or_unsubscribe_as_needed(&mut self, timeline: Timeline) {
-        let start_time = Instant::now();
         let timelines_to_modify = self.msg_queues.calculate_timelines_to_add_or_drop(timeline);
 
         // Record the lower number of clients subscribed to that channel
@@ -101,48 +128,6 @@ impl Receiver {
                 self.redis_connection
                     .send_subscribe_cmd(&timeline.to_redis_raw_timeline(hashtag));
             }
-        }
-        if start_time.elapsed().as_millis() > 1 {
-            log::warn!("Sending cmd to Redis took: {:?}", start_time.elapsed());
-        };
-    }
-}
-
-/// The stream that the ClientAgent polls to learn about new messages.
-impl futures::stream::Stream for Receiver {
-    type Item = Event;
-    type Error = RedisParseErr;
-
-    /// Returns the oldest message in the `ClientAgent`'s queue (if any).
-    ///
-    /// Note: This method does **not** poll Redis every time, because polling
-    /// Redis is significantly more time consuming that simply returning the
-    /// message already in a queue.  Thus, we only poll Redis if it has not
-    /// been polled lately.
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let (timeline, id) = (self.timeline.clone(), self.manager_id);
-        loop {
-            match self.redis_connection.poll_redis() {
-                Ok(Async::Ready(Some((timeline, event)))) => self
-                    .msg_queues
-                    .values_mut()
-                    .filter(|msg_queue| msg_queue.timeline == timeline)
-                    .for_each(|msg_queue| {
-                        msg_queue.messages.push_back(event.clone());
-                    }),
-                Ok(Async::NotReady) => break,
-                Ok(Async::Ready(None)) => (),
-                Err(err) => Err(err)?,
-            }
-        }
-
-        // Record current time as last polled time
-        self.msg_queues.update_time_for_target_queue(id);
-
-        // If the `msg_queue` being polled has any new messages, return the first (oldest) one
-        match self.msg_queues.oldest_msg_in_target_queue(id, timeline) {
-            Some(value) => Ok(Async::Ready(Some(value))),
-            _ => Ok(Async::NotReady),
         }
     }
 }
