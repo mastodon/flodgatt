@@ -131,7 +131,7 @@ impl futures::stream::Stream for ClientAgent {
             },
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
-            Err(e) => Err(e),
+            Err(_e) => todo!("Handle err gracefully"),
         }
     }
 }

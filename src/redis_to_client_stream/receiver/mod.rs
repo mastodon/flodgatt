@@ -1,11 +1,13 @@
 //! Receives data from Redis, sorts it by `ClientAgent`, and stores it until
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
+mod err;
 mod message_queues;
 
+pub use err::ReceiverErr;
 pub use message_queues::{MessageQueues, MsgQueue};
 
-use super::redis::{RedisConn, RedisConnErr};
+use super::redis::RedisConn;
 
 use crate::{
     config,
@@ -34,7 +36,7 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn new(redis_cfg: config::RedisConfig) -> Self {
-        let redis_connection = RedisConn::new(redis_cfg);
+        let redis_connection = RedisConn::new(redis_cfg).expect("TODO");
 
         Self {
             redis_connection,
@@ -67,7 +69,7 @@ impl Receiver {
     /// Redis is significantly more time consuming that simply returning the
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
-    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, RedisConnErr> {
+    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, ReceiverErr> {
         loop {
             match self.redis_connection.poll_redis() {
                 Ok(Async::Ready(Some((timeline, event)))) => self

@@ -32,6 +32,7 @@ macro_rules! pubsub_cmd {
         // TODO: re-enable info logging >>>   log::info!("Now subscribed to: {:#?}", $self.msg_queues);
     }};
 }
+
 /// Send a `SUBSCRIBE` or `UNSUBSCRIBE` command to a specific timeline
 pub fn pubsub(command: impl Display, timeline: impl Display, ns: Option<String>) -> Vec<u8> {
     let arg = match ns {

@@ -1,30 +1,61 @@
-use super::super::redis_msg::RedisParseErr;
-use crate::err::TimelineErr;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum RedisConnErr {
-    TimelineErr(TimelineErr),
-    EventErr(serde_json::Error),
-    RedisParseErr(RedisParseErr),
+    ConnectionErr { addr: String, inner: std::io::Error },
+    // TODO ^^^^ better name?
+    UnknownRedisErr(String),
+    IncorrectPassword(String),
+    MissingPassword,
+    NotRedis(String),
 }
 
-impl From<serde_json::Error> for RedisConnErr {
-    fn from(error: serde_json::Error) -> Self {
-        Self::EventErr(error)
+impl RedisConnErr {
+    pub fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
+        Self::ConnectionErr {
+            addr: address.as_ref().to_string(),
+            inner,
+        }
     }
 }
 
-impl From<TimelineErr> for RedisConnErr {
-    fn from(e: TimelineErr) -> Self {
-        Self::TimelineErr(e)
+impl fmt::Display for RedisConnErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        use RedisConnErr::*;
+        let msg = match self {
+            ConnectionErr { addr, inner } => format!(
+                "Error connecting to Redis at {}.\n\
+                 Connection Error: {}",
+                addr, inner
+            ),
+            UnknownRedisErr(unexpected_reply) => format!(
+                "Could not connect to Redis for an unknown reason.  Expected `+PONG` reply but got `{}`",
+                unexpected_reply
+            ),
+            IncorrectPassword(attempted_password) => format!(
+                "Incorrect Redis password.  You supplied `{}`.\n \
+                 Please supply correct password with REDIS_PASSWORD environmental variable.",
+                attempted_password
+            ),
+            MissingPassword => "Invalid authentication for Redis.  Redis is configured to require \
+                                a password, but you did not provide one. \n\
+                                Set a password using the REDIS_PASSWORD environmental variable."
+                .to_string(),
+            NotRedis(addr) => format!(
+                "The server at {} is not a Redis server.  Please update the REDIS_HOST and/or \
+                 REDIS_PORT environmental variables and try again.",
+                addr
+            ),
+        };
+        write!(f, "{}", msg)
     }
 }
 
-impl From<RedisParseErr> for RedisConnErr {
-    fn from(e: RedisParseErr) -> Self {
-        Self::RedisParseErr(e)
-    }
-}
+// die_with_msg(format!(
+//           r"Incorrect Redis password.  You supplied `{}`.
+//            Please supply correct password with REDIS_PASSWORD environmental variable.",
+//           password,
+//       ))
 
 // impl fmt::Display for RedisParseErr {
 //     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
