@@ -11,6 +11,7 @@ use crate::err::TimelineErr;
 use crate::log_fatal;
 use lru::LruCache;
 use std::collections::HashSet;
+use uuid::Uuid;
 use warp::reject::Rejection;
 
 use super::query;
@@ -50,6 +51,7 @@ macro_rules! parse_sse_query {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subscription {
+    pub id: Uuid,
     pub timeline: Timeline,
     pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
@@ -60,6 +62,7 @@ pub struct Subscription {
 impl Default for Subscription {
     fn default() -> Self {
         Self {
+            id: Uuid::new_v4(),
             timeline: Timeline(Stream::Unset, Reach::Local, Content::Notification),
             allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
@@ -123,12 +126,13 @@ impl Subscription {
         };
 
         Ok(Subscription {
+            id: Uuid::new_v4(),
             timeline,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
                 blocking_users: pool.clone().select_blocking_users(user.id),
                 blocked_users: pool.clone().select_blocked_users(user.id),
-                blocked_domains: pool.clone().select_blocked_domains(user.id),
+                blocked_domains: pool.select_blocked_domains(user.id),
             },
             hashtag_name,
             access_token: q.access_token,

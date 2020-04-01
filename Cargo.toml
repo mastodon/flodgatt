@@ -1,7 +1,7 @@
 [package]
 name = "flodgatt"
 description = "A blazingly fast drop-in replacement for the Mastodon streaming api server"
-version = "0.6.6"
+version = "0.6.7"
 authors = ["Daniel Long Sockwell <daniel@codesections.com", "Julian Laubstein <contact@julianlaubstein.de>"]
 edition = "2018"
 

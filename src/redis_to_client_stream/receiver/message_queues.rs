@@ -1,5 +1,6 @@
 use crate::messages::Event;
 use crate::parse_client_request::Timeline;
+
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
@@ -13,22 +14,6 @@ pub struct MsgQueue {
     pub messages: VecDeque<Event>,
     last_polled_at: Instant,
 }
-impl fmt::Debug for MsgQueue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "\
-MsgQueue {{
-    timeline: {:?},
-    messages: {:?},
-    last_polled_at: {:?},
-}}",
-            self.timeline,
-            self.messages,
-            self.last_polled_at.elapsed(),
-        )
-    }
-}
 
 impl MsgQueue {
     pub fn new(timeline: Timeline) -> Self {
@@ -38,26 +23,15 @@ impl MsgQueue {
             timeline,
         }
     }
+    pub fn update_polled_at_time(&mut self) {
+        self.last_polled_at = Instant::now();
+    }
 }
 
 #[derive(Debug)]
 pub struct MessageQueues(pub HashMap<Uuid, MsgQueue>);
 
 impl MessageQueues {
-    pub fn update_time_for_target_queue(&mut self, id: Uuid) {
-        self.entry(id)
-            .and_modify(|queue| queue.last_polled_at = Instant::now());
-    }
-
-    pub fn oldest_msg_in_target_queue(&mut self, id: Uuid, timeline: Timeline) -> Option<Event> {
-        let msg_qs_entry = self.entry(id);
-        let mut inserted_tl = false;
-        let msg_q = msg_qs_entry.or_insert_with(|| {
-            inserted_tl = true;
-            MsgQueue::new(timeline)
-        });
-        msg_q.messages.pop_front()
-    }
     pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: Timeline) -> Vec<Change> {
         let mut timelines_to_modify = Vec::new();
 
@@ -83,6 +57,23 @@ impl MessageQueues {
 pub struct Change {
     pub timeline: Timeline,
     pub in_subscriber_number: i32,
+}
+
+impl fmt::Debug for MsgQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "\
+MsgQueue {{
+    timeline: {:?},
+    messages: {:?},
+    last_polled_at: {:?} ago,
+}}",
+            self.timeline,
+            self.messages,
+            self.last_polled_at.elapsed(),
+        )
+    }
 }
 
 impl std::ops::Deref for MessageQueues {

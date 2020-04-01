@@ -15,10 +15,8 @@
 //! Because `StreamManagers` are lightweight data structures that do not directly
 //! communicate with Redis, it we create a new `ClientAgent` for
 //! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
-use super::receiver::Receiver;
+use super::receiver::{Receiver, ReceiverErr};
 use crate::{
-    config,
-    err::RedisParseErr,
     messages::Event,
     parse_client_request::{Stream::Public, Subscription, Timeline},
 };
@@ -26,33 +24,20 @@ use futures::{
     Async::{self, NotReady, Ready},
     Poll,
 };
-use std::sync::{Arc, Mutex};
-use uuid::Uuid;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Struct for managing all Redis streams.
 #[derive(Clone, Debug)]
 pub struct ClientAgent {
     receiver: Arc<Mutex<Receiver>>,
-    id: Uuid,
     pub subscription: Subscription,
 }
 
 impl ClientAgent {
-    /// Create a new `ClientAgent` with no shared data.
-    pub fn blank(redis_cfg: config::RedisConfig) -> Self {
+    pub fn new(receiver: Arc<Mutex<Receiver>>, subscription: &Subscription) -> Self {
         ClientAgent {
-            receiver: Arc::new(Mutex::new(Receiver::new(redis_cfg))),
-            id: Uuid::default(),
-            subscription: Subscription::default(),
-        }
-    }
-
-    /// Clones the `ClientAgent`, sharing the `Receiver`.
-    pub fn clone_with_shared_receiver(&self) -> Self {
-        Self {
-            receiver: self.receiver.clone(),
-            id: self.id,
-            subscription: self.subscription.clone(),
+            receiver,
+            subscription: subscription.clone(),
         }
     }
 
@@ -64,25 +49,32 @@ impl ClientAgent {
     /// a different user, the `Receiver` is responsible for figuring
     /// that out and avoiding duplicated connections.  Thus, it is safe to
     /// use this method for each new client connection.
-    pub fn init_for_user(&mut self, subscription: Subscription) {
-        use std::time::Instant;
-        self.id = Uuid::new_v4();
-        self.subscription = subscription;
-        let start_time = Instant::now();
-        let mut receiver = self.receiver.lock().expect("No thread panic (stream.rs)");
-        receiver.manage_new_timeline(
-            self.id,
-            self.subscription.timeline,
-            self.subscription.hashtag_name.clone(),
-        );
-        log::info!("init_for_user had lock for: {:?}", start_time.elapsed());
+    pub fn subscribe(&mut self) {
+        let mut receiver = self.lock_receiver();
+        receiver
+            .add_subscription(&self.subscription)
+            .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e))
+    }
+
+    fn lock_receiver(&self) -> MutexGuard<Receiver> {
+        match self.receiver.lock() {
+            Ok(inner) => inner,
+            Err(e) => {
+                log::error!(
+                    "Another thread crashed: {}\n
+                     Attempting to continue, possibly with invalid data",
+                    e
+                );
+                e.into_inner()
+            }
+        }
     }
 }
 
 /// The stream that the `ClientAgent` manages.  `Poll` is the only method implemented.
 impl futures::stream::Stream for ClientAgent {
     type Item = Event;
-    type Error = RedisParseErr;
+    type Error = ReceiverErr;
 
     /// Checks for any new messages that should be sent to the client.
     ///
@@ -94,12 +86,8 @@ impl futures::stream::Stream for ClientAgent {
     /// errors from the underlying data structures.
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let result = {
-            let mut receiver = self
-                .receiver
-                .lock()
-                .expect("ClientAgent: No other thread panic");
-            receiver.configure_for_polling(self.id, self.subscription.timeline);
-            receiver.poll()
+            let mut receiver = self.lock_receiver();
+            receiver.poll_for(self.subscription.id, self.subscription.timeline)
         };
 
         let allowed_langs = &self.subscription.allowed_langs;
@@ -107,6 +95,7 @@ impl futures::stream::Stream for ClientAgent {
         let blocking_users = &self.subscription.blocks.blocking_users;
         let blocked_domains = &self.subscription.blocks.blocked_domains;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
+
         use Event::*;
         match result {
             Ok(Async::Ready(Some(event))) => match event {
