@@ -132,7 +132,7 @@ impl Subscription {
             blocks: Blocks {
                 blocking_users: pool.clone().select_blocking_users(user.id),
                 blocked_users: pool.clone().select_blocked_users(user.id),
-                blocked_domains: pool.clone().select_blocked_domains(user.id),
+                blocked_domains: pool.select_blocked_domains(user.id),
             },
             hashtag_name,
             access_token: q.access_token,

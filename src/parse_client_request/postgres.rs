@@ -83,7 +83,7 @@ LIMIT 1",
         }
     }
 
-    pub fn select_hashtag_id(self, tag_name: &String) -> Result<i64, Rejection> {
+    pub fn select_hashtag_id(self, tag_name: &str) -> Result<i64, Rejection> {
         let mut conn = self.0.get().unwrap();
         let rows = &conn
             .query(

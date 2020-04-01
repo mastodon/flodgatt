@@ -63,7 +63,7 @@ impl fmt::Display for EnvVar {
         ]
         .iter()
         {
-            if let Some(value) = self.get(&env_var.to_string()) {
+            if let Some(value) = self.get(&(*env_var).to_string()) {
                 result = format!("{}\n    {}: {}", result, env_var, value)
             }
         }

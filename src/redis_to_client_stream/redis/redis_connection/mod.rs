@@ -37,12 +37,12 @@ pub struct RedisConn {
 impl RedisConn {
     pub fn new(redis_cfg: RedisConfig) -> Result<Self> {
         let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
-        let conn = Self::new_connection(&addr, &redis_cfg.password.as_ref())?;
+        let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
         conn.set_nonblocking(true)
             .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
         let redis_conn = Self {
             primary: conn,
-            secondary: Self::new_connection(&addr, &redis_cfg.password.as_ref())?,
+            secondary: Self::new_connection(&addr, redis_cfg.password.as_ref())?,
             tag_id_cache: LruCache::new(1000),
             tag_name_cache: LruCache::new(1000),
             // TODO: eventually, it might make sense to have Mastodon publish to timelines with
@@ -53,7 +53,6 @@ impl RedisConn {
             redis_input: Vec::new(),
             redis_polled_at: Instant::now(),
         };
-
         Ok(redis_conn)
     }
 
@@ -108,7 +107,7 @@ impl RedisConn {
         self.tag_name_cache.put(id, hashtag);
     }
 
-    fn new_connection(addr: &String, pass: &Option<&String>) -> Result<TcpStream> {
+    fn new_connection(addr: &str, pass: Option<&String>) -> Result<TcpStream> {
         match TcpStream::connect(&addr) {
             Ok(mut conn) => {
                 if let Some(password) = pass {

@@ -12,7 +12,7 @@ pub struct EventStream;
 
 impl EventStream {
     /// Send a stream of replies to a WebSocket client.
-    pub fn to_ws(
+    pub fn send_to_ws(
         ws: WebSocket,
         mut client_agent: ClientAgent,
         interval: Duration,
@@ -85,7 +85,7 @@ impl EventStream {
             .map_err(move |e| log::warn!("Error sending to {:?}: {}", timeline, e))
     }
 
-    pub fn to_sse(mut client_agent: ClientAgent, sse: Sse, interval: Duration) -> impl Reply {
+    pub fn send_to_sse(mut client_agent: ClientAgent, sse: Sse, interval: Duration) -> impl Reply {
         let event_stream =
             tokio::timer::Interval::new(Instant::now(), interval).filter_map(move |_| {
                 match client_agent.poll() {

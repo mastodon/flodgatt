@@ -87,7 +87,7 @@ fn utf8_to_redis_data<'a>(s: &'a str) -> Result<(RedisData, &'a str), RedisParse
     }
 }
 
-fn after_newline_at<'a>(s: &'a str, start: usize) -> RedisParser<'a, &'a str> {
+fn after_newline_at(s: &str, start: usize) -> RedisParser<&str> {
     let s = s.get(start..).ok_or(Incomplete)?;
     if !s.starts_with("\r\n") {
         return Err(RedisParseErr::InvalidLineEnd);

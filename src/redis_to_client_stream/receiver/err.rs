@@ -1,4 +1,4 @@
-use super::super::{redis::RedisConnErr, redis_msg::RedisParseErr};
+use super::super::redis::{RedisConnErr, RedisParseErr};
 use crate::err::TimelineErr;
 
 use serde_json;

@@ -305,10 +305,11 @@ pub struct Notification {
     status: Option<Status>,
 }
 
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 enum NotificationType {
     Follow,
+    FollowRequest, // Undocumented
     Mention,
     Reblog,
     Favourite,

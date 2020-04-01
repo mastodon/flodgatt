@@ -8,7 +8,7 @@ use tokio::net::UnixListener;
 use warp::{http::StatusCode, path, ws::Ws2, Filter, Rejection};
 
 fn main() {
-    dotenv::from_filename(match env::var("ENV").ok().as_ref().map(String::as_str) {
+    dotenv::from_filename(match env::var("ENV").ok().as_deref() {
         Some("production") => ".env.production",
         Some("development") | None => ".env",
         Some(unsupported) => EnvVar::err("ENV", unsupported, "`production` or `development`"),
@@ -20,7 +20,7 @@ fn main() {
 
     let postgres_cfg = PostgresConfig::from_env(env_vars.clone());
     let redis_cfg = RedisConfig::from_env(env_vars.clone());
-    let cfg = DeploymentConfig::from_env(env_vars.clone());
+    let cfg = DeploymentConfig::from_env(env_vars);
 
     let pg_pool = PgPool::new(postgres_cfg);
 
@@ -44,15 +44,15 @@ fn main() {
                 client_agent.subscribe();
 
                 // send the updates through the SSE connection
-                EventStream::to_sse(client_agent, sse_connection_to_client, sse_interval)
+                EventStream::send_to_sse(client_agent, sse_connection_to_client, sse_interval)
             },
         )
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
-    let ws_receiver = sharable_receiver.clone();
+    let ws_receiver = sharable_receiver;
     let (ws_update_interval, whitelist_mode) = (*cfg.ws_interval, *cfg.whitelist_mode);
-    let ws_routes = Subscription::from_ws_request(pg_pool.clone(), whitelist_mode)
+    let ws_routes = Subscription::from_ws_request(pg_pool, whitelist_mode)
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
@@ -62,7 +62,9 @@ fn main() {
             // send the updates through the WS connection
             // (along with the User's access_token which is sent for security)
             (
-                ws.on_upgrade(move |s| EventStream::to_ws(s, client_agent, ws_update_interval)),
+                ws.on_upgrade(move |s| {
+                    EventStream::send_to_ws(s, client_agent, ws_update_interval)
+                }),
                 subscription.access_token.unwrap_or_else(String::new),
             )
         })
