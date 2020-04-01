@@ -1,11 +1,11 @@
 use flodgatt::{
     config::{DeploymentConfig, EnvVar, PostgresConfig, RedisConfig},
     parse_client_request::{PgPool, Subscription},
-    redis_to_client_stream::{ClientAgent, EventStream},
+    redis_to_client_stream::{ClientAgent, EventStream, Receiver},
 };
-use std::{collections::HashMap, env, fs, net, os::unix::fs::PermissionsExt};
+use std::{env, fs, net::SocketAddr, os::unix::fs::PermissionsExt};
 use tokio::net::UnixListener;
-use warp::{path, ws::Ws2, Filter};
+use warp::{http::StatusCode, path, ws::Ws2, Filter, Rejection};
 
 fn main() {
     dotenv::from_filename(match env::var("ENV").ok().as_ref().map(String::as_str) {
@@ -14,36 +14,35 @@ fn main() {
         Some(unsupported) => EnvVar::err("ENV", unsupported, "`production` or `development`"),
     })
     .ok();
-    let env_vars_map: HashMap<_, _> = dotenv::vars().collect();
-    let env_vars = EnvVar::new(env_vars_map);
+    let env_vars = EnvVar::new(dotenv::vars().collect());
     pretty_env_logger::init();
+    log::info!("Environmental variables Flodgatt received: {}", &env_vars);
 
-    log::info!(
-        "Flodgatt recognized the following environmental variables:{}",
-        env_vars.clone()
-    );
+    let postgres_cfg = PostgresConfig::from_env(env_vars.clone());
     let redis_cfg = RedisConfig::from_env(env_vars.clone());
     let cfg = DeploymentConfig::from_env(env_vars.clone());
 
-    let postgres_cfg = PostgresConfig::from_env(env_vars.clone());
     let pg_pool = PgPool::new(postgres_cfg);
 
-    let client_agent_sse = ClientAgent::blank(redis_cfg);
-    let client_agent_ws = client_agent_sse.clone_with_shared_receiver();
-
+    let sharable_receiver = Receiver::try_from(redis_cfg)
+        .unwrap_or_else(|e| {
+            log::error!("{}\nFlodgatt shutting down...", e);
+            std::process::exit(1);
+        })
+        .into_arc();
     log::info!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
+    let sse_receiver = sharable_receiver.clone();
     let (sse_interval, whitelist_mode) = (*cfg.sse_interval, *cfg.whitelist_mode);
     let sse_routes = Subscription::from_sse_query(pg_pool.clone(), whitelist_mode)
         .and(warp::sse())
         .map(
             move |subscription: Subscription, sse_connection_to_client: warp::sse::Sse| {
                 log::info!("Incoming SSE request for {:?}", subscription.timeline);
-                // Create a new ClientAgent
-                let mut client_agent = client_agent_sse.clone_with_shared_receiver();
-                // Assign ClientAgent to generate stream of updates for the user/timeline pair
-                client_agent.init_for_user(subscription);
+                let mut client_agent = ClientAgent::new(sse_receiver.clone(), &subscription);
+                client_agent.subscribe();
+
                 // send the updates through the SSE connection
                 EventStream::to_sse(client_agent, sse_connection_to_client, sse_interval)
             },
@@ -51,24 +50,20 @@ fn main() {
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
+    let ws_receiver = sharable_receiver.clone();
     let (ws_update_interval, whitelist_mode) = (*cfg.ws_interval, *cfg.whitelist_mode);
-    let websocket_routes = Subscription::from_ws_request(pg_pool.clone(), whitelist_mode)
+    let ws_routes = Subscription::from_ws_request(pg_pool.clone(), whitelist_mode)
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
+            let mut client_agent = ClientAgent::new(ws_receiver.clone(), &subscription);
+            client_agent.subscribe();
 
-            let token = subscription.access_token.clone();
-            // Create a new ClientAgent
-            let mut client_agent = client_agent_ws.clone_with_shared_receiver();
-            // Assign that agent to generate a stream of updates for the user/timeline pair
-            client_agent.init_for_user(subscription);
-            // send the updates through the WS connection (along with the User's access_token
-            // which is sent for security)
+            // send the updates through the WS connection
+            // (along with the User's access_token which is sent for security)
             (
-                ws.on_upgrade(move |socket| {
-                    EventStream::to_ws(socket, client_agent, ws_update_interval)
-                }),
-                token.unwrap_or_else(String::new),
+                ws.on_upgrade(move |s| EventStream::to_ws(s, client_agent, ws_update_interval)),
+                subscription.access_token.unwrap_or_else(String::new),
             )
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
@@ -84,33 +79,23 @@ fn main() {
         log::info!("Using Unix socket {}", socket);
         fs::remove_file(socket).unwrap_or_default();
         let incoming = UnixListener::bind(socket).unwrap().incoming();
-
         fs::set_permissions(socket, PermissionsExt::from_mode(0o666)).unwrap();
 
         warp::serve(
-            health.or(websocket_routes.or(sse_routes).with(cors).recover(
-                |rejection: warp::reject::Rejection| {
-                    let err_txt = match rejection.cause() {
-                        Some(text)
-                            if text.to_string() == "Missing request header 'authorization'" =>
-                        {
-                            "Error: Missing access token".to_string()
-                        }
-                        Some(text) => text.to_string(),
-                        None => "Error: Nonexistant endpoint".to_string(),
-                    };
-                    let json = warp::reply::json(&err_txt);
-
-                    Ok(warp::reply::with_status(
-                        json,
-                        warp::http::StatusCode::UNAUTHORIZED,
-                    ))
-                },
-            )),
+            health.or(ws_routes.or(sse_routes).with(cors).recover(|r: Rejection| {
+                let json_err = match r.cause() {
+                    Some(text) if text.to_string() == "Missing request header 'authorization'" => {
+                        warp::reply::json(&"Error: Missing access token".to_string())
+                    }
+                    Some(text) => warp::reply::json(&text.to_string()),
+                    None => warp::reply::json(&"Error: Nonexistant endpoint".to_string()),
+                };
+                Ok(warp::reply::with_status(json_err, StatusCode::UNAUTHORIZED))
+            })),
         )
         .run_incoming(incoming);
     } else {
-        let server_addr = net::SocketAddr::new(*cfg.address, cfg.port.0);
-        warp::serve(health.or(websocket_routes.or(sse_routes).with(cors))).run(server_addr);
-    }
+        let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
+        warp::serve(health.or(ws_routes.or(sse_routes).with(cors))).run(server_addr);
+    };
 }

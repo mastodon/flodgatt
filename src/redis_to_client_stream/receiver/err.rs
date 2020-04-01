@@ -2,6 +2,7 @@ use super::super::{redis::RedisConnErr, redis_msg::RedisParseErr};
 use crate::err::TimelineErr;
 
 use serde_json;
+use std::fmt;
 
 #[derive(Debug)]
 pub enum ReceiverErr {
@@ -9,6 +10,19 @@ pub enum ReceiverErr {
     EventErr(serde_json::Error),
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
+}
+
+impl fmt::Display for ReceiverErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        use ReceiverErr::*;
+        match self {
+            EventErr(inner) => write!(f, "{}", inner),
+            RedisParseErr(inner) => write!(f, "{}", inner),
+            RedisConnErr(inner) => write!(f, "{}", inner),
+            TimelineErr(inner) => write!(f, "{}", inner),
+        }?;
+        Ok(())
+    }
 }
 
 impl From<serde_json::Error> for ReceiverErr {
