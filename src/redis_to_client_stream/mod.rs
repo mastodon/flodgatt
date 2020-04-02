@@ -5,3 +5,6 @@ mod receiver;
 mod redis;
 
 pub use {client_agent::ClientAgent, event_stream::EventStream, receiver::Receiver};
+
+#[cfg(feature = "bench")]
+pub use redis::redis_msg::{RedisMsg, RedisParseOutput};

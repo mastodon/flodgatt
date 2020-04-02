@@ -1,4 +1,4 @@
-use crate::messages::Event;
+use crate::messages::CheckedEvent;
 use crate::parse_client_request::Timeline;
 
 use std::{
@@ -11,7 +11,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct MsgQueue {
     pub timeline: Timeline,
-    pub messages: VecDeque<Event>,
+    pub messages: VecDeque<String>,
     last_polled_at: Instant,
 }
 

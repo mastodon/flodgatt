@@ -11,7 +11,7 @@ use super::redis::{redis_connection::RedisCmd, RedisConn};
 
 use crate::{
     config,
-    messages::Event,
+    messages::CheckedEvent,
     parse_client_request::{Stream, Subscription, Timeline},
 };
 
@@ -73,16 +73,20 @@ impl Receiver {
     /// Redis is significantly more time consuming that simply returning the
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
-    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, ReceiverErr> {
+    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<String>, ReceiverErr> {
+        use std::time::Instant;
+        let start = Instant::now();
         loop {
             match self.redis_connection.poll_redis() {
-                Ok(Async::Ready(Some((timeline, event)))) => self
-                    .msg_queues
-                    .values_mut()
-                    .filter(|msg_queue| msg_queue.timeline == timeline)
-                    .for_each(|msg_queue| {
-                        msg_queue.messages.push_back(event.clone());
-                    }),
+                Ok(Async::Ready(Some((timeline, event)))) => {
+                    self.msg_queues
+                        .values_mut()
+                        .filter(|msg_queue| msg_queue.timeline == timeline)
+                        .for_each(|msg_queue| {
+                            msg_queue.messages.push_back(event.clone());
+                        });
+                    log::info!("Added a msg to the queue in: {:?}", start.elapsed());
+                }
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(None)) => (),
                 Err(err) => Err(err)?,

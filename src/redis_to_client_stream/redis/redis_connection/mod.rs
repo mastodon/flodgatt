@@ -5,7 +5,6 @@ use super::super::receiver::ReceiverErr;
 use super::redis_msg::{RedisParseErr, RedisParseOutput};
 use crate::{
     config::RedisConfig,
-    messages::Event,
     parse_client_request::{Stream, Timeline},
 };
 
@@ -56,7 +55,7 @@ impl RedisConn {
         Ok(redis_conn)
     }
 
-    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ReceiverErr> {
+    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, String)>, ReceiverErr> {
         let mut buffer = vec![0u8; 6000];
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             if let Ok(bytes_read) = self.primary.read(&mut buffer) {
@@ -82,13 +81,13 @@ impl RedisConn {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
                     let trimmed_tl_txt = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event: Event = serde_json::from_str(msg.event_txt)?;
+                    let event = msg.event_txt.to_string();
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 None => {
                     let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event: Event = serde_json::from_str(msg.event_txt)?;
+                    let event = msg.event_txt.to_string();
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
