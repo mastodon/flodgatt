@@ -76,13 +76,14 @@ impl Receiver {
     pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, ReceiverErr> {
         loop {
             match self.redis_connection.poll_redis() {
-                Ok(Async::Ready(Some((timeline, event)))) => self
-                    .msg_queues
-                    .values_mut()
-                    .filter(|msg_queue| msg_queue.timeline == timeline)
-                    .for_each(|msg_queue| {
-                        msg_queue.messages.push_back(event.clone());
-                    }),
+                Ok(Async::Ready(Some((timeline, event)))) => {
+                    self.msg_queues
+                        .values_mut()
+                        .filter(|msg_queue| msg_queue.timeline == timeline)
+                        .for_each(|msg_queue| {
+                            msg_queue.messages.push_back(event.clone());
+                        });
+                }
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(None)) => (),
                 Err(err) => Err(err)?,

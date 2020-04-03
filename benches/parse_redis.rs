@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use flodgatt::{
-    messages::Event,
+    messages::*,
     parse_client_request::{Content::*, Reach::*, Stream::*, Timeline},
-    redis_to_client_stream::redis_msg::{RedisMsg, RedisParseOutput},
+    redis_to_client_stream::{RedisMsg, RedisParseOutput},
 };
 use lru::LruCache;
 use std::convert::TryFrom;
@@ -17,30 +17,54 @@ fn parse_long_redis_input<'a>(input: &'a str) -> RedisMsg<'a> {
 }
 
 fn parse_to_timeline(msg: RedisMsg) -> Timeline {
-    let tl = Timeline::from_redis_text(msg.timeline_txt, &mut LruCache::new(1000), &None).unwrap();
+    let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
+    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut LruCache::new(1000)).unwrap();
     assert_eq!(tl, Timeline(User(1), Federated, All));
     tl
 }
+fn parse_to_checked_event(msg: RedisMsg) -> Event {
+    Event::TypeSafe(serde_json::from_str(msg.event_txt).unwrap())
+}
 
-fn parse_to_event(msg: RedisMsg) -> Event {
-    serde_json::from_str(msg.event_txt).unwrap()
+fn parse_to_dyn_event(msg: RedisMsg) -> String {
+    let event: Event = Event::Dynamic(serde_json::from_str(msg.event_txt).unwrap());
+    event.to_json_string()
+}
+
+fn redis_msg_to_event_string(msg: RedisMsg) -> String {
+    msg.event_txt.to_string()
+}
+
+fn string_to_checked_event(event_txt: &String) -> Event {
+    Event::TypeSafe(serde_json::from_str(event_txt).unwrap())
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
     let input = ONE_MESSAGE_FOR_THE_USER_TIMLINE_FROM_REDIS;
     let mut group = c.benchmark_group("Parse redis RESP array");
 
-    group.bench_function("parse redis input to RedisMsg", |b| {
-        b.iter(|| black_box(parse_long_redis_input(input)))
-    });
+    // group.bench_function("parse redis input to RedisMsg", |b| {
+    //     b.iter(|| black_box(parse_long_redis_input(input)))
+    // });
 
     let msg = parse_long_redis_input(input);
-    group.bench_function("parse RedisMsg to Timeline", |b| {
-        b.iter(|| black_box(parse_to_timeline(msg.clone())))
+    // group.bench_function("parse RedisMsg to Timeline", |b| {
+    //     b.iter(|| black_box(parse_to_timeline(msg.clone())))
+    // });
+
+    group.bench_function("parse RedisMsg -> DynamicEvent -> JSON string", |b| {
+        b.iter(|| black_box(parse_to_dyn_event(msg.clone())))
     });
 
-    group.bench_function("parse RedisMsg to Event", |b| {
-        b.iter(|| black_box(parse_to_event(msg.clone())))
+    group.bench_function("parse RedisMsg -> CheckedEvent", |b| {
+        b.iter(|| black_box(parse_to_checked_event(msg.clone())))
+    });
+
+    group.bench_function("parse RedisMsg -> String -> CheckedEvent", |b| {
+        b.iter(|| {
+            let txt = black_box(redis_msg_to_event_string(msg.clone()));
+            black_box(string_to_checked_event(&txt));
+        })
     });
 }
 

@@ -90,35 +90,28 @@ impl futures::stream::Stream for ClientAgent {
             receiver.poll_for(self.subscription.id, self.subscription.timeline)
         };
 
+        let timeline = &self.subscription.timeline;
         let allowed_langs = &self.subscription.allowed_langs;
-        let blocked_users = &self.subscription.blocks.blocked_users;
-        let blocking_users = &self.subscription.blocks.blocking_users;
-        let blocked_domains = &self.subscription.blocks.blocked_domains;
+        let blocks = &self.subscription.blocks;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
 
-        use Event::*;
+        use crate::messages::{CheckedEvent::Update, Event::*};
         match result {
             Ok(Async::Ready(Some(event))) => match event {
-                Update {
-                    payload: status, ..
-                } => match self.subscription.timeline {
-                    _ if status.involves_blocked_user(blocked_users) => block,
-                    _ if status.from_blocked_domain(blocked_domains) => block,
-                    _ if status.from_blocking_user(blocking_users) => block,
-                    Timeline(Public, _, _) if status.language_not_allowed(allowed_langs) => block,
-                    _ => send(Update {
-                        payload: status,
-                        queued_at: None,
-                    }),
+                TypeSafe(Update { payload, queued_at }) => match timeline {
+                    Timeline(Public, _, _) if payload.language_not(allowed_langs) => block,
+                    _ if payload.involves_any(blocks) => block,
+                    _ => send(TypeSafe(Update { payload, queued_at })),
                 },
-                Notification { .. }
-                | Conversation { .. }
-                | Delete { .. }
-                | FiltersChanged
-                | Announcement { .. }
-                | AnnouncementReaction { .. }
-                | AnnouncementDelete { .. } => send(event),
+                TypeSafe(non_update) => send(Event::TypeSafe(non_update)),
+                Dynamic(event) if event.event == "update" => match timeline {
+                    Timeline(Public, _, _) if event.language_not(allowed_langs) => block,
+                    _ if event.involves_any(blocks) => block,
+                    _ => send(Dynamic(event)),
+                },
+                Dynamic(non_update) => send(Dynamic(non_update)),
             },
+
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
             Err(e) => Err(e),

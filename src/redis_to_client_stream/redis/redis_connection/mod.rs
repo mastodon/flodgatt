@@ -82,13 +82,13 @@ impl RedisConn {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
                     let trimmed_tl_txt = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event: Event = serde_json::from_str(msg.event_txt)?;
+                    let event = msg.event_txt.into();
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 None => {
                     let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event: Event = serde_json::from_str(msg.event_txt)?;
+                    let event = msg.event_txt.into();
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
