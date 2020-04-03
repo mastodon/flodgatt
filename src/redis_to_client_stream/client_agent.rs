@@ -17,7 +17,7 @@
 //! each new client connection (each in its own thread).use super::{message::Message, receiver::Receiver}
 use super::receiver::{Receiver, ReceiverErr};
 use crate::{
-    messages::{CheckedEvent, DynamicEvent, Event},
+    messages::Event,
     parse_client_request::{Stream::Public, Subscription, Timeline},
 };
 use futures::{
@@ -90,54 +90,28 @@ impl futures::stream::Stream for ClientAgent {
             receiver.poll_for(self.subscription.id, self.subscription.timeline)
         };
 
+        let timeline = &self.subscription.timeline;
         let allowed_langs = &self.subscription.allowed_langs;
-        let blocked_users = &self.subscription.blocks.blocked_users;
-        let blocking_users = &self.subscription.blocks.blocking_users;
-        let blocked_domains = &self.subscription.blocks.blocked_domains;
+        let blocks = &self.subscription.blocks;
         let (send, block) = (|msg| Ok(Ready(Some(msg))), Ok(NotReady));
 
-        use CheckedEvent::*;
+        use crate::messages::{CheckedEvent::Update, Event::*};
         match result {
-            Ok(Async::Ready(Some(event))) => {
-                let event = match serde_json::from_str(&event) {
-                    Ok(checked_event) => Event::TypeSafe(checked_event),
-                    Err(e) => {
-                        log::error!(
-                            "Error safely parsing Redis input.\
-  Mastodon and Flodgatt do not \
-                             strictly conform to the same \
-version of Mastodon's API.\n{}",
-                            e
-                        );
-                        let dyn_event: DynamicEvent = serde_json::from_str(&event).expect("TODO");
-                        Event::Dynamic(dyn_event)
-                    }
-                };
+            Ok(Async::Ready(Some(event))) => match event {
+                TypeSafe(Update { payload, queued_at }) => match timeline {
+                    Timeline(Public, _, _) if payload.language_not(allowed_langs) => block,
+                    _ if payload.involves_any(blocks) => block,
+                    _ => send(TypeSafe(Update { payload, queued_at })),
+                },
+                TypeSafe(non_update) => send(Event::TypeSafe(non_update)),
+                Dynamic(event) if event.event == "update" => match timeline {
+                    Timeline(Public, _, _) if event.language_not(allowed_langs) => block,
+                    _ if event.involves_any(blocks) => block,
+                    _ => send(Dynamic(event)),
+                },
+                Dynamic(non_update) => send(Dynamic(non_update)),
+            },
 
-                match event {
-                    Event::TypeSafe(Update { payload: s, .. }) => {
-                        match self.subscription.timeline {
-                            Timeline(Public, _, _) if s.language_not(allowed_langs) => block,
-                            _ if s.involves_any(blocked_users, blocked_domains, blocking_users) => {
-                                block
-                            }
-                            _ => send(Event::TypeSafe(Update {
-                                payload: s,
-                                queued_at: None,
-                            })),
-                        }
-                    }
-                    Event::TypeSafe(_) => send(event),
-                    Event::Dynamic(e) if e.event == "update" => match self.subscription.timeline {
-                        Timeline(Public, _, _) if e.language_not(allowed_langs) => block,
-                        _ if e.involves_any(blocked_users, blocked_domains, blocking_users) => {
-                            block
-                        }
-                        _ => send(Event::Dynamic(e)),
-                    },
-                    Event::Dynamic(_) => send(event),
-                }
-            }
             Ok(Ready(None)) => Ok(Ready(None)),
             Ok(NotReady) => Ok(NotReady),
             Err(e) => Err(e),

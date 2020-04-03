@@ -7,6 +7,7 @@ use crate::log_fatal;
 use serde::Serialize;
 use std::string::String;
 
+#[derive(Debug, Clone)]
 pub enum Event {
     TypeSafe(CheckedEvent),
     Dynamic(DynamicEvent),
@@ -53,6 +54,29 @@ impl Event {
                 FiltersChanged => None,
             },
             Self::Dynamic(dyn_event) => Some(dyn_event.payload.to_string()),
+        }
+    }
+}
+
+impl From<String> for Event {
+    fn from(event_txt: String) -> Event {
+        Event::from(event_txt.as_str())
+    }
+}
+impl From<&str> for Event {
+    fn from(event_txt: &str) -> Event {
+        match serde_json::from_str(event_txt) {
+            Ok(checked_event) => Event::TypeSafe(checked_event),
+            Err(e) => {
+                log::error!(
+                    "Error safely parsing Redis input.  Mastodon and Flodgatt do not \
+                             strictly conform to the same version of Mastodon's API.\n{}\
+                             Forwarding Redis payload without type checking it.",
+                    e
+                );
+                let dyn_event: DynamicEvent = serde_json::from_str(&event_txt).expect("TODO");
+                Event::Dynamic(dyn_event)
+            }
         }
     }
 }

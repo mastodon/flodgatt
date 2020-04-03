@@ -1,3 +1,4 @@
+use crate::parse_client_request::Blocks;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -35,14 +36,15 @@ impl DynamicEvent {
     ///  * Wrote this toot
     ///  * Wrote a toot that this toot is replying to (if any)
     ///  * Wrote the toot that this toot is boosting (if any)
-    pub fn involves_any(
-        &self,
-        blocked_users: &HashSet<i64>,
-        blocked_domains: &HashSet<String>,
-        blocking_users: &HashSet<i64>,
-    ) -> bool {
+    pub fn involves_any(&self, blocks: &Blocks) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
+        let Blocks {
+            blocked_users,
+            blocking_users,
+            blocked_domains,
+        } = blocks;
+
         let user_id = self.payload["account"]["id"].as_str().expect("TODO");
         let username = self.payload["account"]["acct"].as_str().expect("TODO");
 

@@ -61,11 +61,12 @@ impl EventStream {
         event_stream
             .for_each(move |_instant| {
                 match client_agent.poll() {
-                    Ok(Async::Ready(Some(msg))) => tx
-                        .unbounded_send(Message::text(msg.to_json_string()))
-                        .unwrap_or_else(|e| {
-                            log::error!("Could not send message to WebSocket: {}", e)
-                        }),
+                    Ok(Async::Ready(Some(msg))) => {
+                        tx.unbounded_send(Message::text(msg.to_json_string()))
+                            .unwrap_or_else(|e| {
+                                log::error!("Could not send message to WebSocket: {}", e)
+                            });
+                    }
                     Ok(Async::Ready(None)) => log::info!("WebSocket ClientAgent got Ready(None)"),
                     Ok(Async::NotReady) if last_ping_time.elapsed() > Duration::from_secs(30) => {
                         tx.unbounded_send(Message::text("{}")).unwrap_or_else(|e| {
