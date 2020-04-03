@@ -1,5 +1,6 @@
 use super::{postgres_cfg_types::*, EnvVar};
 use url::Url;
+use urlencoding;
 
 #[derive(Debug)]
 pub struct PostgresConfig {
@@ -32,6 +33,12 @@ impl EnvVar {
 
         self.maybe_add_env_var("DB_PORT", url.port());
         self.maybe_add_env_var("DB_PASS", url.password());
+        self.maybe_add_env_var(
+            "DB_HOST",
+            url.host().map(|h| {
+                urlencoding::decode(&h.to_string()).expect("Non-Unicode text in hostname")
+            }),
+        );
         self.maybe_add_env_var("DB_USER", none_if_empty(url.username().to_string()));
         self.maybe_add_env_var("DB_NAME", none_if_empty(url.path()[1..].to_string()));
 
