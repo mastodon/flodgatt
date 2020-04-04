@@ -107,6 +107,37 @@ impl Receiver {
         }
     }
 
+    pub fn count_connections(&self) -> String {
+        format!(
+            "Current connections: {}",
+            self.clients_per_timeline.values().sum::<i32>()
+        )
+    }
+
+    pub fn list_connections(&self) -> String {
+        let max_len = self
+            .clients_per_timeline
+            .keys()
+            .fold(0, |acc, el| acc.max(format!("{:?}:", el).len()));
+        self.clients_per_timeline
+            .iter()
+            .map(|(tl, n)| {
+                let tl_txt = format!("{:?}:", tl);
+                format!("{:>1$} {2}\n", tl_txt, max_len, n)
+            })
+            .collect()
+    }
+
+    pub fn queue_length(&self) -> String {
+        format!(
+            "Longest MessageQueue: {}",
+            self.msg_queues
+                .0
+                .values()
+                .fold(0, |acc, el| acc.max(el.messages.len()))
+        )
+    }
+
     /// Drop any PubSub subscriptions that don't have active clients and check
     /// that there's a subscription to the current one.  If there isn't, then
     /// subscribe to it.

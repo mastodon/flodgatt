@@ -50,7 +50,7 @@ fn main() {
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
-    let ws_receiver = sharable_receiver;
+    let ws_receiver = sharable_receiver.clone();
     let (ws_update_interval, whitelist_mode) = (*cfg.ws_interval, *cfg.whitelist_mode);
     let ws_routes = Subscription::from_ws_request(pg_pool, whitelist_mode)
         .and(warp::ws::ws2())
@@ -76,6 +76,16 @@ fn main() {
         .allow_headers(cfg.cors.allowed_headers);
 
     let health = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
+    let stats_receiver = sharable_receiver.clone();
+    let status = warp::path!("api" / "v1" / "streaming" / "status")
+        .and(warp::path::end())
+        .map(move || stats_receiver.lock().expect("TODO").count_connections());
+    let stats_receiver = sharable_receiver.clone();
+    let status_queue_len = warp::path!("api" / "v1" / "streaming" / "status" / "queue")
+        .map(move || stats_receiver.lock().expect("TODO").queue_length());
+    let stats_receiver = sharable_receiver.clone();
+    let status_per_timeline = warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline")
+        .map(move || stats_receiver.lock().expect("TODO").list_connections());
 
     if let Some(socket) = &*cfg.unix_socket {
         log::info!("Using Unix socket {}", socket);
@@ -84,20 +94,32 @@ fn main() {
         fs::set_permissions(socket, PermissionsExt::from_mode(0o666)).unwrap();
 
         warp::serve(
-            health.or(ws_routes.or(sse_routes).with(cors).recover(|r: Rejection| {
-                let json_err = match r.cause() {
-                    Some(text) if text.to_string() == "Missing request header 'authorization'" => {
-                        warp::reply::json(&"Error: Missing access token".to_string())
-                    }
-                    Some(text) => warp::reply::json(&text.to_string()),
-                    None => warp::reply::json(&"Error: Nonexistant endpoint".to_string()),
-                };
-                Ok(warp::reply::with_status(json_err, StatusCode::UNAUTHORIZED))
-            })),
+            health.or(
+                status.or(status_per_timeline.or(status_queue_len.or(ws_routes
+                    .or(sse_routes)
+                    .with(cors)
+                    .recover(|r: Rejection| {
+                        let json_err = match r.cause() {
+                            Some(text)
+                                if text.to_string() == "Missing request header 'authorization'" =>
+                            {
+                                warp::reply::json(&"Error: Missing access token".to_string())
+                            }
+                            Some(text) => warp::reply::json(&text.to_string()),
+                            None => warp::reply::json(&"Error: Nonexistant endpoint".to_string()),
+                        };
+                        Ok(warp::reply::with_status(json_err, StatusCode::UNAUTHORIZED))
+                    })))),
+            ),
         )
         .run_incoming(incoming);
     } else {
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
-        warp::serve(health.or(ws_routes.or(sse_routes).with(cors))).run(server_addr);
+        warp::serve(health.or(
+            status.or(
+                status_per_timeline.or(status_queue_len.or(ws_routes.or(sse_routes).with(cors))),
+            ),
+        ))
+        .run(server_addr);
     };
 }
