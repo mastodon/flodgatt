@@ -4,7 +4,6 @@ use crate::parse_client_request::Timeline;
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
-    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -12,52 +11,22 @@ use uuid::Uuid;
 pub struct MsgQueue {
     pub timeline: Timeline,
     pub messages: VecDeque<Event>,
-    last_polled_at: Instant,
 }
 
 impl MsgQueue {
     pub fn new(timeline: Timeline) -> Self {
         MsgQueue {
             messages: VecDeque::new(),
-            last_polled_at: Instant::now(),
+
             timeline,
         }
-    }
-    pub fn update_polled_at_time(&mut self) {
-        self.last_polled_at = Instant::now();
     }
 }
 
 #[derive(Debug)]
 pub struct MessageQueues(pub HashMap<Uuid, MsgQueue>);
 
-impl MessageQueues {
-    pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: Timeline) -> Vec<Change> {
-        let mut timelines_to_modify = Vec::new();
-
-        timelines_to_modify.push(Change {
-            timeline,
-            in_subscriber_number: 1,
-        });
-        self.retain(|_id, msg_queue| {
-            if msg_queue.last_polled_at.elapsed() < Duration::from_secs(30) {
-                true
-            } else {
-                let timeline = &msg_queue.timeline;
-                timelines_to_modify.push(Change {
-                    timeline: *timeline,
-                    in_subscriber_number: -1,
-                });
-                false
-            }
-        });
-        timelines_to_modify
-    }
-}
-pub struct Change {
-    pub timeline: Timeline,
-    pub in_subscriber_number: i32,
-}
+impl MessageQueues {}
 
 impl fmt::Debug for MsgQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -66,12 +35,9 @@ impl fmt::Debug for MsgQueue {
             "\
 MsgQueue {{
     timeline: {:?},
-    messages: {:?},
-    last_polled_at: {:?} ago,
+    messages: {:?},    
 }}",
-            self.timeline,
-            self.messages,
-            self.last_polled_at.elapsed(),
+            self.timeline, self.messages,
         )
     }
 }

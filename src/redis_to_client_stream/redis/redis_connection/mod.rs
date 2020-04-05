@@ -61,7 +61,8 @@ impl RedisConn {
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
             if let Ok(bytes_read) = self.primary.read(&mut buffer) {
                 self.redis_input.extend_from_slice(&buffer[..bytes_read]);
-            }
+            };
+            self.redis_polled_at = Instant::now();
         }
         if self.redis_input.is_empty() {
             return Ok(Async::NotReady);

@@ -56,6 +56,14 @@ impl ClientAgent {
             .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e))
     }
 
+    pub fn disconnect(&self) -> futures::future::FutureResult<bool, tokio::timer::Error> {
+        let mut receiver = self.lock_receiver();
+        receiver
+            .remove_subscription(&self.subscription)
+            .unwrap_or_else(|e| log::error!("Could not unsubscribe from: {}", e));
+        futures::future::ok(false)
+    }
+
     fn lock_receiver(&self) -> MutexGuard<Receiver> {
         match self.receiver.lock() {
             Ok(inner) => inner,
