@@ -90,8 +90,9 @@ impl Receiver {
             });
         use RedisCmd::*;
         if *number_of_subscriptions == 0 {
-            self.redis_connection.send_cmd(Unsubscribe, &tl)?
-        }
+            self.redis_connection.send_cmd(Unsubscribe, &tl)?;
+            self.clients_per_timeline.remove_entry(&tl);
+        };
 
         Ok(())
     }
@@ -163,31 +164,4 @@ impl Receiver {
                 .fold(0, |acc, el| acc.max(el.messages.len()))
         )
     }
-
-    // /// Drop any PubSub subscriptions that don't have active clients and check
-    // /// that there's a subscription to the current one.  If there isn't, then
-    // /// subscribe to it.
-    // fn subscribe_or_unsubscribe_as_needed(&mut self, tl: Timeline) -> Result<()> {
-    //     let timelines_to_modify = self.msg_queues.calculate_timelines_to_add_or_drop(tl);
-
-    //     // Record the lower number of clients subscribed to that channel
-    //     for change in timelines_to_modify {
-    //         let timeline = change.timeline;
-
-    //         let count_of_subscribed_clients = self
-    //             .clients_per_timeline
-    //             .entry(timeline)
-    //             .and_modify(|n| *n += change.in_subscriber_number)
-    //             .or_insert_with(|| 1);
-
-    //         // If no clients, unsubscribe from the channel
-    //         use RedisCmd::*;
-    //         if *count_of_subscribed_clients <= 0 {
-    //             self.redis_connection.send_cmd(Unsubscribe, &timeline)?;
-    //         } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
-    //             self.redis_connection.send_cmd(Subscribe, &timeline)?
-    //         }
-    //     }
-    //     Ok(())
-    // }
 }
