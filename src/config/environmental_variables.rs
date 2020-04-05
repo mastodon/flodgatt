@@ -60,6 +60,7 @@ impl fmt::Display for EnvVar {
             "REDIS_PASSWORD",
             "REDIS_USER",
             "REDIS_DB",
+            "REDIS_FREQ",
         ]
         .iter()
         {

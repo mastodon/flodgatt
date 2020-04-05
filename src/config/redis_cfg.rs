@@ -59,7 +59,7 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
             host: RedisHost::default().maybe_update(env.get("REDIS_HOST")),
             db: RedisDb::default().maybe_update(env.get("REDIS_DB")),
             namespace: RedisNamespace::default().maybe_update(env.get("REDIS_NAMESPACE")),
-            polling_interval: RedisInterval::default().maybe_update(env.get("REDIS_POLL_INTERVAL")),
+            polling_interval: RedisInterval::default().maybe_update(env.get("REDIS_FREQ")),
         };
 
         if cfg.db.is_some() {
