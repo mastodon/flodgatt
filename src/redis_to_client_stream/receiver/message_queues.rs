@@ -4,7 +4,6 @@ use crate::parse_client_request::Timeline;
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
-    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -12,19 +11,15 @@ use uuid::Uuid;
 pub struct MsgQueue {
     pub timeline: Timeline,
     pub messages: VecDeque<Event>,
-    last_polled_at: Instant,
 }
 
 impl MsgQueue {
     pub fn new(timeline: Timeline) -> Self {
         MsgQueue {
             messages: VecDeque::new(),
-            last_polled_at: Instant::now(),
+
             timeline,
         }
-    }
-    pub fn update_polled_at_time(&mut self) {
-        self.last_polled_at = Instant::now();
     }
 }
 
@@ -39,18 +34,20 @@ impl MessageQueues {
             timeline,
             in_subscriber_number: 1,
         });
-        self.retain(|_id, msg_queue| {
-            if msg_queue.last_polled_at.elapsed() < Duration::from_secs(30) {
-                true
-            } else {
-                let timeline = &msg_queue.timeline;
-                timelines_to_modify.push(Change {
-                    timeline: *timeline,
-                    in_subscriber_number: -1,
-                });
-                false
-            }
-        });
+
+        // self.retain(|_id, msg_queue| {
+        //     if msg_queue.last_polled_at.elapsed() < Duration::from_secs(30) {
+        //         true
+        //     } else {
+        //         let timeline = &msg_queue.timeline;
+        //         timelines_to_modify.push(Change {
+        //             timeline: *timeline,
+        //             in_subscriber_number: -1,
+        //         });
+        //         false
+        //     }
+        // });
+        // TODO: reimplement ^^^^
         timelines_to_modify
     }
 }
@@ -66,12 +63,9 @@ impl fmt::Debug for MsgQueue {
             "\
 MsgQueue {{
     timeline: {:?},
-    messages: {:?},
-    last_polled_at: {:?} ago,
+    messages: {:?},    
 }}",
-            self.timeline,
-            self.messages,
-            self.last_polled_at.elapsed(),
+            self.timeline, self.messages,
         )
     }
 }

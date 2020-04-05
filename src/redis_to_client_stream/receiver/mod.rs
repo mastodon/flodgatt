@@ -92,13 +92,10 @@ impl Receiver {
 
         // If the `msg_queue` being polled has any new messages, return the first (oldest) one
         match self.msg_queues.get_mut(&id) {
-            Some(msg_q) => {
-                msg_q.update_polled_at_time();
-                match msg_q.messages.pop_front() {
-                    Some(event) => Ok(Async::Ready(Some(event))),
-                    None => Ok(Async::NotReady),
-                }
-            }
+            Some(msg_q) => match msg_q.messages.pop_front() {
+                Some(event) => Ok(Async::Ready(Some(event))),
+                None => Ok(Async::NotReady),
+            },
             None => {
                 log::error!("Polled a MsgQueue that had not been set up.  Setting it up now.");
                 self.msg_queues.insert(id, MsgQueue::new(timeline));
