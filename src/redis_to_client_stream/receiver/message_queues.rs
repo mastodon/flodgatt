@@ -26,35 +26,7 @@ impl MsgQueue {
 #[derive(Debug)]
 pub struct MessageQueues(pub HashMap<Uuid, MsgQueue>);
 
-impl MessageQueues {
-    pub fn calculate_timelines_to_add_or_drop(&mut self, timeline: Timeline) -> Vec<Change> {
-        let mut timelines_to_modify = Vec::new();
-
-        timelines_to_modify.push(Change {
-            timeline,
-            in_subscriber_number: 1,
-        });
-
-        // self.retain(|_id, msg_queue| {
-        //     if msg_queue.last_polled_at.elapsed() < Duration::from_secs(30) {
-        //         true
-        //     } else {
-        //         let timeline = &msg_queue.timeline;
-        //         timelines_to_modify.push(Change {
-        //             timeline: *timeline,
-        //             in_subscriber_number: -1,
-        //         });
-        //         false
-        //     }
-        // });
-        // TODO: reimplement ^^^^
-        timelines_to_modify
-    }
-}
-pub struct Change {
-    pub timeline: Timeline,
-    pub in_subscriber_number: i32,
-}
+impl MessageQueues {}
 
 impl fmt::Debug for MsgQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

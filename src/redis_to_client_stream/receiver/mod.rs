@@ -52,10 +52,6 @@ impl Receiver {
 
     /// Assigns the `Receiver` a new timeline to monitor and runs other
     /// first-time setup.
-    ///
-    /// Note: this method calls `subscribe_or_unsubscribe_as_needed`,
-    /// so Redis PubSub subscriptions are only updated when a new timeline
-    /// comes under management for the first time.
     pub fn add_subscription(&mut self, subscription: &Subscription) -> Result<()> {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
 
@@ -63,7 +59,40 @@ impl Receiver {
             self.redis_connection.update_cache(hashtag, id);
         };
         self.msg_queues.insert(subscription.id, MsgQueue::new(tl));
-        self.subscribe_or_unsubscribe_as_needed(tl)?;
+
+        let number_of_subscriptions = self
+            .clients_per_timeline
+            .entry(tl)
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
+
+        use RedisCmd::*;
+        if *number_of_subscriptions == 1 {
+            self.redis_connection.send_cmd(Subscribe, &tl)?
+        };
+
+        Ok(())
+    }
+
+    pub fn remove_subscription(&mut self, subscription: &Subscription) -> Result<()> {
+        let tl = subscription.timeline;
+        self.msg_queues.remove(&subscription.id);
+        let number_of_subscriptions = self
+            .clients_per_timeline
+            .entry(tl)
+            .and_modify(|n| *n -= 1)
+            .or_insert_with(|| {
+                log::error!(
+                    "Attempted to unsubscribe from a timeline to which you were not subscribed: {:?}",
+                    tl
+                );
+                0
+            });
+        use RedisCmd::*;
+        if *number_of_subscriptions == 0 {
+            self.redis_connection.send_cmd(Unsubscribe, &tl)?
+        }
+
         Ok(())
     }
 
@@ -135,30 +164,30 @@ impl Receiver {
         )
     }
 
-    /// Drop any PubSub subscriptions that don't have active clients and check
-    /// that there's a subscription to the current one.  If there isn't, then
-    /// subscribe to it.
-    fn subscribe_or_unsubscribe_as_needed(&mut self, tl: Timeline) -> Result<()> {
-        let timelines_to_modify = self.msg_queues.calculate_timelines_to_add_or_drop(tl);
+    // /// Drop any PubSub subscriptions that don't have active clients and check
+    // /// that there's a subscription to the current one.  If there isn't, then
+    // /// subscribe to it.
+    // fn subscribe_or_unsubscribe_as_needed(&mut self, tl: Timeline) -> Result<()> {
+    //     let timelines_to_modify = self.msg_queues.calculate_timelines_to_add_or_drop(tl);
 
-        // Record the lower number of clients subscribed to that channel
-        for change in timelines_to_modify {
-            let timeline = change.timeline;
+    //     // Record the lower number of clients subscribed to that channel
+    //     for change in timelines_to_modify {
+    //         let timeline = change.timeline;
 
-            let count_of_subscribed_clients = self
-                .clients_per_timeline
-                .entry(timeline)
-                .and_modify(|n| *n += change.in_subscriber_number)
-                .or_insert_with(|| 1);
+    //         let count_of_subscribed_clients = self
+    //             .clients_per_timeline
+    //             .entry(timeline)
+    //             .and_modify(|n| *n += change.in_subscriber_number)
+    //             .or_insert_with(|| 1);
 
-            // If no clients, unsubscribe from the channel
-            use RedisCmd::*;
-            if *count_of_subscribed_clients <= 0 {
-                self.redis_connection.send_cmd(Unsubscribe, &timeline)?;
-            } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
-                self.redis_connection.send_cmd(Subscribe, &timeline)?
-            }
-        }
-        Ok(())
-    }
+    //         // If no clients, unsubscribe from the channel
+    //         use RedisCmd::*;
+    //         if *count_of_subscribed_clients <= 0 {
+    //             self.redis_connection.send_cmd(Unsubscribe, &timeline)?;
+    //         } else if *count_of_subscribed_clients == 1 && change.in_subscriber_number == 1 {
+    //             self.redis_connection.send_cmd(Subscribe, &timeline)?
+    //         }
+    //     }
+    //     Ok(())
+    // }
 }
