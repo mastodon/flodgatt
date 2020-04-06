@@ -59,6 +59,13 @@ pub struct Subscription {
     pub access_token: Option<String>,
 }
 
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Blocks {
+    pub blocked_domains: HashSet<String>,
+    pub blocked_users: HashSet<i64>,
+    pub blocking_users: HashSet<i64>,
+}
+
 impl Default for Subscription {
     fn default() -> Self {
         Self {
@@ -301,14 +308,6 @@ pub enum Scope {
     Lists,
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct Blocks {
-    pub blocked_domains: HashSet<String>,
-    pub blocked_users: HashSet<i64>,
-    pub blocking_users: HashSet<i64>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct UserData {
     pub id: i64,
     pub allowed_langs: HashSet<String>,

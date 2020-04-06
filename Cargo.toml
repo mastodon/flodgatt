@@ -40,3 +40,8 @@ default = [ "production" ]
 bench = []
 stub_status = []
 production = []
+
+[profile.release]
+lto = "fat"
+panic = "abort"
+

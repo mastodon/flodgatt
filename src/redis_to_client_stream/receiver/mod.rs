@@ -20,6 +20,7 @@ use std::{
     collections::HashMap,
     result,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -29,6 +30,8 @@ type Result<T> = result::Result<T, ReceiverErr>;
 #[derive(Debug)]
 pub struct Receiver {
     redis_connection: RedisConn,
+    redis_poll_interval: Duration,
+    redis_polled_at: Instant,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
 }
@@ -37,9 +40,12 @@ impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn try_from(redis_cfg: config::RedisConfig) -> Result<Self> {
+        let redis_poll_interval = *redis_cfg.polling_interval;
         let redis_connection = RedisConn::new(redis_cfg)?;
 
         Ok(Self {
+            redis_polled_at: Instant::now(),
+            redis_poll_interval,
             redis_connection,
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
@@ -103,35 +109,38 @@ impl Receiver {
     /// Redis is significantly more time consuming that simply returning the
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
-    pub fn poll_for(&mut self, id: Uuid, timeline: Timeline) -> Poll<Option<Event>, ReceiverErr> {
-        loop {
-            match self.redis_connection.poll_redis() {
-                Ok(Async::Ready(Some((timeline, event)))) => {
-                    self.msg_queues
-                        .values_mut()
-                        .filter(|msg_queue| msg_queue.timeline == timeline)
-                        .for_each(|msg_queue| {
-                            msg_queue.messages.push_back(event.clone());
-                        });
+    pub fn poll_for(&mut self, id: Uuid) -> Poll<Option<Event>, ReceiverErr> {
+        //        let (t1, mut polled_redis) = (Instant::now(), false);
+        if self.redis_polled_at.elapsed() > self.redis_poll_interval {
+            loop {
+                match self.redis_connection.poll_redis() {
+                    Ok(Async::NotReady) => break,
+                    Ok(Async::Ready(Some((timeline, event)))) => {
+                        self.msg_queues
+                            .values_mut()
+                            .filter(|msg_queue| msg_queue.timeline == timeline)
+                            .for_each(|msg_queue| {
+                                msg_queue.messages.push_back(event.clone());
+                            });
+                    }
+                    Ok(Async::Ready(None)) => (), // subscription cmd or msg for other namespace
+                    Err(err) => Err(err)?,
                 }
-                Ok(Async::NotReady) => break,
-                Ok(Async::Ready(None)) => (),
-                Err(err) => Err(err)?,
             }
+            //          polled_redis = true;
+            self.redis_polled_at = Instant::now();
         }
 
         // If the `msg_queue` being polled has any new messages, return the first (oldest) one
-        match self.msg_queues.get_mut(&id) {
-            Some(msg_q) => match msg_q.messages.pop_front() {
-                Some(event) => Ok(Async::Ready(Some(event))),
-                None => Ok(Async::NotReady),
-            },
-            None => {
-                log::error!("Polled a MsgQueue that had not been set up.  Setting it up now.");
-                self.msg_queues.insert(id, MsgQueue::new(timeline));
-                Ok(Async::NotReady)
-            }
-        }
+        let msg_q = self.msg_queues.get_mut(&id).ok_or(ReceiverErr::InvalidId)?;
+        let res = match msg_q.messages.pop_front() {
+            Some(event) => Ok(Async::Ready(Some(event))),
+            None => Ok(Async::NotReady),
+        };
+        // if !polled_redis {
+        //     log::info!("poll_for in {:?}", t1.elapsed());
+        // }
+        res
     }
 
     pub fn count_connections(&self) -> String {

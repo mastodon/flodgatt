@@ -14,7 +14,7 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     str,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use futures::{Async, Poll};
@@ -26,8 +26,6 @@ type Result<T> = std::result::Result<T, RedisConnErr>;
 pub struct RedisConn {
     primary: TcpStream,
     secondary: TcpStream,
-    redis_poll_interval: Duration,
-    redis_polled_at: Instant,
     redis_namespace: Option<String>,
     tag_id_cache: LruCache<String, i64>,
     tag_name_cache: LruCache<i64, String>,
@@ -49,21 +47,32 @@ impl RedisConn {
             //       the tag number instead of the tag name.  This would save us from dealing
             //       with a cache here and would be consistent with how lists/users are handled.
             redis_namespace: redis_cfg.namespace.clone(),
-            redis_poll_interval: *redis_cfg.polling_interval,
             redis_input: Vec::new(),
-            redis_polled_at: Instant::now(),
         };
         Ok(redis_conn)
     }
 
     pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ReceiverErr> {
-        let mut buffer = vec![0u8; 6000];
-        if self.redis_polled_at.elapsed() > self.redis_poll_interval {
-            if let Ok(bytes_read) = self.primary.read(&mut buffer) {
-                self.redis_input.extend_from_slice(&buffer[..bytes_read]);
+        let mut size = 100; // large enough to handle subscribe/unsubscribe notice
+        let (mut buffer, mut first_read) = (vec![0u8; size], true);
+        loop {
+            match self.primary.read(&mut buffer) {
+                Ok(n) if n != size => {
+                    self.redis_input.extend_from_slice(&buffer[..n]);
+                    break;
+                }
+                Ok(n) => {
+                    self.redis_input.extend_from_slice(&buffer[..n]);
+                }
+                Err(_) => break,
             };
-            self.redis_polled_at = Instant::now();
+            if first_read {
+                size = 2000;
+                buffer = vec![0u8; size];
+                first_read = false;
+            }
         }
+
         if self.redis_input.is_empty() {
             return Ok(Async::NotReady);
         }
