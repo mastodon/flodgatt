@@ -45,9 +45,9 @@ Flóðgátt is tested against the [default Mastodon nginx config](https://github
 
 ### Advanced Configuration
 
-The streaming server will eventually uses the same environment variables as the rest of Mastodon,
+The streaming server will eventually use the same environment variables as the rest of Mastodon,
 and currently uses a subset of those variables.  Supported variables are listed in
-`/src/config.rs`.  Supported environmental variables either be passed to Flóðgátt at runtime or
+`/src/config.rs`.  Supported environmental variables are either passed to Flóðgátt at runtime or
 through a `.env` file.
 
 Note that the default values for the `postgres` connection do not correspond to those typically
