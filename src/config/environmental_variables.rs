@@ -1,4 +1,5 @@
-use std::{collections::HashMap, fmt};
+use hashbrown::HashMap;
+use std::fmt;
 
 pub struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {

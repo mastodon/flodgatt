@@ -1,7 +1,7 @@
 use crate::parse_client_request::Blocks;
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashSet;
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct DynamicEvent {

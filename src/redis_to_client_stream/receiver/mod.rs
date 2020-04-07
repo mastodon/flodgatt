@@ -15,14 +15,17 @@ use crate::{
     parse_client_request::{Stream, Subscription, Timeline},
 };
 
-use futures::{Async, Poll};
+use {
+    futures::{Async, Poll},
+    hashbrown::HashMap,
+    uuid::Uuid,
+};
+
 use std::{
-    collections::HashMap,
     result,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use uuid::Uuid;
 
 type Result<T> = result::Result<T, ReceiverErr>;
 

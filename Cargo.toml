@@ -25,6 +25,7 @@ r2d2_postgres = "0.16.0"
 r2d2 = "0.8.8"
 lru = "0.4.3"
 urlencoding = "1.0.0"
+hashbrown = "0.7.1"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -44,4 +45,6 @@ production = []
 [profile.release]
 lto = "fat"
 panic = "abort"
+codegen-units = 1
+
 

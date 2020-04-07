@@ -4,8 +4,8 @@ use crate::{
     parse_client_request::subscription::{Scope, UserData},
 };
 use ::postgres;
+use hashbrown::HashSet;
 use r2d2_postgres::PostgresConnectionManager;
-use std::collections::HashSet;
 use warp::reject::Rejection;
 
 #[derive(Clone, Debug)]

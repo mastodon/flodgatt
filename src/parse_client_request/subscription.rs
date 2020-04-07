@@ -9,8 +9,8 @@ use super::postgres::PgPool;
 use super::query::Query;
 use crate::err::TimelineErr;
 use crate::log_fatal;
+use hashbrown::HashSet;
 use lru::LruCache;
-use std::collections::HashSet;
 use uuid::Uuid;
 use warp::reject::Rejection;
 
