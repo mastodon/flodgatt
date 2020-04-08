@@ -21,7 +21,8 @@ pub struct Status {
     uri: String,
     created_at: String,
     account: Account,
-    content: String,
+    // TODO remove pub
+    pub content: String,
     visibility: Visibility,
     sensitive: bool,
     spoiler_text: String,
@@ -40,6 +41,7 @@ pub struct Status {
     poll: Option<Poll>,
     card: Option<Card>,
     language: Option<String>,
+
     text: Option<String>,
     // ↓↓↓ Only for authorized users
     favourited: Option<bool>,

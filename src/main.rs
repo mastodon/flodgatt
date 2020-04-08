@@ -5,7 +5,10 @@ use flodgatt::{
     redis_to_client_stream::{EventStream, Receiver},
 };
 use std::{env, fs, net::SocketAddr, os::unix::fs::PermissionsExt};
-use tokio::{net::UnixListener, sync::watch};
+use tokio::{
+    net::UnixListener,
+    sync::{mpsc, watch},
+};
 use warp::{http::StatusCode, path, ws::Ws2, Filter, Rejection};
 
 fn main() {
@@ -24,8 +27,10 @@ fn main() {
     let cfg = DeploymentConfig::from_env(env_vars);
 
     let pg_pool = PgPool::new(postgres_cfg);
-    let (tx, rx) = watch::channel((Timeline::empty(), Event::EventNotReady));
-    let receiver = Receiver::try_from(redis_cfg, tx)
+    let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
+    let (subscribe_tx, subscribe_rx) = mpsc::unbounded_channel();
+    let poll_freq = *redis_cfg.polling_interval;
+    let receiver = Receiver::try_from(redis_cfg, event_tx, subscribe_rx)
         .unwrap_or_else(|e| {
             log::error!("{}\nFlodgatt shutting down...", e);
             std::process::exit(1);
@@ -35,7 +40,7 @@ fn main() {
 
     // Server Sent Events
     let sse_receiver = receiver.clone();
-    let sse_rx = rx.clone();
+    let sse_rx = event_rx.clone();
     let whitelist_mode = *cfg.whitelist_mode;
     let sse_routes = Subscription::from_sse_query(pg_pool.clone(), whitelist_mode)
         .and(warp::sse())
@@ -75,8 +80,8 @@ fn main() {
                         log::error!("Could not subscribe to the Redis channel: {}", e)
                     });
             }
-
-            let ws_rx = rx.clone();
+            let ws_subscribe_tx = subscribe_tx.clone();
+            let ws_rx = event_rx.clone();
             let token = subscription
                 .clone()
                 .access_token
@@ -85,7 +90,9 @@ fn main() {
             // send the updates through the WS connection
             // (along with the User's access_token which is sent for security)
             (
-                ws.on_upgrade(move |s| EventStream::send_to_ws(s, subscription, ws_rx)),
+                ws.on_upgrade(move |s| {
+                    EventStream::send_to_ws(s, subscription, ws_rx, ws_subscribe_tx)
+                }),
                 token,
             )
         })
@@ -98,14 +105,12 @@ fn main() {
 
     #[cfg(feature = "stub_status")]
     let status_endpoints = {
-        let (r1, r2, r3) = (receiver.clone(), receiver.clone(), receiver.clone());
+        let (r1, r3) = (receiver.clone(), receiver.clone());
         warp::path!("api" / "v1" / "streaming" / "health")
             .map(|| "OK")
             .or(warp::path!("api" / "v1" / "streaming" / "status")
                 .and(warp::path::end())
                 .map(move || r1.lock().expect("TODO").count_connections()))
-            .or(warp::path!("api" / "v1" / "streaming" / "status" / "queue")
-                .map(move || r2.lock().expect("TODO").queue_length()))
             .or(
                 warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline")
                     .map(move || r3.lock().expect("TODO").list_connections()),
@@ -114,11 +119,12 @@ fn main() {
     #[cfg(not(feature = "stub_status"))]
     let status_endpoints = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
-    let receiver = receiver.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        receiver.lock().unwrap().poll_broadcast();
-    });
+    // let receiver_old = receiver.clone();
+    // // TODO make vvvv a green thread
+    // std::thread::spawn(move || loop {
+    //     std::thread::sleep(std::time::Duration::from_millis(10000));
+    //     receiver_old.lock().unwrap().poll_broadcast();
+    // });
 
     if let Some(socket) = &*cfg.unix_socket {
         log::info!("Using Unix socket {}", socket);
@@ -146,7 +152,25 @@ fn main() {
         )
         .run_incoming(incoming);
     } else {
+        use futures::{future::lazy, stream::Stream as _Stream};
+        use std::time::Instant;
+
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
-        warp::serve(ws_routes.or(sse_routes).with(cors).or(status_endpoints)).run(server_addr);
+
+        let receiver = receiver.clone();
+        tokio::run(lazy(move || {
+            let receiver = receiver.clone();
+            tokio::spawn(lazy(move || {
+                tokio::timer::Interval::new(Instant::now(), poll_freq)
+                    .map_err(|e| log::error!("{}", e))
+                    .for_each(move |_| {
+                        let receiver = receiver.clone();
+                        receiver.lock().expect("TODO").poll_broadcast();
+                        Ok(())
+                    })
+            }));
+
+            warp::serve(ws_routes.or(sse_routes).with(cors).or(status_endpoints)).bind(server_addr)
+        }));
     };
 }
