@@ -1,10 +1,11 @@
 use flodgatt::{
     config::{DeploymentConfig, EnvVar, PostgresConfig, RedisConfig},
-    parse_client_request::{PgPool, Subscription},
-    redis_to_client_stream::{ClientAgent, EventStream, Receiver},
+    messages::Event,
+    parse_client_request::{PgPool, Subscription, Timeline},
+    redis_to_client_stream::{EventStream, Receiver},
 };
 use std::{env, fs, net::SocketAddr, os::unix::fs::PermissionsExt};
-use tokio::net::UnixListener;
+use tokio::{net::UnixListener, sync::watch};
 use warp::{http::StatusCode, path, ws::Ws2, Filter, Rejection};
 
 fn main() {
@@ -23,8 +24,8 @@ fn main() {
     let cfg = DeploymentConfig::from_env(env_vars);
 
     let pg_pool = PgPool::new(postgres_cfg);
-
-    let receiver = Receiver::try_from(redis_cfg)
+    let (tx, rx) = watch::channel((Timeline::empty(), Event::EventNotReady));
+    let receiver = Receiver::try_from(redis_cfg, tx)
         .unwrap_or_else(|e| {
             log::error!("{}\nFlodgatt shutting down...", e);
             std::process::exit(1);
@@ -34,38 +35,58 @@ fn main() {
 
     // Server Sent Events
     let sse_receiver = receiver.clone();
-    let (sse_interval, whitelist_mode) = (*cfg.sse_interval, *cfg.whitelist_mode);
+    let sse_rx = rx.clone();
+    let whitelist_mode = *cfg.whitelist_mode;
     let sse_routes = Subscription::from_sse_query(pg_pool.clone(), whitelist_mode)
         .and(warp::sse())
         .map(
             move |subscription: Subscription, sse_connection_to_client: warp::sse::Sse| {
                 log::info!("Incoming SSE request for {:?}", subscription.timeline);
-                let mut client_agent = ClientAgent::new(sse_receiver.clone(), &subscription);
-                client_agent.subscribe();
+                {
+                    let mut receiver = sse_receiver.lock().expect("TODO");
+                    receiver
+                        .add_subscription(&subscription)
+                        .unwrap_or_else(|e| {
+                            log::error!("Could not subscribe to the Redis channel: {}", e)
+                        });
+                }
+
+                let sse_rx = sse_rx.clone();
 
                 // send the updates through the SSE connection
-                EventStream::send_to_sse(client_agent, sse_connection_to_client, sse_interval)
+                EventStream::send_to_sse(sse_connection_to_client, subscription, sse_rx)
             },
         )
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
     let ws_receiver = receiver.clone();
-    let (ws_update_interval, whitelist_mode) = (*cfg.ws_interval, *cfg.whitelist_mode);
+
+    let whitelist_mode = *cfg.whitelist_mode;
     let ws_routes = Subscription::from_ws_request(pg_pool, whitelist_mode)
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
-            let mut client_agent = ClientAgent::new(ws_receiver.clone(), &subscription);
-            client_agent.subscribe();
+            {
+                let mut receiver = ws_receiver.lock().expect("TODO");
+                receiver
+                    .add_subscription(&subscription)
+                    .unwrap_or_else(|e| {
+                        log::error!("Could not subscribe to the Redis channel: {}", e)
+                    });
+            }
+
+            let ws_rx = rx.clone();
+            let token = subscription
+                .clone()
+                .access_token
+                .unwrap_or_else(String::new);
 
             // send the updates through the WS connection
             // (along with the User's access_token which is sent for security)
             (
-                ws.on_upgrade(move |s| {
-                    EventStream::send_to_ws(s, client_agent, ws_update_interval)
-                }),
-                subscription.access_token.unwrap_or_else(String::new),
+                ws.on_upgrade(move |s| EventStream::send_to_ws(s, subscription, ws_rx)),
+                token,
             )
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
@@ -92,6 +113,12 @@ fn main() {
     };
     #[cfg(not(feature = "stub_status"))]
     let status_endpoints = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
+
+    let receiver = receiver.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        receiver.lock().unwrap().poll_broadcast();
+    });
 
     if let Some(socket) = &*cfg.unix_socket {
         log::info!("Using Unix socket {}", socket);

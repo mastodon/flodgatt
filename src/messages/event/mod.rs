@@ -11,6 +11,7 @@ use std::string::String;
 pub enum Event {
     TypeSafe(CheckedEvent),
     Dynamic(DynamicEvent),
+    EventNotReady,
 }
 
 impl Event {
@@ -37,6 +38,7 @@ impl Event {
                 CheckedEvent::FiltersChanged => "filters_changed",
             },
             Self::Dynamic(dyn_event) => &dyn_event.event,
+            Self::EventNotReady => panic!("event_name() called on EventNotReady"),
         })
     }
 
@@ -54,6 +56,7 @@ impl Event {
                 FiltersChanged => None,
             },
             Self::Dynamic(dyn_event) => Some(dyn_event.payload.to_string()),
+            Self::EventNotReady => panic!("payload() called on EventNotReady"),
         }
     }
 }

@@ -1,8 +1,10 @@
-use super::ClientAgent;
+use crate::messages::Event;
+use crate::parse_client_request::{Subscription, Timeline};
 
-use futures::{future::Future, stream::Stream, Async};
+use futures::{future::Future, stream::Stream};
 use log;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::sync::watch;
 use warp::{
     reply::Reply,
     sse::Sse,
@@ -14,17 +16,19 @@ impl EventStream {
     /// Send a stream of replies to a WebSocket client.
     pub fn send_to_ws(
         ws: WebSocket,
-        mut client_agent: ClientAgent,
-        interval: Duration,
+        subscription: Subscription,
+        ws_rx: watch::Receiver<(Timeline, Event)>,
     ) -> impl Future<Item = (), Error = ()> {
         let (transmit_to_ws, _receive_from_ws) = ws.split();
-        let timeline = client_agent.subscription.timeline;
+        let target_timeline = subscription.timeline;
+        let allowed_langs = subscription.allowed_langs;
+        let blocks = subscription.blocks;
 
         // Create a pipe
         let (tx, rx) = futures::sync::mpsc::unbounded();
 
-        // Send one end of it to a different thread and tell that end to forward whatever it gets
-        // on to the WebSocket client
+        // Send one end of it to a different green thread and tell that end to forward
+        // whatever it gets on to the WebSocket client
         warp::spawn(
             rx.map_err(|()| -> warp::Error { unreachable!() })
                 .forward(transmit_to_ws)
@@ -35,70 +39,105 @@ impl EventStream {
                 }),
         );
 
-        let mut last_ping_time = Instant::now();
-        tokio::timer::Interval::new(Instant::now(), interval)
-            .take_while(move |_| {
-                // Right now, we do not need to see if we have any messages _from_ the
-                // WebSocket connection because the API doesn't support clients sending
-                // commands via the WebSocket.  However, if the [stream multiplexing API
-                // change](github.com/tootsuite/flodgatt/issues/121) is implemented, we'll
-                // need to receive messages from the client.  If so, we'll need a
-                // `receive_from_ws.poll() call here (or later)`
-                match client_agent.poll() {
-                    Ok(Async::NotReady) => {
-                        if last_ping_time.elapsed() > Duration::from_secs(30) {
-                            last_ping_time = Instant::now();
-                            match tx.unbounded_send(Message::text("{}")) {
-                                Ok(_) => futures::future::ok(true),
-                                Err(_) => client_agent.disconnect(),
-                            }
-                        } else {
-                            futures::future::ok(true)
-                        }
-                    }
-                    Ok(Async::Ready(Some(msg))) => {
-                        match tx.unbounded_send(Message::text(msg.to_json_string())) {
-                            Ok(_) => futures::future::ok(true),
-                            Err(_) => client_agent.disconnect(),
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("{}\n Dropping WebSocket message and continuing.", e);
-                        futures::future::ok(true)
-                    }
-                    Ok(Async::Ready(None)) => {
-                        log::info!("WebSocket ClientAgent got Ready(None)");
-                        futures::future::ok(true)
+        return ws_rx
+            .for_each(move |(timeline, event)| {
+                if target_timeline == timeline {
+                    log::info!("Got event for {:?}", timeline);
+                    use crate::messages::{CheckedEvent::Update, Event::*};
+                    use crate::parse_client_request::Stream::Public;
+                    match event {
+                        TypeSafe(Update { payload, queued_at }) => match timeline {
+                            Timeline(Public, _, _) if payload.language_not(&allowed_langs) => (),
+                            _ if payload.involves_any(&blocks) => (),
+                            // TODO filter vvvv
+                            _ => tx
+                                .unbounded_send(Message::text(
+                                    TypeSafe(Update { payload, queued_at }).to_json_string(),
+                                ))
+                                .expect("TODO"),
+                        },
+                        TypeSafe(non_update) => tx
+                            .unbounded_send(Message::text(TypeSafe(non_update).to_json_string()))
+                            .expect("TODO"),
+                        Dynamic(event) if event.event == "update" => match timeline {
+                            Timeline(Public, _, _) if event.language_not(&allowed_langs) => (),
+                            _ if event.involves_any(&blocks) => (),
+                            // TODO filter vvvv
+                            _ => tx
+                                .unbounded_send(Message::text(Dynamic(event).to_json_string()))
+                                .expect("TODO"),
+                        },
+                        Dynamic(non_update) => tx
+                            .unbounded_send(Message::text(Dynamic(non_update).to_json_string()))
+                            .expect("TODO"),
+                        EventNotReady => panic!("TODO"),
                     }
                 }
+                Ok(())
             })
-            .for_each(move |_instant| Ok(()))
-            .then(move |result| {
-                log::info!("WebSocket connection for {:?} closed.", timeline);
-                result
-            })
-            .map_err(move |e| log::warn!("Error sending to {:?}: {}", timeline, e))
+            .map_err(|_| ());
     }
 
-    pub fn send_to_sse(mut client_agent: ClientAgent, sse: Sse, interval: Duration) -> impl Reply {
-        let event_stream =
-            tokio::timer::Interval::new(Instant::now(), interval).filter_map(move |_| {
-                match client_agent.poll() {
-                    Ok(Async::Ready(Some(event))) => Some((
-                        warp::sse::event(event.event_name()),
-                        warp::sse::data(event.payload().unwrap_or_else(String::new)),
-                    )),
-                    Ok(Async::Ready(None)) => {
-                        log::info!("SSE ClientAgent got Ready(None)");
-                        None
+    pub fn send_to_sse(
+        sse: Sse,
+        subscription: Subscription,
+        sse_rx: watch::Receiver<(Timeline, Event)>,
+    ) -> impl Reply {
+        let target_timeline = subscription.timeline;
+        let allowed_langs = subscription.allowed_langs;
+        let blocks = subscription.blocks;
+
+        let event_stream = sse_rx.filter_map(move |(timeline, event)| {
+            if target_timeline == timeline {
+                log::info!("Got event for {:?}", timeline);
+                use crate::messages::{CheckedEvent, CheckedEvent::Update, Event::*};
+                use crate::parse_client_request::Stream::Public;
+                match event {
+                    TypeSafe(Update { payload, queued_at }) => match timeline {
+                        Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,
+                        _ if payload.involves_any(&blocks) => None,
+                        // TODO filter vvvv
+                        _ => {
+                            let event =
+                                Event::TypeSafe(CheckedEvent::Update { payload, queued_at });
+                            Some((
+                                warp::sse::event(event.event_name()),
+                                warp::sse::data(event.payload().unwrap_or_else(String::new)),
+                            ))
+                        }
+                    },
+                    TypeSafe(non_update) => {
+                        let event = Event::TypeSafe(non_update);
+                        Some((
+                            warp::sse::event(event.event_name()),
+                            warp::sse::data(event.payload().unwrap_or_else(String::new)),
+                        ))
                     }
-                    Ok(Async::NotReady) => None,
-                    Err(e) => {
-                        log::error!("{}\n Dropping SSE message and continuing.", e);
-                        None
+                    Dynamic(event) if event.event == "update" => match timeline {
+                        Timeline(Public, _, _) if event.language_not(&allowed_langs) => None,
+                        _ if event.involves_any(&blocks) => None,
+                        // TODO filter vvvv
+                        _ => {
+                            let event = Event::Dynamic(event);
+                            Some((
+                                warp::sse::event(event.event_name()),
+                                warp::sse::data(event.payload().unwrap_or_else(String::new)),
+                            ))
+                        }
+                    },
+                    Dynamic(non_update) => {
+                        let event = Event::Dynamic(non_update);
+                        Some((
+                            warp::sse::event(event.event_name()),
+                            warp::sse::data(event.payload().unwrap_or_else(String::new)),
+                        ))
                     }
+                    EventNotReady => panic!("TODO"),
                 }
-            });
+            } else {
+                None
+            }
+        });
 
         sse.reply(
             warp::sse::keep_alive()

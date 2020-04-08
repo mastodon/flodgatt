@@ -18,6 +18,7 @@ use crate::{
 use {
     futures::{Async, Poll},
     hashbrown::HashMap,
+    tokio::sync::watch,
     uuid::Uuid,
 };
 
@@ -37,12 +38,16 @@ pub struct Receiver {
     redis_polled_at: Instant,
     pub msg_queues: MessageQueues,
     clients_per_timeline: HashMap<Timeline, i32>,
+    channel: watch::Sender<(Timeline, Event)>,
 }
 
 impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-    pub fn try_from(redis_cfg: config::RedisConfig) -> Result<Self> {
+    pub fn try_from(
+        redis_cfg: config::RedisConfig,
+        sender: watch::Sender<(Timeline, Event)>,
+    ) -> Result<Self> {
         let redis_poll_interval = *redis_cfg.polling_interval;
         let redis_connection = RedisConn::new(redis_cfg)?;
 
@@ -52,6 +57,7 @@ impl Receiver {
             redis_connection,
             msg_queues: MessageQueues(HashMap::new()),
             clients_per_timeline: HashMap::new(),
+            channel: sender,
         })
     }
 
@@ -105,6 +111,18 @@ impl Receiver {
 
         Ok(())
     }
+    pub fn poll_broadcast(&mut self) {
+        loop {
+            match self.redis_connection.poll_redis() {
+                Ok(Async::NotReady) => break,
+                Ok(Async::Ready(Some((timeline, event)))) => {
+                    self.channel.broadcast((timeline, event)).expect("TODO");
+                }
+                Ok(Async::Ready(None)) => (), // subscription cmd or msg for other namespace
+                Err(_err) => panic!("TODO"),
+            }
+        }
+    }
 
     /// Returns the oldest message in the `ClientAgent`'s queue (if any).
     ///
@@ -113,8 +131,8 @@ impl Receiver {
     /// message already in a queue.  Thus, we only poll Redis if it has not
     /// been polled lately.
     pub fn poll_for(&mut self, id: Uuid) -> Poll<Option<Event>, ReceiverErr> {
-        //        let (t1, mut polled_redis) = (Instant::now(), false);
         if self.redis_polled_at.elapsed() > self.redis_poll_interval {
+            log::info!("Polling Redis");
             loop {
                 match self.redis_connection.poll_redis() {
                     Ok(Async::NotReady) => break,
@@ -130,7 +148,7 @@ impl Receiver {
                     Err(err) => Err(err)?,
                 }
             }
-            //          polled_redis = true;
+
             self.redis_polled_at = Instant::now();
         }
 
@@ -140,9 +158,7 @@ impl Receiver {
             Some(event) => Ok(Async::Ready(Some(event))),
             None => Ok(Async::NotReady),
         };
-        // if !polled_redis {
-        //     log::info!("poll_for in {:?}", t1.elapsed());
-        // }
+
         res
     }
 
