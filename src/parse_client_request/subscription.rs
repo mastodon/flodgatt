@@ -9,8 +9,8 @@ use super::postgres::PgPool;
 use super::query::Query;
 use crate::err::TimelineErr;
 use crate::log_fatal;
+use hashbrown::HashSet;
 use lru::LruCache;
-use std::collections::HashSet;
 use uuid::Uuid;
 use warp::reject::Rejection;
 
@@ -57,6 +57,13 @@ pub struct Subscription {
     pub blocks: Blocks,
     pub hashtag_name: Option<String>,
     pub access_token: Option<String>,
+}
+
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Blocks {
+    pub blocked_domains: HashSet<String>,
+    pub blocked_users: HashSet<i64>,
+    pub blocking_users: HashSet<i64>,
 }
 
 impl Default for Subscription {
@@ -301,14 +308,6 @@ pub enum Scope {
     Lists,
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct Blocks {
-    pub blocked_domains: HashSet<String>,
-    pub blocked_users: HashSet<i64>,
-    pub blocking_users: HashSet<i64>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct UserData {
     pub id: i64,
     pub allowed_langs: HashSet<String>,

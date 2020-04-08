@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 #[serde(rename_all = "snake_case")]
 #[derive(Deserialize, Debug, Clone, PartialEq)]

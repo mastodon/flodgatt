@@ -95,7 +95,7 @@ impl futures::stream::Stream for ClientAgent {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         let result = {
             let mut receiver = self.lock_receiver();
-            receiver.poll_for(self.subscription.id, self.subscription.timeline)
+            receiver.poll_for(self.subscription.id)
         };
 
         let timeline = &self.subscription.timeline;
@@ -105,6 +105,8 @@ impl futures::stream::Stream for ClientAgent {
 
         use crate::messages::{CheckedEvent::Update, Event::*};
         match result {
+            Ok(NotReady) => Ok(NotReady),
+            Ok(Ready(None)) => Ok(Ready(None)),
             Ok(Async::Ready(Some(event))) => match event {
                 TypeSafe(Update { payload, queued_at }) => match timeline {
                     Timeline(Public, _, _) if payload.language_not(allowed_langs) => block,
@@ -119,9 +121,6 @@ impl futures::stream::Stream for ClientAgent {
                 },
                 Dynamic(non_update) => send(Dynamic(non_update)),
             },
-
-            Ok(Ready(None)) => Ok(Ready(None)),
-            Ok(NotReady) => Ok(NotReady),
             Err(e) => Err(e),
         }
     }

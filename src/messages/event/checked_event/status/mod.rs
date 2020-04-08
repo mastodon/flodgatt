@@ -9,9 +9,10 @@ use {application::Application, attachment::Attachment, card::Card, poll::Poll};
 use crate::log_fatal;
 use crate::parse_client_request::Blocks;
 
+use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use std::boxed::Box;
-use std::{collections::HashSet, string::String};
+use std::string::String;
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]

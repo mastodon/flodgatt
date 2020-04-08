@@ -44,28 +44,30 @@ impl EventStream {
                 // change](github.com/tootsuite/flodgatt/issues/121) is implemented, we'll
                 // need to receive messages from the client.  If so, we'll need a
                 // `receive_from_ws.poll() call here (or later)`
-
                 match client_agent.poll() {
+                    Ok(Async::NotReady) => {
+                        if last_ping_time.elapsed() > Duration::from_secs(30) {
+                            last_ping_time = Instant::now();
+                            match tx.unbounded_send(Message::text("{}")) {
+                                Ok(_) => futures::future::ok(true),
+                                Err(_) => client_agent.disconnect(),
+                            }
+                        } else {
+                            futures::future::ok(true)
+                        }
+                    }
                     Ok(Async::Ready(Some(msg))) => {
                         match tx.unbounded_send(Message::text(msg.to_json_string())) {
                             Ok(_) => futures::future::ok(true),
                             Err(_) => client_agent.disconnect(),
                         }
                     }
-                    Ok(Async::Ready(None)) => {
-                        log::info!("WebSocket ClientAgent got Ready(None)");
-                        futures::future::ok(true)
-                    }
-                    Ok(Async::NotReady) if last_ping_time.elapsed() > Duration::from_secs(30) => {
-                        last_ping_time = Instant::now();
-                        match tx.unbounded_send(Message::text("{}")) {
-                            Ok(_) => futures::future::ok(true),
-                            Err(_) => client_agent.disconnect(),
-                        }
-                    }
-                    Ok(Async::NotReady) => futures::future::ok(true), // no new messages; nothing to do
                     Err(e) => {
                         log::error!("{}\n Dropping WebSocket message and continuing.", e);
+                        futures::future::ok(true)
+                    }
+                    Ok(Async::Ready(None)) => {
+                        log::info!("WebSocket ClientAgent got Ready(None)");
                         futures::future::ok(true)
                     }
                 }

@@ -6,6 +6,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum ReceiverErr {
+    InvalidId,
     TimelineErr(TimelineErr),
     EventErr(serde_json::Error),
     RedisParseErr(RedisParseErr),
@@ -16,6 +17,10 @@ impl fmt::Display for ReceiverErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use ReceiverErr::*;
         match self {
+            InvalidId => write!(
+                f,
+                "Attempted to get messages for a subscription that had not been set up."
+            ),
             EventErr(inner) => write!(f, "{}", inner),
             RedisParseErr(inner) => write!(f, "{}", inner),
             RedisConnErr(inner) => write!(f, "{}", inner),

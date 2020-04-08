@@ -1,10 +1,8 @@
 use crate::messages::Event;
 use crate::parse_client_request::Timeline;
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt,
-};
+use hashbrown::HashMap;
+use std::{collections::VecDeque, fmt};
 use uuid::Uuid;
 
 #[derive(Clone)]
