@@ -118,7 +118,7 @@ impl EventStream {
             }
         })
 
-        //                     event_rx
+        // _rx
         // .take_while(move |(tl, event)| {
         //                 let (tl, event) = (*tl, event.clone());
         //                 if target_timeline == tl {

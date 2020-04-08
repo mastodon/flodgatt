@@ -38,6 +38,7 @@ pub struct Receiver {
 impl Receiver {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
+
     pub fn try_from(
         redis_cfg: config::RedisConfig,
         tx: watch::Sender<(Timeline, Event)>,
@@ -45,6 +46,7 @@ impl Receiver {
     ) -> Result<Self> {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
+
             clients_per_timeline: HashMap::new(),
             tx,
             rx,
