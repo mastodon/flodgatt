@@ -453,7 +453,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "flodgatt"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "criterion 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "dotenv 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",

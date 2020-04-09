@@ -34,6 +34,9 @@
 //! most important settings for performance control the frequency with which the `ClientAgent`
 //! polls the `Receiver` and the frequency with which the `Receiver` polls Redis.
 //!
+
+#![allow(clippy::try_err, clippy::match_bool)]
+
 pub mod config;
 pub mod err;
 pub mod messages;

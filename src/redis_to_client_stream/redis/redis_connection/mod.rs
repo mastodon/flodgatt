@@ -80,7 +80,7 @@ impl RedisConn {
         self.redis_input.clear();
 
         let (input, invalid_bytes) = str::from_utf8(&input)
-            .map(|input| (input, "".as_bytes()))
+            .map(|input| (input, &b""[..]))
             .unwrap_or_else(|e| {
                 let (valid, invalid) = input.split_at(e.valid_up_to());
                 (str::from_utf8(valid).expect("Guaranteed by ^^^^"), invalid)
