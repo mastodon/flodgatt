@@ -2,7 +2,7 @@ use flodgatt::{
     config::{DeploymentConfig, EnvVar, PostgresConfig, RedisConfig},
     messages::Event,
     parse_client_request::{PgPool, Subscription, Timeline},
-    redis_to_client_stream::{EventStream, Receiver},
+    redis_to_client_stream::{Receiver, SseStream, WsStream},
 };
 use std::{env, fs, net::SocketAddr, os::unix::fs::PermissionsExt};
 use tokio::{
@@ -28,9 +28,9 @@ fn main() {
 
     let pg_pool = PgPool::new(postgres_cfg);
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
-    let (subscribe_tx, subscribe_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let poll_freq = *redis_cfg.polling_interval;
-    let receiver = Receiver::try_from(redis_cfg, event_tx, subscribe_rx)
+    let receiver = Receiver::try_from(redis_cfg, event_tx, cmd_rx)
         .unwrap_or_else(|e| {
             log::error!("{}\nFlodgatt shutting down...", e);
             std::process::exit(1);
@@ -40,7 +40,7 @@ fn main() {
 
     // Server Sent Events
     let sse_receiver = receiver.clone();
-    let sse_rx = event_rx.clone();
+    let (sse_rx, sse_cmd_tx) = (event_rx.clone(), cmd_tx.clone());
     let whitelist_mode = *cfg.whitelist_mode;
     let sse_routes = Subscription::from_sse_query(pg_pool.clone(), whitelist_mode)
         .and(warp::sse())
@@ -49,24 +49,26 @@ fn main() {
                 log::info!("Incoming SSE request for {:?}", subscription.timeline);
                 {
                     let mut receiver = sse_receiver.lock().expect("TODO");
-                    receiver
-                        .add_subscription(&subscription)
-                        .unwrap_or_else(|e| {
-                            log::error!("Could not subscribe to the Redis channel: {}", e)
-                        });
+                    receiver.subscribe(&subscription).unwrap_or_else(|e| {
+                        log::error!("Could not subscribe to the Redis channel: {}", e)
+                    });
                 }
-
+                let cmd_tx = sse_cmd_tx.clone();
                 let sse_rx = sse_rx.clone();
-
+                // self.sse.reply(
+                //     warp::sse::keep_alive()
+                //         .interval(Duration::from_secs(30))
+                //         .text("thump".to_string())
+                //         .stream(event_stream),
+                // )
                 // send the updates through the SSE connection
-                EventStream::send_to_sse(sse_connection_to_client, subscription, sse_rx)
+                SseStream::send_events(sse_connection_to_client, cmd_tx, subscription, sse_rx)
             },
         )
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
     let ws_receiver = receiver.clone();
-
     let whitelist_mode = *cfg.whitelist_mode;
     let ws_routes = Subscription::from_ws_request(pg_pool, whitelist_mode)
         .and(warp::ws::ws2())
@@ -74,25 +76,20 @@ fn main() {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             {
                 let mut receiver = ws_receiver.lock().expect("TODO");
-                receiver
-                    .add_subscription(&subscription)
-                    .unwrap_or_else(|e| {
-                        log::error!("Could not subscribe to the Redis channel: {}", e)
-                    });
+                receiver.subscribe(&subscription).unwrap_or_else(|e| {
+                    log::error!("Could not subscribe to the Redis channel: {}", e)
+                });
             }
-            let ws_subscribe_tx = subscribe_tx.clone();
+            let cmd_tx = cmd_tx.clone();
             let ws_rx = event_rx.clone();
             let token = subscription
                 .clone()
                 .access_token
                 .unwrap_or_else(String::new);
 
-            // send the updates through the WS connection
-            // (along with the User's access_token which is sent for security)
+            // send the updates through the WS connection (along with the access_token, for security)
             (
-                ws.on_upgrade(move |s| {
-                    EventStream::send_to_ws(s, subscription, ws_rx, ws_subscribe_tx)
-                }),
+                ws.on_upgrade(move |ws| WsStream::new(ws, cmd_tx, subscription).send_events(ws_rx)),
                 token,
             )
         })
@@ -118,13 +115,6 @@ fn main() {
     };
     #[cfg(not(feature = "stub_status"))]
     let status_endpoints = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
-
-    // let receiver_old = receiver.clone();
-    // // TODO make vvvv a green thread
-    // std::thread::spawn(move || loop {
-    //     std::thread::sleep(std::time::Duration::from_millis(10000));
-    //     receiver_old.lock().unwrap().poll_broadcast();
-    // });
 
     if let Some(socket) = &*cfg.unix_socket {
         log::info!("Using Unix socket {}", socket);
@@ -157,10 +147,9 @@ fn main() {
 
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
 
-        let receiver = receiver.clone();
         tokio::run(lazy(move || {
             let receiver = receiver.clone();
-            tokio::spawn(lazy(move || {
+            warp::spawn(lazy(move || {
                 tokio::timer::Interval::new(Instant::now(), poll_freq)
                     .map_err(|e| log::error!("{}", e))
                     .for_each(move |_| {

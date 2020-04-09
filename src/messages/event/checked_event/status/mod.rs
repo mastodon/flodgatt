@@ -21,8 +21,7 @@ pub struct Status {
     uri: String,
     created_at: String,
     account: Account,
-    // TODO remove pub
-    pub content: String,
+    content: String,
     visibility: Visibility,
     sensitive: bool,
     spoiler_text: String,
@@ -87,16 +86,14 @@ impl Status {
     pub fn involves_any(&self, blocks: &Blocks) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
-
         let Blocks {
             blocked_users,
             blocking_users,
             blocked_domains,
         } = blocks;
+        let user_id = &self.account.id.parse().expect("TODO");
 
-        if !self.calculate_involved_users().is_disjoint(blocked_users) {
-            REJECT
-        } else if blocking_users.contains(&self.account.id.parse().expect("TODO")) {
+        if blocking_users.contains(user_id) || self.involves(blocked_users) {
             REJECT
         } else {
             let full_username = &self.account.acct;
@@ -107,7 +104,7 @@ impl Status {
         }
     }
 
-    fn calculate_involved_users(&self) -> HashSet<i64> {
+    fn involves(&self, blocked_users: &HashSet<i64>) -> bool {
         // TODO replace vvvv with error handling
         let err = |_| log_fatal!("Could not process an `id` field in {:?}", &self);
 
@@ -128,6 +125,6 @@ impl Status {
         if let Some(boosted_status) = self.reblog.clone() {
             involved_users.insert(boosted_status.account.id.parse().unwrap_or_else(err));
         }
-        involved_users
+        !involved_users.is_disjoint(blocked_users)
     }
 }

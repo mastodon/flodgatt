@@ -32,7 +32,6 @@ pub struct Receiver {
     tx: watch::Sender<(Timeline, Event)>,
     rx: mpsc::UnboundedReceiver<Timeline>,
     ping_time: Instant,
-    time: Instant,
 }
 
 impl Receiver {
@@ -51,7 +50,6 @@ impl Receiver {
             tx,
             rx,
             ping_time: Instant::now(),
-            time: Instant::now(),
         })
     }
 
@@ -59,7 +57,7 @@ impl Receiver {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn add_subscription(&mut self, subscription: &Subscription) -> Result<()> {
+    pub fn subscribe(&mut self, subscription: &Subscription) -> Result<()> {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
 
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
@@ -80,7 +78,7 @@ impl Receiver {
         Ok(())
     }
 
-    pub fn remove_subscription(&mut self, tl: Timeline) -> Result<()> {
+    pub fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {
         let number_of_subscriptions = self
             .clients_per_timeline
             .entry(tl)
@@ -102,10 +100,8 @@ impl Receiver {
     }
 
     pub fn poll_broadcast(&mut self) {
-        log::info!("{:?}", self.time.elapsed());
-
         while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
-            self.remove_subscription(tl).expect("TODO");
+            self.unsubscribe(tl).expect("TODO");
         }
 
         if self.ping_time.elapsed() > Duration::from_secs(30) {
@@ -123,7 +119,6 @@ impl Receiver {
                 Err(_err) => panic!("TODO"),
             }
         }
-        self.time = Instant::now();
     }
 
     pub fn count_connections(&self) -> String {

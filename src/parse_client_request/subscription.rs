@@ -218,7 +218,7 @@ impl Timeline {
         };
 
         use {Content::*, Reach::*, Stream::*};
-        Ok(match &timeline.split(":").collect::<Vec<&str>>()[..] {
+        Ok(match &timeline.split(':').collect::<Vec<&str>>()[..] {
             ["public"] => Timeline(Public, Federated, All),
             ["public", "local"] => Timeline(Public, Local, All),
             ["public", "media"] => Timeline(Public, Federated, Media),
