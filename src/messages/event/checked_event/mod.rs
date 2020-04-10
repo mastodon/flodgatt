@@ -14,6 +14,7 @@ mod visibility;
 pub use announcement::Announcement;
 pub(in crate::messages::event) use announcement_reaction::AnnouncementReaction;
 pub use conversation::Conversation;
+pub use id::Id;
 pub use notification::Notification;
 pub use status::Status;
 

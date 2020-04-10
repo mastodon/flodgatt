@@ -92,7 +92,7 @@ impl Status {
             blocking_users,
             blocked_domains,
         } = blocks;
-        let user_id = &self.account.id.0;
+        let user_id = &Id(self.account.id.0);
 
         if blocking_users.contains(user_id) || self.involves(blocked_users) {
             REJECT
@@ -105,20 +105,23 @@ impl Status {
         }
     }
 
-    fn involves(&self, blocked_users: &HashSet<i64>) -> bool {
+    fn involves(&self, blocked_users: &HashSet<Id>) -> bool {
         // involved_users = mentioned_users + author + replied-to user + boosted user
-        let mut involved_users: HashSet<i64> =
-            self.mentions.iter().map(|mention| mention.id.0).collect();
+        let mut involved_users: HashSet<Id> = self
+            .mentions
+            .iter()
+            .map(|mention| Id(mention.id.0))
+            .collect();
 
         // author
-        involved_users.insert(self.account.id.0);
+        involved_users.insert(Id(self.account.id.0));
         // replied-to user
-        if let Some(user_id) = self.in_reply_to_account_id.clone() {
-            involved_users.insert(user_id.0);
+        if let Some(user_id) = self.in_reply_to_account_id {
+            involved_users.insert(Id(user_id.0));
         }
         // boosted user
         if let Some(boosted_status) = self.reblog.clone() {
-            involved_users.insert(boosted_status.account.id.0);
+            involved_users.insert(Id(boosted_status.account.id.0));
         }
         !involved_users.is_disjoint(blocked_users)
     }

@@ -1,6 +1,7 @@
 //! Postgres queries
 use crate::{
     config,
+    messages::Id,
     parse_client_request::subscription::{Scope, UserData},
 };
 use ::postgres;
@@ -28,6 +29,7 @@ impl PgPool {
             .expect("Can connect to local postgres");
         Self(pool)
     }
+
     pub fn select_user(self, token: &str) -> Result<UserData, Rejection> {
         let mut conn = self.0.get().unwrap();
         let query_rows = conn
@@ -45,7 +47,7 @@ LIMIT 1",
             )
         .expect("Hard-coded query will return Some([0 or more rows])");
         if let Some(result_columns) = query_rows.get(0) {
-            let id = result_columns.get(1);
+            let id = Id(result_columns.get(1));
             let allowed_langs = result_columns
                 .try_get::<_, Vec<_>>(2)
                 .unwrap_or_else(|_| Vec::new())
@@ -96,17 +98,16 @@ LIMIT 1",
             )
             .expect("Hard-coded query will return Some([0 or more rows])");
 
-        match rows.get(0) {
-            Some(row) => Ok(row.get(0)),
-            None => Err(warp::reject::custom("Error: Hashtag does not exist.")),
-        }
+        rows.get(0)
+            .map(|row| row.get(0))
+            .ok_or_else(|| warp::reject::custom("Error: Hashtag does not exist."))
     }
 
     /// Query Postgres for everyone the user has blocked or muted
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_users(self, user_id: i64) -> HashSet<i64> {
+    pub fn select_blocked_users(self, user_id: Id) -> HashSet<Id> {
         self.0
             .get()
             .unwrap()
@@ -118,18 +119,18 @@ SELECT target_account_id
 UNION SELECT target_account_id
   FROM mutes
   WHERE account_id = $1",
-                &[&user_id],
+                &[&*user_id],
             )
             .expect("Hard-coded query will return Some([0 or more rows])")
             .iter()
-            .map(|row| row.get(0))
+            .map(|row| Id(row.get(0)))
             .collect()
     }
     /// Query Postgres for everyone who has blocked the user
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocking_users(self, user_id: i64) -> HashSet<i64> {
+    pub fn select_blocking_users(self, user_id: Id) -> HashSet<Id> {
         self.0
             .get()
             .unwrap()
@@ -138,11 +139,11 @@ UNION SELECT target_account_id
 SELECT account_id
   FROM blocks
   WHERE target_account_id = $1",
-                &[&user_id],
+                &[&*user_id],
             )
             .expect("Hard-coded query will return Some([0 or more rows])")
             .iter()
-            .map(|row| row.get(0))
+            .map(|row| Id(row.get(0)))
             .collect()
     }
 
@@ -150,13 +151,13 @@ SELECT account_id
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_domains(self, user_id: i64) -> HashSet<String> {
+    pub fn select_blocked_domains(self, user_id: Id) -> HashSet<String> {
         self.0
             .get()
             .unwrap()
             .query(
                 "SELECT domain FROM account_domain_blocks WHERE account_id = $1",
-                &[&user_id],
+                &[&*user_id],
             )
             .expect("Hard-coded query will return Some([0 or more rows])")
             .iter()
@@ -165,7 +166,7 @@ SELECT account_id
     }
 
     /// Test whether a user owns a list
-    pub fn user_owns_list(self, user_id: i64, list_id: i64) -> bool {
+    pub fn user_owns_list(self, user_id: Id, list_id: i64) -> bool {
         let mut conn = self.0.get().unwrap();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
@@ -181,10 +182,7 @@ LIMIT 1",
 
         match rows.get(0) {
             None => false,
-            Some(row) => {
-                let list_owner_id: i64 = row.get(1);
-                list_owner_id == user_id
-            }
+            Some(row) => Id(row.get(1)) == user_id,
         }
     }
 }

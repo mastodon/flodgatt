@@ -9,6 +9,7 @@ use super::postgres::PgPool;
 use super::query::Query;
 use crate::err::TimelineErr;
 use crate::log_fatal;
+use crate::messages::Id;
 use hashbrown::HashSet;
 use lru::LruCache;
 use uuid::Uuid;
@@ -62,8 +63,8 @@ pub struct Subscription {
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Blocks {
     pub blocked_domains: HashSet<String>,
-    pub blocked_users: HashSet<i64>,
-    pub blocking_users: HashSet<i64>,
+    pub blocked_users: HashSet<Id>,
+    pub blocking_users: HashSet<Id>,
 }
 
 impl Default for Subscription {
@@ -254,11 +255,11 @@ impl Timeline {
             "hashtag" => Timeline(Hashtag(id_from_hashtag()?), Federated, All),
             "hashtag:local" => Timeline(Hashtag(id_from_hashtag()?), Local, All),
             "user" => match user.scopes.contains(&Statuses) {
-                true => Timeline(User(user.id), Federated, All),
+                true => Timeline(User(*user.id), Federated, All),
                 false => Err(custom("Error: Missing access token"))?,
             },
             "user:notification" => match user.scopes.contains(&Statuses) {
-                true => Timeline(User(user.id), Federated, Notification),
+                true => Timeline(User(*user.id), Federated, Notification),
                 false => Err(custom("Error: Missing access token"))?,
             },
             "list" => match user.scopes.contains(&Lists) && user_owns_list() {
@@ -266,7 +267,7 @@ impl Timeline {
                 false => Err(warp::reject::custom("Error: Missing access token"))?,
             },
             "direct" => match user.scopes.contains(&Statuses) {
-                true => Timeline(Direct(user.id), Federated, All),
+                true => Timeline(Direct(*user.id), Federated, All),
                 false => Err(custom("Error: Missing access token"))?,
             },
             other => {
@@ -309,7 +310,7 @@ pub enum Scope {
 }
 
 pub struct UserData {
-    pub id: i64,
+    pub id: Id,
     pub allowed_langs: HashSet<String>,
     pub scopes: HashSet<Scope>,
 }
@@ -317,7 +318,7 @@ pub struct UserData {
 impl UserData {
     fn public() -> Self {
         Self {
-            id: -1,
+            id: Id(-1),
             allowed_langs: HashSet::new(),
             scopes: HashSet::new(),
         }

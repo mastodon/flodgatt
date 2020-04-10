@@ -1,17 +1,21 @@
 mod checked_event;
 mod dynamic_event;
+mod err;
 
-pub use {checked_event::CheckedEvent, dynamic_event::DynamicEvent};
+pub use {
+    checked_event::{CheckedEvent, Id},
+    dynamic_event::{DynEvent, DynStatus, EventKind},
+    err::EventErr,
+};
 
 use crate::log_fatal;
-use crate::redis_to_client_stream::ReceiverErr;
 use serde::Serialize;
 use std::{convert::TryFrom, string::String};
 
 #[derive(Debug, Clone)]
 pub enum Event {
     TypeSafe(CheckedEvent),
-    Dynamic(DynamicEvent),
+    Dynamic(DynEvent),
     Ping,
 }
 
@@ -38,7 +42,11 @@ impl Event {
                 CheckedEvent::Conversation { .. } => "conversation",
                 CheckedEvent::FiltersChanged => "filters_changed",
             },
-            Self::Dynamic(dyn_event) => &dyn_event.event,
+            Self::Dynamic(DynEvent {
+                kind: EventKind::Update(_),
+                ..
+            }) => "update",
+            Self::Dynamic(DynEvent { event, .. }) => event,
             Self::Ping => panic!("event_name() called on EventNotReady"),
         })
     }
@@ -56,21 +64,23 @@ impl Event {
                 Conversation { payload, .. } => Some(escaped(payload)),
                 FiltersChanged => None,
             },
-            Self::Dynamic(dyn_event) => Some(dyn_event.payload.to_string()),
+            Self::Dynamic(DynEvent { payload, .. }) => Some(payload.to_string()),
             Self::Ping => panic!("payload() called on EventNotReady"),
         }
     }
 }
 
 impl TryFrom<String> for Event {
-    type Error = ReceiverErr;
-    fn try_from(event_txt: String) -> Result<Event, ReceiverErr> {
+    type Error = EventErr;
+
+    fn try_from(event_txt: String) -> Result<Event, Self::Error> {
         Event::try_from(event_txt.as_str())
     }
 }
 impl TryFrom<&str> for Event {
-    type Error = ReceiverErr;
-    fn try_from(event_txt: &str) -> Result<Event, ReceiverErr> {
+    type Error = EventErr;
+
+    fn try_from(event_txt: &str) -> Result<Event, Self::Error> {
         match serde_json::from_str(event_txt) {
             Ok(checked_event) => Ok(Event::TypeSafe(checked_event)),
             Err(e) => {
@@ -80,8 +90,8 @@ impl TryFrom<&str> for Event {
                              Forwarding Redis payload without type checking it.",
                     e
                 );
-                let dyn_event: DynamicEvent = serde_json::from_str(&event_txt)?;
-                Ok(Event::Dynamic(dyn_event))
+
+                Ok(Event::Dynamic(serde_json::from_str(&event_txt)?))
             }
         }
     }
