@@ -5,7 +5,7 @@ mod redis;
 
 pub use {
     event_stream::{SseStream, WsStream},
-    receiver::Receiver,
+    receiver::{Receiver, ReceiverErr},
 };
 
 #[cfg(feature = "bench")]

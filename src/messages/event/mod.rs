@@ -4,8 +4,9 @@ mod dynamic_event;
 pub use {checked_event::CheckedEvent, dynamic_event::DynamicEvent};
 
 use crate::log_fatal;
+use crate::redis_to_client_stream::ReceiverErr;
 use serde::Serialize;
-use std::string::String;
+use std::{convert::TryFrom, string::String};
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -61,24 +62,26 @@ impl Event {
     }
 }
 
-impl From<String> for Event {
-    fn from(event_txt: String) -> Event {
-        Event::from(event_txt.as_str())
+impl TryFrom<String> for Event {
+    type Error = ReceiverErr;
+    fn try_from(event_txt: String) -> Result<Event, ReceiverErr> {
+        Event::try_from(event_txt.as_str())
     }
 }
-impl From<&str> for Event {
-    fn from(event_txt: &str) -> Event {
+impl TryFrom<&str> for Event {
+    type Error = ReceiverErr;
+    fn try_from(event_txt: &str) -> Result<Event, ReceiverErr> {
         match serde_json::from_str(event_txt) {
-            Ok(checked_event) => Event::TypeSafe(checked_event),
+            Ok(checked_event) => Ok(Event::TypeSafe(checked_event)),
             Err(e) => {
                 log::error!(
                     "Error safely parsing Redis input.  Mastodon and Flodgatt do not \
-                             strictly conform to the same version of Mastodon's API.\n{}\
+                             strictly conform to the same version of Mastodon's API.\n{}\n\
                              Forwarding Redis payload without type checking it.",
                     e
                 );
-                let dyn_event: DynamicEvent = serde_json::from_str(&event_txt).expect("TODO");
-                Event::Dynamic(dyn_event)
+                let dyn_event: DynamicEvent = serde_json::from_str(&event_txt)?;
+                Ok(Event::Dynamic(dyn_event))
             }
         }
     }

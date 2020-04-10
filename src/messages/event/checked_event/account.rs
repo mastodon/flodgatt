@@ -1,10 +1,10 @@
-use super::{emoji::Emoji, visibility::Visibility};
+use super::{emoji::Emoji, id::Id, visibility::Visibility};
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(super) struct Account {
-    pub id: String,
+    pub id: Id,
     username: String,
     pub acct: String,
     url: String,
@@ -21,7 +21,7 @@ pub(super) struct Account {
     statuses_count: i64,
     followers_count: i64,
     following_count: i64,
-    moved: Option<Box<String>>,
+    moved: Option<String>,
     fields: Option<Vec<Field>>,
     bot: Option<bool>,
     source: Option<Source>,

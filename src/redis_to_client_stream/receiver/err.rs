@@ -1,5 +1,7 @@
 use super::super::redis::{RedisConnErr, RedisParseErr};
 use crate::err::TimelineErr;
+use crate::messages::Event;
+use crate::parse_client_request::Timeline;
 
 use serde_json;
 use std::fmt;
@@ -11,7 +13,10 @@ pub enum ReceiverErr {
     EventErr(serde_json::Error),
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
+    ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
 }
+
+impl std::error::Error for ReceiverErr {}
 
 impl fmt::Display for ReceiverErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -25,8 +30,14 @@ impl fmt::Display for ReceiverErr {
             RedisParseErr(inner) => write!(f, "{}", inner),
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
+            ChannelSendErr(inner) => write!(f, "{}", inner),
         }?;
         Ok(())
+    }
+}
+impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for ReceiverErr {
+    fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
+        Self::ChannelSendErr(error)
     }
 }
 

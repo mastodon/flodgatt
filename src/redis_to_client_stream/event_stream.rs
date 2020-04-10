@@ -95,7 +95,9 @@ impl WsStream {
         match self.ws_tx.try_send(Message::text(txt)) {
             Ok(_) => Ok(()),
             Err(_) => {
-                self.unsubscribe_tx.try_send(tl).expect("TODO");
+                self.unsubscribe_tx
+                    .try_send(tl)
+                    .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
                 Err(())
             }
         }
@@ -150,7 +152,9 @@ impl SseStream {
                 }
             })
             .then(move |res| {
-                unsubscribe_tx.try_send(target_timeline).expect("TODO");
+                unsubscribe_tx
+                    .try_send(target_timeline)
+                    .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
                 res
             });
 

@@ -4,6 +4,7 @@ mod announcement;
 mod announcement_reaction;
 mod conversation;
 mod emoji;
+mod id;
 mod mention;
 mod notification;
 mod status;

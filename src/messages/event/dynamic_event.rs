@@ -77,10 +77,10 @@ impl DynamicEvent {
             involved_users.insert(user_id.parse().expect("TODO"));
         }
         // boosted user
-        let id_of_boosted_user = self.payload["reblog"]["account"]["id"]
-            .as_str()
-            .expect("TODO");
-        involved_users.insert(id_of_boosted_user.parse().expect("TODO"));
+        let id_of_boosted_user = self.payload["reblog"]["account"]["id"].as_str();
+        if let Some(user_id) = id_of_boosted_user {
+            involved_users.insert(user_id.parse().expect("TODO"));
+        }
 
         !involved_users.is_disjoint(blocked_users)
     }
