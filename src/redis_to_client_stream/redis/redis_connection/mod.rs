@@ -10,7 +10,7 @@ use crate::{
 };
 
 use std::{
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     io::{Read, Write},
     net::TcpStream,
     str,
@@ -92,13 +92,13 @@ impl RedisConn {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
                     let trimmed_tl_txt = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event = msg.event_txt.into();
+                    let event = msg.event_txt.try_into()?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 None => {
                     let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event = msg.event_txt.into();
+                    let event = msg.event_txt.try_into()?;
                     (Ok(Ready(Some((tl, event)))), msg.leftover_input)
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
@@ -166,8 +166,8 @@ impl RedisConn {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
             _non_hashtag_timeline => None,
         };
-        let tl = timeline.to_redis_raw_timeline(hashtag);
 
+        let tl = timeline.to_redis_raw_timeline(hashtag)?;
         let (primary_cmd, secondary_cmd) = match cmd {
             RedisCmd::Subscribe => (
                 format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),

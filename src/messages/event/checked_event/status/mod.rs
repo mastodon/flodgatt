@@ -3,10 +3,11 @@ mod attachment;
 mod card;
 mod poll;
 
-use super::{account::Account, emoji::Emoji, mention::Mention, tag::Tag, visibility::Visibility};
+use super::{
+    account::Account, emoji::Emoji, id::Id, mention::Mention, tag::Tag, visibility::Visibility,
+};
 use {application::Application, attachment::Attachment, card::Card, poll::Poll};
 
-use crate::log_fatal;
 use crate::parse_client_request::Blocks;
 
 use hashbrown::HashSet;
@@ -17,7 +18,7 @@ use std::string::String;
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Status {
-    id: String,
+    id: Id,
     uri: String,
     created_at: String,
     account: Account,
@@ -34,8 +35,8 @@ pub struct Status {
     favourites_count: i64,
     replies_count: i64,
     url: Option<String>,
-    in_reply_to_id: Option<String>,
-    in_reply_to_account_id: Option<String>,
+    in_reply_to_id: Option<Id>,
+    in_reply_to_account_id: Option<Id>,
     reblog: Option<Box<Status>>,
     poll: Option<Poll>,
     card: Option<Card>,
@@ -91,7 +92,7 @@ impl Status {
             blocking_users,
             blocked_domains,
         } = blocks;
-        let user_id = &self.account.id.parse().expect("TODO");
+        let user_id = &Id(self.account.id.0);
 
         if blocking_users.contains(user_id) || self.involves(blocked_users) {
             REJECT
@@ -104,26 +105,23 @@ impl Status {
         }
     }
 
-    fn involves(&self, blocked_users: &HashSet<i64>) -> bool {
-        // TODO replace vvvv with error handling
-        let err = |_| log_fatal!("Could not process an `id` field in {:?}", &self);
-
+    fn involves(&self, blocked_users: &HashSet<Id>) -> bool {
         // involved_users = mentioned_users + author + replied-to user + boosted user
-        let mut involved_users: HashSet<i64> = self
+        let mut involved_users: HashSet<Id> = self
             .mentions
             .iter()
-            .map(|mention| mention.id.parse().unwrap_or_else(err))
+            .map(|mention| Id(mention.id.0))
             .collect();
 
         // author
-        involved_users.insert(self.account.id.parse::<i64>().unwrap_or_else(err));
+        involved_users.insert(Id(self.account.id.0));
         // replied-to user
-        if let Some(user_id) = self.in_reply_to_account_id.clone() {
-            involved_users.insert(user_id.parse().unwrap_or_else(err));
+        if let Some(user_id) = self.in_reply_to_account_id {
+            involved_users.insert(Id(user_id.0));
         }
         // boosted user
         if let Some(boosted_status) = self.reblog.clone() {
-            involved_users.insert(boosted_status.account.id.parse().unwrap_or_else(err));
+            involved_users.insert(Id(boosted_status.account.id.0));
         }
         !involved_users.is_disjoint(blocked_users)
     }

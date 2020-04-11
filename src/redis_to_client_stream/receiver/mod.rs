@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, watch};
 
 use std::{
     result,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::{Duration, Instant},
 };
 
@@ -59,7 +59,6 @@ impl Receiver {
 
     pub fn subscribe(&mut self, subscription: &Subscription) -> Result<()> {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
-
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
             self.redis_connection.update_cache(hashtag, id);
         };
@@ -74,7 +73,6 @@ impl Receiver {
         if *number_of_subscriptions == 1 {
             self.redis_connection.send_cmd(Subscribe, &tl)?
         };
-        log::info!("Started stream for {:?}", tl);
         Ok(())
     }
 
@@ -99,36 +97,40 @@ impl Receiver {
         Ok(())
     }
 
-    pub fn poll_broadcast(&mut self) {
+    pub fn poll_broadcast(&mut self) -> Result<()> {
         while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
-            self.unsubscribe(tl).expect("TODO");
+            self.unsubscribe(tl)?
         }
 
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
-            self.tx
-                .broadcast((Timeline::empty(), Event::Ping))
-                .expect("TODO");
+            self.tx.broadcast((Timeline::empty(), Event::Ping))?
         } else {
             match self.redis_connection.poll_redis() {
                 Ok(Async::NotReady) => (),
                 Ok(Async::Ready(Some((timeline, event)))) => {
-                    self.tx.broadcast((timeline, event)).expect("TODO");
+                    self.tx.broadcast((timeline, event))?
                 }
                 Ok(Async::Ready(None)) => (), // subscription cmd or msg for other namespace
-                Err(_err) => panic!("TODO"),
+                Err(err) => log::error!("{}", err), // drop msg, log err, and proceed
             }
         }
+        Ok(())
     }
 
-    pub fn count_connections(&self) -> String {
+    pub fn recover(poisoned: PoisonError<MutexGuard<Self>>) -> MutexGuard<Self> {
+        log::error!("{}", &poisoned);
+        poisoned.into_inner()
+    }
+
+    pub fn count(&self) -> String {
         format!(
             "Current connections: {}",
             self.clients_per_timeline.values().sum::<i32>()
         )
     }
 
-    pub fn list_connections(&self) -> String {
+    pub fn list(&self) -> String {
         let max_len = self
             .clients_per_timeline
             .keys()

@@ -1,16 +1,20 @@
 mod checked_event;
 mod dynamic_event;
+mod err;
 
-pub use {checked_event::CheckedEvent, dynamic_event::DynamicEvent};
+pub use {
+    checked_event::{CheckedEvent, Id},
+    dynamic_event::{DynEvent, DynStatus, EventKind},
+    err::EventErr,
+};
 
-use crate::log_fatal;
 use serde::Serialize;
-use std::string::String;
+use std::{convert::TryFrom, string::String};
 
 #[derive(Debug, Clone)]
 pub enum Event {
     TypeSafe(CheckedEvent),
-    Dynamic(DynamicEvent),
+    Dynamic(DynEvent),
     Ping,
 }
 
@@ -21,8 +25,7 @@ impl Event {
             Some(payload) => SendableEvent::WithPayload { event, payload },
             None => SendableEvent::NoPayload { event },
         };
-        serde_json::to_string(&sendable_event)
-            .unwrap_or_else(|_| log_fatal!("Could not serialize `{:?}`", &sendable_event))
+        serde_json::to_string(&sendable_event).expect("Guaranteed: SendableEvent is Serialize")
     }
 
     pub fn event_name(&self) -> String {
@@ -37,8 +40,12 @@ impl Event {
                 CheckedEvent::Conversation { .. } => "conversation",
                 CheckedEvent::FiltersChanged => "filters_changed",
             },
-            Self::Dynamic(dyn_event) => &dyn_event.event,
-            Self::Ping => panic!("event_name() called on EventNotReady"),
+            Self::Dynamic(DynEvent {
+                kind: EventKind::Update(_),
+                ..
+            }) => "update",
+            Self::Dynamic(DynEvent { event, .. }) => event,
+            Self::Ping => panic!("event_name() called on Ping"),
         })
     }
 
@@ -55,30 +62,34 @@ impl Event {
                 Conversation { payload, .. } => Some(escaped(payload)),
                 FiltersChanged => None,
             },
-            Self::Dynamic(dyn_event) => Some(dyn_event.payload.to_string()),
-            Self::Ping => panic!("payload() called on EventNotReady"),
+            Self::Dynamic(DynEvent { payload, .. }) => Some(payload.to_string()),
+            Self::Ping => panic!("payload() called on Ping"),
         }
     }
 }
 
-impl From<String> for Event {
-    fn from(event_txt: String) -> Event {
-        Event::from(event_txt.as_str())
+impl TryFrom<String> for Event {
+    type Error = EventErr;
+
+    fn try_from(event_txt: String) -> Result<Event, Self::Error> {
+        Event::try_from(event_txt.as_str())
     }
 }
-impl From<&str> for Event {
-    fn from(event_txt: &str) -> Event {
+impl TryFrom<&str> for Event {
+    type Error = EventErr;
+
+    fn try_from(event_txt: &str) -> Result<Event, Self::Error> {
         match serde_json::from_str(event_txt) {
-            Ok(checked_event) => Event::TypeSafe(checked_event),
+            Ok(checked_event) => Ok(Event::TypeSafe(checked_event)),
             Err(e) => {
                 log::error!(
                     "Error safely parsing Redis input.  Mastodon and Flodgatt do not \
-                             strictly conform to the same version of Mastodon's API.\n{}\
+                             strictly conform to the same version of Mastodon's API.\n{}\n\
                              Forwarding Redis payload without type checking it.",
                     e
                 );
-                let dyn_event: DynamicEvent = serde_json::from_str(&event_txt).expect("TODO");
-                Event::Dynamic(dyn_event)
+
+                Ok(Event::Dynamic(serde_json::from_str(&event_txt)?))
             }
         }
     }
@@ -92,6 +103,5 @@ enum SendableEvent<'a> {
 }
 
 fn escaped<T: Serialize + std::fmt::Debug>(content: T) -> String {
-    serde_json::to_string(&content)
-        .unwrap_or_else(|_| log_fatal!("Could not parse Event with: `{:?}`", &content))
+    serde_json::to_string(&content).expect("Guaranteed by Serialize trait bound")
 }

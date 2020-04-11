@@ -56,7 +56,7 @@ impl WsStream {
             if matches!(event, Event::Ping) {
                 self.send_ping()
             } else if target_timeline == tl {
-                use crate::messages::{CheckedEvent::Update, Event::*};
+                use crate::messages::{CheckedEvent::Update, Event::*, EventKind};
                 use crate::parse_client_request::Stream::Public;
                 let blocks = &self.subscription.blocks;
                 let allowed_langs = &self.subscription.allowed_langs;
@@ -68,12 +68,17 @@ impl WsStream {
                         _ => self.send_msg(TypeSafe(Update { payload, queued_at })),
                     },
                     TypeSafe(non_update) => self.send_msg(TypeSafe(non_update)),
-                    Dynamic(event) if event.event == "update" => match tl {
-                        Timeline(Public, _, _) if event.language_not(allowed_langs) => Ok(()),
-                        _ if event.involves_any(&blocks) => Ok(()),
-                        _ => self.send_msg(Dynamic(event)),
-                    },
-                    Dynamic(non_update) => self.send_msg(Dynamic(non_update)),
+                    Dynamic(dyn_event) => {
+                        if let EventKind::Update(s) = dyn_event.kind.clone() {
+                            match tl {
+                                Timeline(Public, _, _) if s.language_not(allowed_langs) => Ok(()),
+                                _ if s.involves_any(&blocks) => Ok(()),
+                                _ => self.send_msg(Dynamic(dyn_event)),
+                            }
+                        } else {
+                            self.send_msg(Dynamic(dyn_event))
+                        }
+                    }
                     Ping => unreachable!(), // handled pings above
                 }
             } else {
@@ -95,7 +100,9 @@ impl WsStream {
         match self.ws_tx.try_send(Message::text(txt)) {
             Ok(_) => Ok(()),
             Err(_) => {
-                self.unsubscribe_tx.try_send(tl).expect("TODO");
+                self.unsubscribe_tx
+                    .try_send(tl)
+                    .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
                 Err(())
             }
         }
@@ -125,7 +132,10 @@ impl SseStream {
         let event_stream = sse_rx
             .filter_map(move |(timeline, event)| {
                 if target_timeline == timeline {
-                    use crate::messages::{CheckedEvent, CheckedEvent::Update, Event::*};
+                    use crate::messages::{
+                        CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
+                    };
+
                     use crate::parse_client_request::Stream::Public;
                     match event {
                         TypeSafe(Update { payload, queued_at }) => match timeline {
@@ -137,12 +147,22 @@ impl SseStream {
                             })),
                         },
                         TypeSafe(non_update) => Self::reply_with(Event::TypeSafe(non_update)),
-                        Dynamic(event) if event.event == "update" => match timeline {
-                            Timeline(Public, _, _) if event.language_not(&allowed_langs) => None,
-                            _ if event.involves_any(&blocks) => None,
-                            _ => Self::reply_with(Event::Dynamic(event)),
-                        },
-                        Dynamic(non_update) => Self::reply_with(Event::Dynamic(non_update)),
+                        Dynamic(dyn_event) => {
+                            if let EventKind::Update(s) = dyn_event.kind {
+                                match timeline {
+                                    Timeline(Public, _, _) if s.language_not(&allowed_langs) => {
+                                        None
+                                    }
+                                    _ if s.involves_any(&blocks) => None,
+                                    _ => Self::reply_with(Dynamic(DynEvent {
+                                        kind: EventKind::Update(s),
+                                        ..dyn_event
+                                    })),
+                                }
+                            } else {
+                                None
+                            }
+                        }
                         Ping => None, // pings handled automatically
                     }
                 } else {
@@ -150,7 +170,9 @@ impl SseStream {
                 }
             })
             .then(move |res| {
-                unsubscribe_tx.try_send(target_timeline).expect("TODO");
+                unsubscribe_tx
+                    .try_send(target_timeline)
+                    .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
                 res
             });
 

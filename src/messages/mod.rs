@@ -1,3 +1,3 @@
 mod event;
 
-pub use event::{CheckedEvent, DynamicEvent, Event};
+pub use event::{CheckedEvent, DynEvent, Event, EventErr, EventKind, Id};

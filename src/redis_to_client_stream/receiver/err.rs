@@ -1,17 +1,20 @@
 use super::super::redis::{RedisConnErr, RedisParseErr};
 use crate::err::TimelineErr;
+use crate::messages::{Event, EventErr};
+use crate::parse_client_request::Timeline;
 
-use serde_json;
 use std::fmt;
-
 #[derive(Debug)]
 pub enum ReceiverErr {
     InvalidId,
     TimelineErr(TimelineErr),
-    EventErr(serde_json::Error),
+    EventErr(EventErr),
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
+    ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
 }
+
+impl std::error::Error for ReceiverErr {}
 
 impl fmt::Display for ReceiverErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -25,13 +28,20 @@ impl fmt::Display for ReceiverErr {
             RedisParseErr(inner) => write!(f, "{}", inner),
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
+            ChannelSendErr(inner) => write!(f, "{}", inner),
         }?;
         Ok(())
     }
 }
 
-impl From<serde_json::Error> for ReceiverErr {
-    fn from(error: serde_json::Error) -> Self {
+impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for ReceiverErr {
+    fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
+        Self::ChannelSendErr(error)
+    }
+}
+
+impl From<EventErr> for ReceiverErr {
+    fn from(error: EventErr) -> Self {
         Self::EventErr(error)
     }
 }

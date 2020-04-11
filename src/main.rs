@@ -1,5 +1,6 @@
 use flodgatt::{
     config::{DeploymentConfig, EnvVar, PostgresConfig, RedisConfig},
+    err::FatalErr,
     messages::Event,
     parse_client_request::{PgPool, Subscription, Timeline},
     redis_to_client_stream::{Receiver, SseStream, WsStream},
@@ -11,7 +12,7 @@ use tokio::{
 };
 use warp::{http::StatusCode, path, ws::Ws2, Filter, Rejection};
 
-fn main() {
+fn main() -> Result<(), FatalErr> {
     dotenv::from_filename(match env::var("ENV").ok().as_deref() {
         Some("production") => ".env.production",
         Some("development") | None => ".env",
@@ -30,12 +31,7 @@ fn main() {
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let poll_freq = *redis_cfg.polling_interval;
-    let receiver = Receiver::try_from(redis_cfg, event_tx, cmd_rx)
-        .unwrap_or_else(|e| {
-            log::error!("{}\nFlodgatt shutting down...", e);
-            std::process::exit(1);
-        })
-        .into_arc();
+    let receiver = Receiver::try_from(redis_cfg, event_tx, cmd_rx)?.into_arc();
     log::info!("Streaming server initialized and ready to accept connections");
 
     // Server Sent Events
@@ -48,19 +44,13 @@ fn main() {
             move |subscription: Subscription, sse_connection_to_client: warp::sse::Sse| {
                 log::info!("Incoming SSE request for {:?}", subscription.timeline);
                 {
-                    let mut receiver = sse_receiver.lock().expect("TODO");
+                    let mut receiver = sse_receiver.lock().unwrap_or_else(Receiver::recover);
                     receiver.subscribe(&subscription).unwrap_or_else(|e| {
                         log::error!("Could not subscribe to the Redis channel: {}", e)
                     });
                 }
                 let cmd_tx = sse_cmd_tx.clone();
                 let sse_rx = sse_rx.clone();
-                // self.sse.reply(
-                //     warp::sse::keep_alive()
-                //         .interval(Duration::from_secs(30))
-                //         .text("thump".to_string())
-                //         .stream(event_stream),
-                // )
                 // send the updates through the SSE connection
                 SseStream::send_events(sse_connection_to_client, cmd_tx, subscription, sse_rx)
             },
@@ -75,7 +65,8 @@ fn main() {
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             {
-                let mut receiver = ws_receiver.lock().expect("TODO");
+                let mut receiver = ws_receiver.lock().unwrap_or_else(Receiver::recover);
+
                 receiver.subscribe(&subscription).unwrap_or_else(|e| {
                     log::error!("Could not subscribe to the Redis channel: {}", e)
                 });
@@ -107,10 +98,10 @@ fn main() {
             .map(|| "OK")
             .or(warp::path!("api" / "v1" / "streaming" / "status")
                 .and(warp::path::end())
-                .map(move || r1.lock().expect("TODO").count_connections()))
+                .map(move || r1.lock().unwrap_or_else(Receiver::recover).count()))
             .or(
                 warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline")
-                    .map(move || r3.lock().expect("TODO").list_connections()),
+                    .map(move || r3.lock().unwrap_or_else(Receiver::recover).list()),
             )
     };
     #[cfg(not(feature = "stub_status"))]
@@ -149,12 +140,13 @@ fn main() {
 
         tokio::run(lazy(move || {
             let receiver = receiver.clone();
+
             warp::spawn(lazy(move || {
                 tokio::timer::Interval::new(Instant::now(), poll_freq)
                     .map_err(|e| log::error!("{}", e))
                     .for_each(move |_| {
-                        let receiver = receiver.clone();
-                        receiver.lock().expect("TODO").poll_broadcast();
+                        let mut receiver = receiver.lock().unwrap_or_else(Receiver::recover);
+                        receiver.poll_broadcast().unwrap_or_else(FatalErr::exit);
                         Ok(())
                     })
             }));
@@ -162,4 +154,5 @@ fn main() {
             warp::serve(ws_routes.or(sse_routes).with(cors).or(status_endpoints)).bind(server_addr)
         }));
     };
+    Ok(())
 }
