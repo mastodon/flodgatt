@@ -6,17 +6,15 @@
 // #[cfg(not(test))]
 
 use super::postgres::PgPool;
+use super::query;
 use super::query::Query;
 use crate::err::TimelineErr;
-use crate::log_fatal;
+
 use crate::messages::Id;
+
 use hashbrown::HashSet;
 use lru::LruCache;
-use uuid::Uuid;
-use warp::reject::Rejection;
-
-use super::query;
-use warp::{filters::BoxedFilter, path, Filter};
+use warp::{filters::BoxedFilter, path, reject::Rejection, Filter};
 
 /// Helper macro to match on the first of any of the provided filters
 macro_rules! any_of {
@@ -52,7 +50,6 @@ macro_rules! parse_sse_query {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subscription {
-    pub id: Uuid,
     pub timeline: Timeline,
     pub allowed_langs: HashSet<String>,
     pub blocks: Blocks,
@@ -70,7 +67,6 @@ pub struct Blocks {
 impl Default for Subscription {
     fn default() -> Self {
         Self {
-            id: Uuid::new_v4(),
             timeline: Timeline(Stream::Unset, Reach::Local, Content::Notification),
             allowed_langs: HashSet::new(),
             blocks: Blocks::default(),
@@ -134,7 +130,6 @@ impl Subscription {
         };
 
         Ok(Subscription {
-            id: Uuid::new_v4(),
             timeline,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
@@ -183,30 +178,28 @@ impl Timeline {
         Self(Unset, Local, Notification)
     }
 
-    pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> String {
+    pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String, TimelineErr> {
         use {Content::*, Reach::*, Stream::*};
-        match self {
+        Ok(match self {
             Timeline(Public, Federated, All) => "timeline:public".into(),
             Timeline(Public, Local, All) => "timeline:public:local".into(),
             Timeline(Public, Federated, Media) => "timeline:public:media".into(),
             Timeline(Public, Local, Media) => "timeline:public:local:media".into(),
 
-            Timeline(Hashtag(id), Federated, All) => format!(
+            Timeline(Hashtag(_id), Federated, All) => format!(
                 "timeline:hashtag:{}",
-                hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
+                hashtag.ok_or_else(|| TimelineErr::MissingHashtag)?
             ),
-            Timeline(Hashtag(id), Local, All) => format!(
+            Timeline(Hashtag(_id), Local, All) => format!(
                 "timeline:hashtag:{}:local",
-                hashtag.unwrap_or_else(|| log_fatal!("Did not supply a name for hashtag #{}", id))
+                hashtag.ok_or_else(|| TimelineErr::MissingHashtag)?
             ),
             Timeline(User(id), Federated, All) => format!("timeline:{}", id),
             Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
             Timeline(List(id), Federated, All) => format!("timeline:list:{}", id),
             Timeline(Direct(id), Federated, All) => format!("timeline:direct:{}", id),
-            Timeline(one, _two, _three) => {
-                log_fatal!("Supposedly impossible timeline reached: {:?}", one)
-            }
-        }
+            Timeline(_one, _two, _three) => Err(TimelineErr::InvalidInput)?,
+        })
     }
 
     pub fn from_redis_text(
@@ -226,10 +219,10 @@ impl Timeline {
             ["public", "local", "media"] => Timeline(Public, Local, Media),
             ["hashtag", tag] => Timeline(Hashtag(id_from_tag(tag)?), Federated, All),
             ["hashtag", tag, "local"] => Timeline(Hashtag(id_from_tag(tag)?), Local, All),
-            [id] => Timeline(User(id.parse().unwrap()), Federated, All),
-            [id, "notification"] => Timeline(User(id.parse().unwrap()), Federated, Notification),
-            ["list", id] => Timeline(List(id.parse().unwrap()), Federated, All),
-            ["direct", id] => Timeline(Direct(id.parse().unwrap()), Federated, All),
+            [id] => Timeline(User(id.parse()?), Federated, All),
+            [id, "notification"] => Timeline(User(id.parse()?), Federated, Notification),
+            ["list", id] => Timeline(List(id.parse()?), Federated, All),
+            ["direct", id] => Timeline(Direct(id.parse()?), Federated, All),
             // Other endpoints don't exist:
             [..] => Err(TimelineErr::InvalidInput)?,
         })
@@ -255,11 +248,11 @@ impl Timeline {
             "hashtag" => Timeline(Hashtag(id_from_hashtag()?), Federated, All),
             "hashtag:local" => Timeline(Hashtag(id_from_hashtag()?), Local, All),
             "user" => match user.scopes.contains(&Statuses) {
-                true => Timeline(User(*user.id), Federated, All),
+                true => Timeline(User(user.id), Federated, All),
                 false => Err(custom("Error: Missing access token"))?,
             },
             "user:notification" => match user.scopes.contains(&Statuses) {
-                true => Timeline(User(*user.id), Federated, Notification),
+                true => Timeline(User(user.id), Federated, Notification),
                 false => Err(custom("Error: Missing access token"))?,
             },
             "list" => match user.scopes.contains(&Lists) && user_owns_list() {
@@ -280,7 +273,8 @@ impl Timeline {
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub enum Stream {
-    User(i64),
+    User(Id),
+    // TODO consider whether List, Direct, and Hashtag should all be `id::Id`s
     List(i64),
     Direct(i64),
     Hashtag(i64),

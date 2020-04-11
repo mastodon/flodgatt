@@ -133,7 +133,7 @@ impl SseStream {
             .filter_map(move |(timeline, event)| {
                 if target_timeline == timeline {
                     use crate::messages::{
-                        CheckedEvent, CheckedEvent::Update, Event::*, EventKind,
+                        CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
                     };
 
                     use crate::parse_client_request::Stream::Public;
@@ -148,13 +148,16 @@ impl SseStream {
                         },
                         TypeSafe(non_update) => Self::reply_with(Event::TypeSafe(non_update)),
                         Dynamic(dyn_event) => {
-                            if let EventKind::Update(s) = dyn_event.kind.clone() {
+                            if let EventKind::Update(s) = dyn_event.kind {
                                 match timeline {
                                     Timeline(Public, _, _) if s.language_not(&allowed_langs) => {
                                         None
                                     }
                                     _ if s.involves_any(&blocks) => None,
-                                    _ => Self::reply_with(Dynamic(dyn_event)),
+                                    _ => Self::reply_with(Dynamic(DynEvent {
+                                        kind: EventKind::Update(s),
+                                        ..dyn_event
+                                    })),
                                 }
                             } else {
                                 None

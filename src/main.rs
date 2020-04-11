@@ -66,6 +66,7 @@ fn main() -> Result<(), FatalErr> {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             {
                 let mut receiver = ws_receiver.lock().unwrap_or_else(Receiver::recover);
+
                 receiver.subscribe(&subscription).unwrap_or_else(|e| {
                     log::error!("Could not subscribe to the Redis channel: {}", e)
                 });

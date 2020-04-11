@@ -166,8 +166,8 @@ impl RedisConn {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
             _non_hashtag_timeline => None,
         };
-        let tl = timeline.to_redis_raw_timeline(hashtag);
 
+        let tl = timeline.to_redis_raw_timeline(hashtag)?;
         let (primary_cmd, secondary_cmd) = match cmd {
             RedisCmd::Subscribe => (
                 format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),

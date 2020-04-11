@@ -21,6 +21,7 @@ pub enum EventKind {
     Update(DynStatus),
     NonUpdate,
 }
+
 impl Default for EventKind {
     fn default() -> Self {
         Self::NonUpdate
@@ -35,10 +36,9 @@ pub struct DynStatus {
     pub mentioned_users: HashSet<Id>,
     pub replied_to_user: Option<Id>,
     pub boosted_user: Option<Id>,
-    pub payload: Value,
 }
 
-type Result<T> = std::result::Result<T, EventErr>; // TODO cut if not used more than once
+type Result<T> = std::result::Result<T, EventErr>;
 
 impl DynEvent {
     pub fn set_update(self) -> Result<Self> {
@@ -65,7 +65,6 @@ impl DynStatus {
             mentioned_users: HashSet::new(),
             replied_to_user: Id::try_from(&payload["in_reply_to_account_id"]).ok(),
             boosted_user: Id::try_from(&payload["reblog"]["account"]["id"]).ok(),
-            payload,
         })
     }
     /// Returns `true` if the status is filtered out based on its language

@@ -59,7 +59,6 @@ impl Receiver {
 
     pub fn subscribe(&mut self, subscription: &Subscription) -> Result<()> {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
-
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
             self.redis_connection.update_cache(hashtag, id);
         };
@@ -74,7 +73,6 @@ impl Receiver {
         if *number_of_subscriptions == 1 {
             self.redis_connection.send_cmd(Subscribe, &tl)?
         };
-        log::info!("Started stream for {:?}", tl);
         Ok(())
     }
 

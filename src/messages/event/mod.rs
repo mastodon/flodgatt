@@ -8,7 +8,6 @@ pub use {
     err::EventErr,
 };
 
-use crate::log_fatal;
 use serde::Serialize;
 use std::{convert::TryFrom, string::String};
 
@@ -26,8 +25,7 @@ impl Event {
             Some(payload) => SendableEvent::WithPayload { event, payload },
             None => SendableEvent::NoPayload { event },
         };
-        serde_json::to_string(&sendable_event)
-            .unwrap_or_else(|_| log_fatal!("Could not serialize `{:?}`", &sendable_event))
+        serde_json::to_string(&sendable_event).expect("Guaranteed: SendableEvent is Serialize")
     }
 
     pub fn event_name(&self) -> String {
@@ -47,7 +45,7 @@ impl Event {
                 ..
             }) => "update",
             Self::Dynamic(DynEvent { event, .. }) => event,
-            Self::Ping => panic!("event_name() called on EventNotReady"),
+            Self::Ping => panic!("event_name() called on Ping"),
         })
     }
 
@@ -65,7 +63,7 @@ impl Event {
                 FiltersChanged => None,
             },
             Self::Dynamic(DynEvent { payload, .. }) => Some(payload.to_string()),
-            Self::Ping => panic!("payload() called on EventNotReady"),
+            Self::Ping => panic!("payload() called on Ping"),
         }
     }
 }
@@ -105,6 +103,5 @@ enum SendableEvent<'a> {
 }
 
 fn escaped<T: Serialize + std::fmt::Debug>(content: T) -> String {
-    serde_json::to_string(&content)
-        .unwrap_or_else(|_| log_fatal!("Could not parse Event with: `{:?}`", &content))
+    serde_json::to_string(&content).expect("Guaranteed by Serialize trait bound")
 }

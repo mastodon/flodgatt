@@ -1,3 +1,4 @@
+use crate::err::TimelineErr;
 use std::fmt;
 
 #[derive(Debug)]
@@ -8,6 +9,7 @@ pub enum RedisConnErr {
     IncorrectPassword(String),
     MissingPassword,
     NotRedis(String),
+    TimelineErr(TimelineErr),
 }
 
 impl RedisConnErr {
@@ -49,8 +51,15 @@ impl fmt::Display for RedisConnErr {
                  REDIS_PORT environmental variables and try again.",
                 addr
             ),
+            TimelineErr(inner) => format!("{}", inner),
         };
         write!(f, "{}", msg)
+    }
+}
+
+impl From<TimelineErr> for RedisConnErr {
+    fn from(e: TimelineErr) -> RedisConnErr {
+        RedisConnErr::TimelineErr(e)
     }
 }
 
