@@ -3,7 +3,7 @@ use url::Url;
 use urlencoding;
 
 #[derive(Debug)]
-pub struct PostgresConfig {
+pub struct Postgres {
     pub user: PgUser,
     pub host: PgHost,
     pub password: PgPass,
@@ -46,7 +46,7 @@ impl EnvVar {
     }
 }
 
-impl PostgresConfig {
+impl Postgres {
     /// Configure Postgres and return a connection
 
     pub fn from_env(env: EnvVar) -> Self {

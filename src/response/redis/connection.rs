@@ -1,12 +1,12 @@
 mod err;
 pub use err::RedisConnErr;
 
-use super::super::receiver::ReceiverErr;
-use super::redis_msg::{RedisParseErr, RedisParseOutput};
+use super::msg::{RedisParseErr, RedisParseOutput};
+use super::ManagerErr;
 use crate::{
-    config::RedisConfig,
+    config::Redis,
     messages::Event,
-    parse_client_request::{Stream, Timeline},
+    request::{Stream, Timeline},
 };
 
 use std::{
@@ -33,7 +33,7 @@ pub struct RedisConn {
 }
 
 impl RedisConn {
-    pub fn new(redis_cfg: RedisConfig) -> Result<Self> {
+    pub fn new(redis_cfg: Redis) -> Result<Self> {
         let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
         let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
         conn.set_nonblocking(true)
@@ -52,7 +52,7 @@ impl RedisConn {
         Ok(redis_conn)
     }
 
-    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ReceiverErr> {
+    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
         let mut size = 100; // large enough to handle subscribe/unsubscribe notice
         let (mut buffer, mut first_read) = (vec![0u8; size], true);
         loop {
@@ -105,7 +105,7 @@ impl RedisConn {
             },
             Ok(NonMsg(leftover)) => (Ok(Ready(None)), leftover),
             Err(RedisParseErr::Incomplete) => (Ok(NotReady), input),
-            Err(other_parse_err) => (Err(ReceiverErr::RedisParseErr(other_parse_err)), input),
+            Err(other_parse_err) => (Err(ManagerErr::RedisParseErr(other_parse_err)), input),
         };
         self.redis_input.extend_from_slice(leftover.as_bytes());
         self.redis_input.extend_from_slice(invalid_bytes);

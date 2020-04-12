@@ -1,5 +1,5 @@
 use super::{EventErr, Id};
-use crate::parse_client_request::Blocks;
+use crate::request::Blocks;
 
 use std::convert::TryFrom;
 

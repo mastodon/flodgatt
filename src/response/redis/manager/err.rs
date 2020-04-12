@@ -1,11 +1,11 @@
-use super::super::redis::{RedisConnErr, RedisParseErr};
+use super::super::{RedisConnErr, RedisParseErr};
 use crate::err::TimelineErr;
 use crate::messages::{Event, EventErr};
-use crate::parse_client_request::Timeline;
+use crate::request::Timeline;
 
 use std::fmt;
 #[derive(Debug)]
-pub enum ReceiverErr {
+pub enum ManagerErr {
     InvalidId,
     TimelineErr(TimelineErr),
     EventErr(EventErr),
@@ -14,11 +14,11 @@ pub enum ReceiverErr {
     ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
 }
 
-impl std::error::Error for ReceiverErr {}
+impl std::error::Error for ManagerErr {}
 
-impl fmt::Display for ReceiverErr {
+impl fmt::Display for ManagerErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use ReceiverErr::*;
+        use ManagerErr::*;
         match self {
             InvalidId => write!(
                 f,
@@ -34,31 +34,31 @@ impl fmt::Display for ReceiverErr {
     }
 }
 
-impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for ReceiverErr {
+impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for ManagerErr {
     fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
         Self::ChannelSendErr(error)
     }
 }
 
-impl From<EventErr> for ReceiverErr {
+impl From<EventErr> for ManagerErr {
     fn from(error: EventErr) -> Self {
         Self::EventErr(error)
     }
 }
 
-impl From<RedisConnErr> for ReceiverErr {
+impl From<RedisConnErr> for ManagerErr {
     fn from(e: RedisConnErr) -> Self {
         Self::RedisConnErr(e)
     }
 }
 
-impl From<TimelineErr> for ReceiverErr {
+impl From<TimelineErr> for ManagerErr {
     fn from(e: TimelineErr) -> Self {
         Self::TimelineErr(e)
     }
 }
 
-impl From<RedisParseErr> for ReceiverErr {
+impl From<RedisParseErr> for ManagerErr {
     fn from(e: RedisParseErr) -> Self {
         Self::RedisParseErr(e)
     }

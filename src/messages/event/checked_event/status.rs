@@ -8,7 +8,7 @@ use super::{
 };
 use {application::Application, attachment::Attachment, card::Card, poll::Poll};
 
-use crate::parse_client_request::Blocks;
+use crate::request::Blocks;
 
 use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};

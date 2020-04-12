@@ -2,7 +2,7 @@
 use crate::{
     config,
     messages::Id,
-    parse_client_request::subscription::{Scope, UserData},
+    request::subscription::{Scope, UserData},
 };
 use ::postgres;
 use hashbrown::HashSet;
@@ -10,9 +10,12 @@ use r2d2_postgres::PostgresConnectionManager;
 use warp::reject::Rejection;
 
 #[derive(Clone, Debug)]
-pub struct PgPool(pub r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>);
+pub struct PgPool {
+    pub conn: r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>,
+    whitelist_mode: bool,
+}
 impl PgPool {
-    pub fn new(pg_cfg: config::PostgresConfig) -> Self {
+    pub fn new(pg_cfg: config::Postgres, whitelist_mode: bool) -> Self {
         let mut cfg = postgres::Config::new();
         cfg.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
@@ -27,12 +30,16 @@ impl PgPool {
             .max_size(10)
             .build(manager)
             .expect("Can connect to local postgres");
-        Self(pool)
+        Self {
+            conn: pool,
+            whitelist_mode,
+        }
     }
 
-    pub fn select_user(self, token: &str) -> Result<UserData, Rejection> {
-        let mut conn = self.0.get().unwrap();
-        let query_rows = conn
+    pub fn select_user(self, token: &Option<String>) -> Result<UserData, Rejection> {
+        let mut conn = self.conn.get().unwrap();
+        if let Some(token) = token {
+            let query_rows = conn
             .query(
                 "
 SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_languages, oauth_access_tokens.scopes
@@ -46,47 +53,52 @@ LIMIT 1",
                 &[&token.to_owned()],
             )
         .expect("Hard-coded query will return Some([0 or more rows])");
-        if let Some(result_columns) = query_rows.get(0) {
-            let id = Id(result_columns.get(1));
-            let allowed_langs = result_columns
-                .try_get::<_, Vec<_>>(2)
-                .unwrap_or_else(|_| Vec::new())
-                .into_iter()
-                .collect();
-            let mut scopes: HashSet<Scope> = result_columns
-                .get::<_, String>(3)
-                .split(' ')
-                .filter_map(|scope| match scope {
-                    "read" => Some(Scope::Read),
-                    "read:statuses" => Some(Scope::Statuses),
-                    "read:notifications" => Some(Scope::Notifications),
-                    "read:lists" => Some(Scope::Lists),
-                    "write" | "follow" => None, // ignore write scopes
-                    unexpected => {
-                        log::warn!("Ignoring unknown scope `{}`", unexpected);
-                        None
-                    }
-                })
-                .collect();
-            // We don't need to separately track read auth - it's just all three others
-            if scopes.remove(&Scope::Read) {
-                scopes.insert(Scope::Statuses);
-                scopes.insert(Scope::Notifications);
-                scopes.insert(Scope::Lists);
-            }
+            if let Some(result_columns) = query_rows.get(0) {
+                let id = Id(result_columns.get(1));
+                let allowed_langs = result_columns
+                    .try_get::<_, Vec<_>>(2)
+                    .unwrap_or_else(|_| Vec::new())
+                    .into_iter()
+                    .collect();
+                let mut scopes: HashSet<Scope> = result_columns
+                    .get::<_, String>(3)
+                    .split(' ')
+                    .filter_map(|scope| match scope {
+                        "read" => Some(Scope::Read),
+                        "read:statuses" => Some(Scope::Statuses),
+                        "read:notifications" => Some(Scope::Notifications),
+                        "read:lists" => Some(Scope::Lists),
+                        "write" | "follow" => None, // ignore write scopes
+                        unexpected => {
+                            log::warn!("Ignoring unknown scope `{}`", unexpected);
+                            None
+                        }
+                    })
+                    .collect();
+                // We don't need to separately track read auth - it's just all three others
+                if scopes.remove(&Scope::Read) {
+                    scopes.insert(Scope::Statuses);
+                    scopes.insert(Scope::Notifications);
+                    scopes.insert(Scope::Lists);
+                }
 
-            Ok(UserData {
-                id,
-                allowed_langs,
-                scopes,
-            })
-        } else {
+                Ok(UserData {
+                    id,
+                    allowed_langs,
+                    scopes,
+                })
+            } else {
+                Err(warp::reject::custom("Error: Invalid access token"))
+            }
+        } else if self.whitelist_mode {
             Err(warp::reject::custom("Error: Invalid access token"))
+        } else {
+            Ok(UserData::public())
         }
     }
 
     pub fn select_hashtag_id(self, tag_name: &str) -> Result<i64, Rejection> {
-        let mut conn = self.0.get().unwrap();
+        let mut conn = self.conn.get().unwrap();
         let rows = &conn
             .query(
                 "
@@ -108,7 +120,7 @@ LIMIT 1",
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocked_users(self, user_id: Id) -> HashSet<Id> {
-        self.0
+        self.conn
             .get()
             .unwrap()
             .query(
@@ -131,7 +143,7 @@ UNION SELECT target_account_id
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocking_users(self, user_id: Id) -> HashSet<Id> {
-        self.0
+        self.conn
             .get()
             .unwrap()
             .query(
@@ -152,7 +164,7 @@ SELECT account_id
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
     pub fn select_blocked_domains(self, user_id: Id) -> HashSet<String> {
-        self.0
+        self.conn
             .get()
             .unwrap()
             .query(
@@ -167,7 +179,7 @@ SELECT account_id
 
     /// Test whether a user owns a list
     pub fn user_owns_list(self, user_id: Id, list_id: i64) -> bool {
-        let mut conn = self.0.get().unwrap();
+        let mut conn = self.conn.get().unwrap();
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
             .query(

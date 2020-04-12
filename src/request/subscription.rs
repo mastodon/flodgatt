@@ -77,15 +77,15 @@ impl Default for Subscription {
 }
 
 impl Subscription {
-    pub fn from_ws_request(pg_pool: PgPool, whitelist_mode: bool) -> BoxedFilter<(Subscription,)> {
+    pub fn from_ws_request(pg_pool: PgPool) -> BoxedFilter<(Subscription,)> {
         parse_ws_query()
             .and(query::OptionalAccessToken::from_ws_header())
             .and_then(Query::update_access_token)
-            .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
+            .and_then(move |q| Subscription::from_query(q, pg_pool.clone()))
             .boxed()
     }
 
-    pub fn from_sse_query(pg_pool: PgPool, whitelist_mode: bool) -> BoxedFilter<(Subscription,)> {
+    pub fn from_sse_request(pg_pool: PgPool) -> BoxedFilter<(Subscription,)> {
         any_of!(
             parse_sse_query!(
             path => "api" / "v1" / "streaming" / "user" / "notification"
@@ -113,16 +113,12 @@ impl Subscription {
         // parameter, we need to update our Query if the header has a token
         .and(query::OptionalAccessToken::from_sse_header())
         .and_then(Query::update_access_token)
-        .and_then(move |q| Subscription::from_query(q, pg_pool.clone(), whitelist_mode))
+        .and_then(move |q| Subscription::from_query(q, pg_pool.clone()))
         .boxed()
     }
 
-    fn from_query(q: Query, pool: PgPool, whitelist_mode: bool) -> Result<Self, Rejection> {
-        let user = match q.access_token.clone() {
-            Some(token) => pool.clone().select_user(&token)?,
-            None if whitelist_mode => Err(warp::reject::custom("Error: Invalid access token"))?,
-            None => UserData::public(),
-        };
+    fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
+        let user = pool.clone().select_user(&q.access_token)?;
         let timeline = Timeline::from_query_and_user(&q, &user, pool.clone())?;
         let hashtag_name = match timeline {
             Timeline(Stream::Hashtag(_), _, _) => Some(q.hashtag),
@@ -185,7 +181,7 @@ impl Timeline {
             Timeline(Public, Local, All) => "timeline:public:local".into(),
             Timeline(Public, Federated, Media) => "timeline:public:media".into(),
             Timeline(Public, Local, Media) => "timeline:public:local:media".into(),
-
+            // TODO -- would `.push_str` be faster here?
             Timeline(Hashtag(_id), Federated, All) => format!(
                 "timeline:hashtag:{}",
                 hashtag.ok_or_else(|| TimelineErr::MissingHashtag)?
@@ -310,7 +306,7 @@ pub struct UserData {
 }
 
 impl UserData {
-    fn public() -> Self {
+    pub fn public() -> Self {
         Self {
             id: Id(-1),
             allowed_langs: HashSet::new(),

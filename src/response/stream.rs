@@ -1,5 +1,5 @@
 use crate::messages::Event;
-use crate::parse_client_request::{Subscription, Timeline};
+use crate::request::{Subscription, Timeline};
 
 use futures::{future::Future, stream::Stream};
 use log;
@@ -7,17 +7,17 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use warp::{
     reply::Reply,
-    sse::{ServerSentEvent, Sse},
+    sse::{ServerSentEvent, Sse as WarpSse},
     ws::{Message, WebSocket},
 };
 
-pub struct WsStream {
+pub struct Ws {
     ws_tx: mpsc::UnboundedSender<Message>,
     unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
     subscription: Subscription,
 }
 
-impl WsStream {
+impl Ws {
     pub fn new(
         ws: WebSocket,
         unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
@@ -57,7 +57,7 @@ impl WsStream {
                 self.send_ping()
             } else if target_timeline == tl {
                 use crate::messages::{CheckedEvent::Update, Event::*, EventKind};
-                use crate::parse_client_request::Stream::Public;
+                use crate::request::Stream::Public;
                 let blocks = &self.subscription.blocks;
                 let allowed_langs = &self.subscription.allowed_langs;
 
@@ -109,9 +109,9 @@ impl WsStream {
     }
 }
 
-pub struct SseStream {}
+pub struct Sse;
 
-impl SseStream {
+impl Sse {
     fn reply_with(event: Event) -> Option<(impl ServerSentEvent, impl ServerSentEvent)> {
         Some((
             warp::sse::event(event.event_name()),
@@ -120,7 +120,7 @@ impl SseStream {
     }
 
     pub fn send_events(
-        sse: Sse,
+        sse: WarpSse,
         mut unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
         subscription: Subscription,
         sse_rx: watch::Receiver<(Timeline, Event)>,
@@ -136,7 +136,7 @@ impl SseStream {
                         CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
                     };
 
-                    use crate::parse_client_request::Stream::Public;
+                    use crate::request::Stream::Public;
                     match event {
                         TypeSafe(Update { payload, queued_at }) => match timeline {
                             Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,

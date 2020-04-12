@@ -39,7 +39,7 @@ impl EnvVar {
 impl fmt::Display for EnvVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut result = String::new();
-        for env_var in [
+        for env_var in &[
             "NODE_ENV",
             "RUST_LOG",
             "BIND",
@@ -62,9 +62,7 @@ impl fmt::Display for EnvVar {
             "REDIS_USER",
             "REDIS_DB",
             "REDIS_FREQ",
-        ]
-        .iter()
-        {
+        ] {
             if let Some(value) = self.get(&(*env_var).to_string()) {
                 result = format!("{}\n    {}: {}", result, env_var, value)
             }
@@ -125,14 +123,6 @@ macro_rules! from_env_var {
                     })),
                     None => self,
                 }
-
-                // if let Some(value) = var {
-                //     Self(Self::inner_from_str(value).unwrap_or_else(|| {
-                //         crate::err::env_var_fatal($env_var, value, $allowed_values)
-                //     }))
-                // } else {
-                //     self
-                // }
             }
         }
     };

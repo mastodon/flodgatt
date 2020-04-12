@@ -2,31 +2,24 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod err;
-pub use err::ReceiverErr;
+pub use err::ManagerErr;
 
-use super::redis::{redis_connection::RedisCmd, RedisConn};
-
-use crate::{
-    config,
-    messages::Event,
-    parse_client_request::{Stream, Subscription, Timeline},
-};
+use super::{connection::RedisCmd, RedisConn};
+use crate::config;
+use crate::messages::Event;
+use crate::request::{Stream, Subscription, Timeline};
 
 use futures::{Async, Stream as _Stream};
 use hashbrown::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 
-use std::{
-    result,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
-    time::{Duration, Instant},
-};
-
-type Result<T> = result::Result<T, ReceiverErr>;
+type Result<T> = std::result::Result<T, ManagerErr>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
-pub struct Receiver {
+pub struct Manager {
     redis_connection: RedisConn,
     clients_per_timeline: HashMap<Timeline, i32>,
     tx: watch::Sender<(Timeline, Event)>,
@@ -34,12 +27,12 @@ pub struct Receiver {
     ping_time: Instant,
 }
 
-impl Receiver {
+impl Manager {
     /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
 
     pub fn try_from(
-        redis_cfg: config::RedisConfig,
+        redis_cfg: config::Redis,
         tx: watch::Sender<(Timeline, Event)>,
         rx: mpsc::UnboundedReceiver<Timeline>,
     ) -> Result<Self> {
