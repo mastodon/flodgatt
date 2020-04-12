@@ -12,20 +12,31 @@ use warp::{
 };
 
 pub struct Ws {
-    ws_tx: mpsc::UnboundedSender<Message>,
     unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
     subscription: Subscription,
+    ws_rx: watch::Receiver<(Timeline, Event)>,
+    ws_tx: Option<mpsc::UnboundedSender<Message>>,
 }
 
 impl Ws {
     pub fn new(
-        ws: WebSocket,
         unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
+        ws_rx: watch::Receiver<(Timeline, Event)>,
         subscription: Subscription,
     ) -> Self {
+        Self {
+            unsubscribe_tx,
+            subscription,
+            ws_rx,
+            ws_tx: None,
+        }
+    }
+
+    pub fn send_to(mut self, ws: WebSocket) -> impl Future<Item = (), Error = ()> {
         let (transmit_to_ws, _receive_from_ws) = ws.split();
         // Create a pipe
         let (ws_tx, ws_rx) = mpsc::unbounded_channel();
+        self.ws_tx = Some(ws_tx);
 
         // Send one end of it to a different green thread and tell that end to forward
         // whatever it gets on to the WebSocket client
@@ -39,20 +50,11 @@ impl Ws {
                     _ => log::warn!("WebSocket send error: {}", e),
                 }),
         );
-        Self {
-            ws_tx,
-            unsubscribe_tx,
-            subscription,
-        }
-    }
 
-    pub fn send_events(
-        mut self,
-        event_rx: watch::Receiver<(Timeline, Event)>,
-    ) -> impl Future<Item = (), Error = ()> {
         let target_timeline = self.subscription.timeline;
+        let incoming_events = self.ws_rx.clone().map_err(|_| ());
 
-        event_rx.map_err(|_| ()).for_each(move |(tl, event)| {
+        incoming_events.for_each(move |(tl, event)| {
             if matches!(event, Event::Ping) {
                 self.send_ping()
             } else if target_timeline == tl {
@@ -97,7 +99,7 @@ impl Ws {
 
     fn send_txt(&mut self, txt: &str) -> Result<(), ()> {
         let tl = self.subscription.timeline;
-        match self.ws_tx.try_send(Message::text(txt)) {
+        match self.ws_tx.clone().ok_or(())?.try_send(Message::text(txt)) {
             Ok(_) => Ok(()),
             Err(_) => {
                 self.unsubscribe_tx

@@ -50,7 +50,7 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription) -> Result<()> {
+    pub fn subscribe(&mut self, subscription: &Subscription) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
             self.redis_connection.update_cache(hashtag, id);
@@ -64,9 +64,10 @@ impl Manager {
 
         use RedisCmd::*;
         if *number_of_subscriptions == 1 {
-            self.redis_connection.send_cmd(Subscribe, &tl)?
+            self.redis_connection
+                .send_cmd(Subscribe, &tl)
+                .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e));
         };
-        Ok(())
     }
 
     pub fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {

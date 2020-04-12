@@ -35,7 +35,7 @@
 //! polls the `Receiver` and the frequency with which the `Receiver` polls Redis.
 //!
 
-#![warn(clippy::pedantic)]
+//#![warn(clippy::pedantic)]
 #![allow(clippy::try_err, clippy::match_bool)]
 
 pub mod config;

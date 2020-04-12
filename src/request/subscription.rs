@@ -117,7 +117,7 @@ impl Subscription {
         .boxed()
     }
 
-    fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
+    pub(super) fn from_query(q: Query, pool: PgPool) -> Result<Self, Rejection> {
         let user = pool.clone().select_user(&q.access_token)?;
         let timeline = Timeline::from_query_and_user(&q, &user, pool.clone())?;
         let hashtag_name = match timeline {
