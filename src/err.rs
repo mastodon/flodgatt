@@ -1,7 +1,3 @@
-mod timeline;
-
-pub use timeline::TimelineErr;
-
 use crate::response::ManagerErr;
 use std::fmt;
 

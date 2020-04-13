@@ -62,9 +62,9 @@ fn main() -> Result<(), FatalErr> {
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
 
     #[cfg(feature = "stub_status")]
+    #[rustfmt::skip]
     let status = {
         let (r1, r3) = (shared_manager.clone(), shared_manager.clone());
-        #[rustfmt::skip]
         request.health().map(|| "OK")
             .or(request.status()
                 .map(move || r1.lock().unwrap_or_else(redis::Manager::recover).count()))

@@ -4,7 +4,7 @@
 mod err;
 pub use err::ManagerErr;
 
-use super::{connection::RedisCmd, RedisConn};
+use super::{RedisCmd, RedisConn};
 use crate::config;
 use crate::event::Event;
 use crate::request::{Stream, Subscription, Timeline};

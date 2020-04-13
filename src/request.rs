@@ -8,7 +8,7 @@ mod subscription;
 pub use self::postgres::PgPool;
 // TODO consider whether we can remove `Stream` from public API
 pub use subscription::{Blocks, Subscription};
-pub use timeline::{Content, Reach, Stream, Timeline};
+pub use timeline::{Content, Reach, Stream, Timeline, TimelineErr};
 
 use self::query::Query;
 use crate::config;

@@ -4,6 +4,7 @@ use std::fmt;
 pub enum TimelineErr {
     MissingHashtag,
     InvalidInput,
+    BadTag,
 }
 
 impl std::error::Error for TimelineErr {}
@@ -20,6 +21,7 @@ impl fmt::Display for TimelineErr {
         let msg = match self {
             InvalidInput => "The timeline text from Redis could not be parsed into a supported timeline.  TODO: add incoming timeline text",
             MissingHashtag => "Attempted to send a hashtag timeline without supplying a tag name",
+            BadTag => "No hashtag exists with the specified hashtag ID"
         };
         write!(f, "{}", msg)
     }
