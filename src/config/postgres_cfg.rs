@@ -2,7 +2,7 @@ use super::{postgres_cfg_types::*, EnvVar};
 use url::Url;
 use urlencoding;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Postgres {
     pub user: PgUser,
     pub host: PgHost,

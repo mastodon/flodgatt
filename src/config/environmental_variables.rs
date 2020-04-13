@@ -1,6 +1,7 @@
 use hashbrown::HashMap;
 use std::fmt;
 
+#[derive(Debug)]
 pub struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {
     type Target = HashMap<String, String>;
@@ -94,6 +95,7 @@ macro_rules! from_env_var {
      let (env_var, allowed_values) = ($env_var:tt, $allowed_values:expr);
      let from_str = |$arg:ident| $body:expr;
     ) => {
+        #[derive(Clone)]
         pub struct $name(pub $type);
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -49,7 +49,7 @@ from_env_var!(
     let from_str = |s| PgSslInner::from_str(s).ok();
 );
 
-#[derive(EnumString, EnumVariantNames, Debug)]
+#[derive(EnumString, EnumVariantNames, Debug, Clone)]
 #[strum(serialize_all = "snake_case")]
 pub enum PgSslInner {
     Prefer,

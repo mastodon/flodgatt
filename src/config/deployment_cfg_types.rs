@@ -92,7 +92,7 @@ impl fmt::Debug for Cors<'_> {
     }
 }
 
-#[derive(EnumString, EnumVariantNames, Debug)]
+#[derive(EnumString, EnumVariantNames, Debug, Clone)]
 #[strum(serialize_all = "snake_case")]
 pub enum LogLevelInner {
     Trace,
@@ -102,7 +102,7 @@ pub enum LogLevelInner {
     Error,
 }
 
-#[derive(EnumString, EnumVariantNames, Debug)]
+#[derive(EnumString, EnumVariantNames, Debug, Clone)]
 #[strum(serialize_all = "snake_case")]
 pub enum EnvInner {
     Production,

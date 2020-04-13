@@ -3,22 +3,16 @@ pub use err::RedisConnErr;
 
 use super::msg::{RedisParseErr, RedisParseOutput};
 use super::ManagerErr;
-use crate::{
-    config::Redis,
-    messages::Event,
-    request::{Stream, Timeline},
-};
-
-use std::{
-    convert::{TryFrom, TryInto},
-    io::{Read, Write},
-    net::TcpStream,
-    str,
-    time::Duration,
-};
-
+use crate::config::Redis;
+use crate::messages::Event;
+use crate::request::{Stream, Timeline};
 use futures::{Async, Poll};
 use lru::LruCache;
+use std::convert::{TryFrom, TryInto};
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::str;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, RedisConnErr>;
 
@@ -46,7 +40,7 @@ impl RedisConn {
             // TODO: eventually, it might make sense to have Mastodon publish to timelines with
             //       the tag number instead of the tag name.  This would save us from dealing
             //       with a cache here and would be consistent with how lists/users are handled.
-            redis_namespace: redis_cfg.namespace.clone(),
+            redis_namespace: redis_cfg.namespace.clone().0,
             redis_input: Vec::new(),
         };
         Ok(redis_conn)
@@ -61,14 +55,12 @@ impl RedisConn {
                     self.redis_input.extend_from_slice(&buffer[..n]);
                     break;
                 }
-                Ok(n) => {
-                    self.redis_input.extend_from_slice(&buffer[..n]);
-                }
+                Ok(n) => self.redis_input.extend_from_slice(&buffer[..n]),
                 Err(_) => break,
             };
             if first_read {
                 size = 2000;
-                buffer = vec![0u8; size];
+                buffer = vec![0_u8; size];
                 first_read = false;
             }
         }
@@ -117,50 +109,6 @@ impl RedisConn {
         self.tag_name_cache.put(id, hashtag);
     }
 
-    fn new_connection(addr: &str, pass: Option<&String>) -> Result<TcpStream> {
-        match TcpStream::connect(&addr) {
-            Ok(mut conn) => {
-                if let Some(password) = pass {
-                    Self::auth_connection(&mut conn, &addr, password)?;
-                }
-
-                Self::validate_connection(&mut conn, &addr)?;
-                conn.set_read_timeout(Some(Duration::from_millis(10)))
-                    .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
-                Ok(conn)
-            }
-            Err(e) => Err(RedisConnErr::with_addr(&addr, e)),
-        }
-    }
-    fn auth_connection(conn: &mut TcpStream, addr: &str, pass: &str) -> Result<()> {
-        conn.write_all(&format!("*2\r\n$4\r\nauth\r\n${}\r\n{}\r\n", pass.len(), pass).as_bytes())
-            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
-        let mut buffer = vec![0u8; 5];
-        conn.read_exact(&mut buffer)
-            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
-        let reply = String::from_utf8_lossy(&buffer);
-        match &*reply {
-            "+OK\r\n" => (),
-            _ => Err(RedisConnErr::IncorrectPassword(pass.to_string()))?,
-        };
-        Ok(())
-    }
-
-    fn validate_connection(conn: &mut TcpStream, addr: &str) -> Result<()> {
-        conn.write_all(b"PING\r\n")
-            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
-        let mut buffer = vec![0u8; 7];
-        conn.read_exact(&mut buffer)
-            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
-        let reply = String::from_utf8_lossy(&buffer);
-        match &*reply {
-            "+PONG\r\n" => Ok(()),
-            "-NOAUTH" => Err(RedisConnErr::MissingPassword),
-            "HTTP/1." => Err(RedisConnErr::NotRedis(addr.to_string())),
-            _ => Err(RedisConnErr::InvalidRedisReply(reply.to_string())),
-        }
-    }
-
     pub fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
         let hashtag = match timeline {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
@@ -181,6 +129,44 @@ impl RedisConn {
         self.primary.write_all(&primary_cmd.as_bytes())?;
         self.secondary.write_all(&secondary_cmd.as_bytes())?;
         Ok(())
+    }
+
+    fn new_connection(addr: &str, pass: Option<&String>) -> Result<TcpStream> {
+        let mut conn = TcpStream::connect(&addr)?;
+        if let Some(password) = pass {
+            Self::auth_connection(&mut conn, &addr, password)?;
+        }
+
+        Self::validate_connection(&mut conn, &addr)?;
+        conn.set_read_timeout(Some(Duration::from_millis(10)))
+            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        Ok(conn)
+    }
+    fn auth_connection(conn: &mut TcpStream, addr: &str, pass: &str) -> Result<()> {
+        conn.write_all(&format!("*2\r\n$4\r\nauth\r\n${}\r\n{}\r\n", pass.len(), pass).as_bytes())
+            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        let mut buffer = vec![0u8; 5];
+        conn.read_exact(&mut buffer)
+            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        if String::from_utf8_lossy(&buffer) != "+OK\r\n" {
+            Err(RedisConnErr::IncorrectPassword(pass.to_string()))?
+        }
+        Ok(())
+    }
+
+    fn validate_connection(conn: &mut TcpStream, addr: &str) -> Result<()> {
+        conn.write_all(b"PING\r\n")
+            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        let mut buffer = vec![0u8; 7];
+        conn.read_exact(&mut buffer)
+            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        let reply = String::from_utf8_lossy(&buffer);
+        match &*reply {
+            "+PONG\r\n" => Ok(()),
+            "-NOAUTH" => Err(RedisConnErr::MissingPassword),
+            "HTTP/1." => Err(RedisConnErr::NotRedis(addr.to_string())),
+            _ => Err(RedisConnErr::InvalidRedisReply(reply.to_string())),
+        }
     }
 }
 

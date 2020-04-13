@@ -1,7 +1,7 @@
 use flodgatt::config;
 use flodgatt::err::FatalErr;
 use flodgatt::messages::Event;
-use flodgatt::request::{PgPool, Subscription, Timeline};
+use flodgatt::request::{self, Subscription, Timeline};
 use flodgatt::response::redis;
 use flodgatt::response::stream;
 
@@ -27,14 +27,16 @@ fn main() -> Result<(), FatalErr> {
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
-    let shared_pg_conn = PgPool::new(postgres_cfg, *cfg.whitelist_mode);
+    let request_handler = request::Handler::new(postgres_cfg, *cfg.whitelist_mode);
     let poll_freq = *redis_cfg.polling_interval;
     let shared_manager = redis::Manager::try_from(redis_cfg, event_tx, cmd_rx)?.into_arc();
 
     // Server Sent Events
     let sse_manager = shared_manager.clone();
     let (sse_rx, sse_cmd_tx) = (event_rx.clone(), cmd_tx.clone());
-    let sse = Subscription::from_sse_request(shared_pg_conn.clone())
+
+    let sse = request_handler
+        .parse_sse_request()
         .and(warp::sse())
         .map(
             move |subscription: Subscription, client_conn: warp::sse::Sse| {
@@ -56,7 +58,8 @@ fn main() -> Result<(), FatalErr> {
 
     // WebSocket
     let ws_manager = shared_manager.clone();
-    let ws = Subscription::from_ws_request(shared_pg_conn)
+    let ws = request_handler
+        .parse_ws_request()
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);

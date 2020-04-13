@@ -132,43 +132,38 @@ impl Sse {
         let blocks = subscription.blocks;
 
         let event_stream = sse_rx
+            .filter(move |(timeline, _)| target_timeline == *timeline)
             .filter_map(move |(timeline, event)| {
-                if target_timeline == timeline {
-                    use crate::messages::{
-                        CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
-                    };
+                use crate::messages::{
+                    CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
+                };
 
-                    use crate::request::Stream::Public;
-                    match event {
-                        TypeSafe(Update { payload, queued_at }) => match timeline {
-                            Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,
-                            _ if payload.involves_any(&blocks) => None,
-                            _ => Self::reply_with(Event::TypeSafe(CheckedEvent::Update {
-                                payload,
-                                queued_at,
-                            })),
-                        },
-                        TypeSafe(non_update) => Self::reply_with(Event::TypeSafe(non_update)),
-                        Dynamic(dyn_event) => {
-                            if let EventKind::Update(s) = dyn_event.kind {
-                                match timeline {
-                                    Timeline(Public, _, _) if s.language_not(&allowed_langs) => {
-                                        None
-                                    }
-                                    _ if s.involves_any(&blocks) => None,
-                                    _ => Self::reply_with(Dynamic(DynEvent {
-                                        kind: EventKind::Update(s),
-                                        ..dyn_event
-                                    })),
-                                }
-                            } else {
-                                None
+                use crate::request::Stream::Public;
+                match event {
+                    TypeSafe(Update { payload, queued_at }) => match timeline {
+                        Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,
+                        _ if payload.involves_any(&blocks) => None,
+                        _ => Self::reply_with(Event::TypeSafe(CheckedEvent::Update {
+                            payload,
+                            queued_at,
+                        })),
+                    },
+                    TypeSafe(non_update) => Self::reply_with(Event::TypeSafe(non_update)),
+                    Dynamic(dyn_event) => {
+                        if let EventKind::Update(s) = dyn_event.kind {
+                            match timeline {
+                                Timeline(Public, _, _) if s.language_not(&allowed_langs) => None,
+                                _ if s.involves_any(&blocks) => None,
+                                _ => Self::reply_with(Dynamic(DynEvent {
+                                    kind: EventKind::Update(s),
+                                    ..dyn_event
+                                })),
                             }
+                        } else {
+                            None
                         }
-                        Ping => None, // pings handled automatically
                     }
-                } else {
-                    None
+                    Ping => None, // pings handled automatically
                 }
             })
             .then(move |res| {
@@ -186,3 +181,4 @@ impl Sse {
         )
     }
 }
+// TODO -- split WS and SSE into separate files and add misc stuff from main.rs here
