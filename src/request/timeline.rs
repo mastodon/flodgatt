@@ -1,6 +1,6 @@
 use super::query::Query;
 use crate::err::TimelineErr;
-use crate::messages::Id;
+use crate::event::Id;
 
 use hashbrown::HashSet;
 use lru::LruCache;
@@ -12,8 +12,7 @@ pub struct Timeline(pub Stream, pub Reach, pub Content);
 
 impl Timeline {
     pub fn empty() -> Self {
-        use {Content::*, Reach::*, Stream::*};
-        Self(Unset, Local, Notification)
+        Self(Stream::Unset, Reach::Local, Content::Notification)
     }
 
     pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String, TimelineErr> {
@@ -26,11 +25,11 @@ impl Timeline {
             // TODO -- would `.push_str` be faster here?
             Timeline(Hashtag(_id), Federated, All) => format!(
                 "timeline:hashtag:{}",
-                hashtag.ok_or_else(|| TimelineErr::MissingHashtag)?
+                hashtag.ok_or(TimelineErr::MissingHashtag)?
             ),
             Timeline(Hashtag(_id), Local, All) => format!(
                 "timeline:hashtag:{}:local",
-                hashtag.ok_or_else(|| TimelineErr::MissingHashtag)?
+                hashtag.ok_or(TimelineErr::MissingHashtag)?
             ),
             Timeline(User(id), Federated, All) => format!("timeline:{}", id),
             Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
@@ -44,6 +43,7 @@ impl Timeline {
         timeline: &str,
         cache: &mut LruCache<String, i64>,
     ) -> Result<Self, TimelineErr> {
+        // TODO -- can a combinator shorten this?
         let mut id_from_tag = |tag: &str| match cache.get(&tag.to_string()) {
             Some(id) => Ok(*id),
             None => Err(TimelineErr::InvalidInput), // TODO more specific

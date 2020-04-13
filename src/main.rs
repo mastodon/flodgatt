@@ -1,7 +1,7 @@
 use flodgatt::config;
 use flodgatt::err::FatalErr;
-use flodgatt::messages::Event;
-use flodgatt::request::{self, Subscription, Timeline};
+use flodgatt::event::Event;
+use flodgatt::request::{Handler, Subscription, Timeline};
 use flodgatt::response::redis;
 use flodgatt::response::stream;
 
@@ -13,10 +13,8 @@ use std::time::Instant;
 use tokio::net::UnixListener;
 use tokio::sync::{mpsc, watch};
 use tokio::timer::Interval;
-use warp::http::StatusCode;
-use warp::path;
 use warp::ws::Ws2;
-use warp::{Filter, Rejection};
+use warp::Filter;
 
 fn main() -> Result<(), FatalErr> {
     config::merge_dotenv()?;
@@ -27,7 +25,7 @@ fn main() -> Result<(), FatalErr> {
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
-    let request_handler = request::Handler::new(postgres_cfg, *cfg.whitelist_mode);
+    let request = Handler::new(postgres_cfg, *cfg.whitelist_mode);
     let poll_freq = *redis_cfg.polling_interval;
     let shared_manager = redis::Manager::try_from(redis_cfg, event_tx, cmd_rx)?.into_arc();
 
@@ -35,38 +33,27 @@ fn main() -> Result<(), FatalErr> {
     let sse_manager = shared_manager.clone();
     let (sse_rx, sse_cmd_tx) = (event_rx.clone(), cmd_tx.clone());
 
-    let sse = request_handler
-        .parse_sse_request()
+    let sse = request
+        .sse_subscription()
         .and(warp::sse())
-        .map(
-            move |subscription: Subscription, client_conn: warp::sse::Sse| {
-                log::info!("Incoming SSE request for {:?}", subscription.timeline);
-                {
-                    let mut manager = sse_manager.lock().unwrap_or_else(redis::Manager::recover);
-                    manager.subscribe(&subscription);
-                }
+        .map(move |subscription: Subscription, sse: warp::sse::Sse| {
+            log::info!("Incoming SSE request for {:?}", subscription.timeline);
+            let mut manager = sse_manager.lock().unwrap_or_else(redis::Manager::recover);
+            manager.subscribe(&subscription);
 
-                stream::Sse::send_events(
-                    client_conn,
-                    sse_cmd_tx.clone(),
-                    subscription,
-                    sse_rx.clone(),
-                )
-            },
-        )
+            stream::Sse::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
+        })
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
     // WebSocket
     let ws_manager = shared_manager.clone();
-    let ws = request_handler
-        .parse_ws_request()
+    let ws = request
+        .ws_subscription()
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
-            {
-                let mut manager = ws_manager.lock().unwrap_or_else(redis::Manager::recover);
-                manager.subscribe(&subscription);
-            }
+            let mut manager = ws_manager.lock().unwrap_or_else(redis::Manager::recover);
+            manager.subscribe(&subscription);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
             let ws_stream = stream::Ws::new(cmd_tx.clone(), event_rx.clone(), subscription);
 
@@ -74,27 +61,23 @@ fn main() -> Result<(), FatalErr> {
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
 
+    #[cfg(feature = "stub_status")]
+    let status = {
+        let (r1, r3) = (shared_manager.clone(), shared_manager.clone());
+        #[rustfmt::skip]
+        request.health().map(|| "OK")
+            .or(request.status()
+                .map(move || r1.lock().unwrap_or_else(redis::Manager::recover).count()))
+            .or(request.status_per_timeline()
+                .map(move || r3.lock().unwrap_or_else(redis::Manager::recover).list()))
+    };
+    #[cfg(not(feature = "stub_status"))]
+    let status = request.health().map(|| "OK");
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
-
-    // TODO -- extract to separate file
-    #[cfg(feature = "stub_status")]
-    let status = {
-        let (r1, r3) = (shared_manager.clone(), shared_manager.clone());
-        warp::path!("api" / "v1" / "streaming" / "health")
-            .map(|| "OK")
-            .or(warp::path!("api" / "v1" / "streaming" / "status")
-                .and(warp::path::end())
-                .map(move || r1.lock().unwrap_or_else(redis::Manager::recover).count()))
-            .or(
-                warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline")
-                    .map(move || r3.lock().unwrap_or_else(redis::Manager::recover).list()),
-            )
-    };
-    #[cfg(not(feature = "stub_status"))]
-    let status = warp::path!("api" / "v1" / "streaming" / "health").map(|| "OK");
 
     let streaming_server = move || {
         let manager = shared_manager.clone();
@@ -106,7 +89,7 @@ fn main() -> Result<(), FatalErr> {
                 Ok(())
             });
         warp::spawn(lazy(move || stream));
-        warp::serve(ws.or(sse).with(cors).or(status).recover(recover))
+        warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))
     };
 
     if let Some(socket) = &*cfg.unix_socket {
@@ -121,16 +104,4 @@ fn main() -> Result<(), FatalErr> {
         tokio::run(lazy(move || streaming_server().bind(server_addr)));
     }
     Ok(())
-}
-
-// TODO -- extract to separate file
-fn recover(r: Rejection) -> Result<impl warp::Reply, warp::Rejection> {
-    let json_err = match r.cause() {
-        Some(text) if text.to_string() == "Missing request header 'authorization'" => {
-            warp::reply::json(&"Error: Missing access token".to_string())
-        }
-        Some(text) => warp::reply::json(&text.to_string()),
-        None => warp::reply::json(&"Error: Nonexistant endpoint".to_string()),
-    };
-    Ok(warp::reply::with_status(json_err, StatusCode::UNAUTHORIZED))
 }

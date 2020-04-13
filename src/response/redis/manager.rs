@@ -6,7 +6,7 @@ pub use err::ManagerErr;
 
 use super::{connection::RedisCmd, RedisConn};
 use crate::config;
-use crate::messages::Event;
+use crate::event::Event;
 use crate::request::{Stream, Subscription, Timeline};
 
 use futures::{Async, Stream as _Stream};

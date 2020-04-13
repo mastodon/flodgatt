@@ -4,7 +4,7 @@ pub use err::RedisConnErr;
 use super::msg::{RedisParseErr, RedisParseOutput};
 use super::ManagerErr;
 use crate::config::Redis;
-use crate::messages::Event;
+use crate::event::Event;
 use crate::request::{Stream, Timeline};
 use futures::{Async, Poll};
 use lru::LruCache;

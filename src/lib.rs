@@ -40,6 +40,6 @@
 
 pub mod config;
 pub mod err;
-pub mod messages;
+pub mod event;
 pub mod request;
 pub mod response;

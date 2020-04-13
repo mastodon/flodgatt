@@ -1,6 +1,6 @@
 //! Postgres queries
 use crate::config;
-use crate::messages::Id;
+use crate::event::Id;
 use crate::request::timeline::{Scope, UserData};
 
 use ::postgres;
