@@ -1,12 +1,13 @@
 mod err;
 pub use err::RedisConnErr;
 
-use super::msg::{RedisParseErr, RedisParseOutput};
+use super::msg::{RedisMsg, RedisParseErr, RedisParseOutput};
 use super::ManagerErr;
 use crate::config::Redis;
 use crate::event::Event;
 use crate::request::{Stream, Timeline};
-use futures::{Async, Poll};
+
+use futures::Async;
 use lru::LruCache;
 use std::convert::{TryFrom, TryInto};
 use std::io::{Read, Write};
@@ -15,6 +16,7 @@ use std::str;
 use std::time::Duration;
 
 type Result<T> = std::result::Result<T, RedisConnErr>;
+type Poll = futures::Poll<Option<(Timeline, Event)>, ManagerErr>;
 
 #[derive(Debug)]
 pub struct RedisConn {
@@ -46,15 +48,12 @@ impl RedisConn {
         Ok(redis_conn)
     }
 
-    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
+    pub fn poll_redis(&mut self) -> Poll {
         let mut size = 100; // large enough to handle subscribe/unsubscribe notice
         let (mut buffer, mut first_read) = (vec![0u8; size], true);
         loop {
             match self.primary.read(&mut buffer) {
-                Ok(n) if n != size => {
-                    self.redis_input.extend_from_slice(&buffer[..n]);
-                    break;
-                }
+                Ok(n) if n != size => break self.redis_input.extend_from_slice(&buffer[..n]),
                 Ok(n) => self.redis_input.extend_from_slice(&buffer[..n]),
                 Err(_) => break,
             };
@@ -68,6 +67,7 @@ impl RedisConn {
         if self.redis_input.is_empty() {
             return Ok(Async::NotReady);
         }
+
         let input = self.redis_input.clone();
         self.redis_input.clear();
 
@@ -82,16 +82,12 @@ impl RedisConn {
         let (res, leftover) = match RedisParseOutput::try_from(input) {
             Ok(Msg(msg)) => match &self.redis_namespace {
                 Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
-                    let trimmed_tl_txt = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
-                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event = msg.event_txt.try_into()?;
-                    (Ok(Ready(Some((tl, event)))), msg.leftover_input)
+                    let trimmed_tl = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
+                    (self.into_tl_event(trimmed_tl, &msg)?, msg.leftover_input)
                 }
                 None => {
-                    let trimmed_tl_txt = &msg.timeline_txt["timeline:".len()..];
-                    let tl = Timeline::from_redis_text(trimmed_tl_txt, &mut self.tag_id_cache)?;
-                    let event = msg.event_txt.try_into()?;
-                    (Ok(Ready(Some((tl, event)))), msg.leftover_input)
+                    let trimmed_tl = &msg.timeline_txt["timeline:".len()..];
+                    (self.into_tl_event(trimmed_tl, &msg)?, msg.leftover_input)
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
             },
@@ -102,6 +98,12 @@ impl RedisConn {
         self.redis_input.extend_from_slice(leftover.as_bytes());
         self.redis_input.extend_from_slice(invalid_bytes);
         res
+    }
+
+    fn into_tl_event<'a>(&mut self, tl: &'a str, msg: &'a RedisMsg) -> Result<Poll> {
+        let tl = Timeline::from_redis_text(tl, &mut self.tag_id_cache)?;
+        let event = msg.event_txt.try_into().expect("TODO");
+        Ok(Ok(Async::Ready(Some((tl, event)))))
     }
 
     pub fn update_cache(&mut self, hashtag: String, id: i64) {
@@ -116,18 +118,9 @@ impl RedisConn {
         };
 
         let tl = timeline.to_redis_raw_timeline(hashtag)?;
-        let (primary_cmd, secondary_cmd) = match cmd {
-            RedisCmd::Subscribe => (
-                format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),
-                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n1\r\n", tl.len(), tl),
-            ),
-            RedisCmd::Unsubscribe => (
-                format!("*2\r\n$11\r\nunsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl),
-                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n0\r\n", tl.len(), tl),
-            ),
-        };
-        self.primary.write_all(&primary_cmd.as_bytes())?;
-        self.secondary.write_all(&secondary_cmd.as_bytes())?;
+        let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
+        self.primary.write_all(&primary_cmd)?;
+        self.secondary.write_all(&secondary_cmd)?;
         Ok(())
     }
 
@@ -173,4 +166,19 @@ impl RedisConn {
 pub enum RedisCmd {
     Subscribe,
     Unsubscribe,
+}
+
+impl RedisCmd {
+    pub fn into_sendable(&self, tl: &String) -> (Vec<u8>, Vec<u8>) {
+        match self {
+            RedisCmd::Subscribe => (
+                format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl).into_bytes(),
+                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n1\r\n", tl.len(), tl).into_bytes(),
+            ),
+            RedisCmd::Unsubscribe => (
+                format!("*2\r\n$11\r\nunsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl).into_bytes(),
+                format!("*3\r\n$3\r\nSET\r\n${}\r\n{}\r\n$1\r\n0\r\n", tl.len(), tl).into_bytes(),
+            ),
+        }
+    }
 }

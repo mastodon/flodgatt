@@ -5,7 +5,7 @@ use flodgatt::request::{Handler, Subscription, Timeline};
 use flodgatt::response::redis;
 use flodgatt::response::stream;
 
-use futures::{future::lazy, stream::Stream as _Stream};
+use futures::{future::lazy, stream::Stream as _};
 use std::fs;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
