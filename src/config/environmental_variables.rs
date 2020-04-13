@@ -1,6 +1,7 @@
 use hashbrown::HashMap;
 use std::fmt;
 
+#[derive(Debug)]
 pub struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {
     type Target = HashMap<String, String>;
@@ -39,7 +40,7 @@ impl EnvVar {
 impl fmt::Display for EnvVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut result = String::new();
-        for env_var in [
+        for env_var in &[
             "NODE_ENV",
             "RUST_LOG",
             "BIND",
@@ -62,9 +63,7 @@ impl fmt::Display for EnvVar {
             "REDIS_USER",
             "REDIS_DB",
             "REDIS_FREQ",
-        ]
-        .iter()
-        {
+        ] {
             if let Some(value) = self.get(&(*env_var).to_string()) {
                 result = format!("{}\n    {}: {}", result, env_var, value)
             }
@@ -96,6 +95,7 @@ macro_rules! from_env_var {
      let (env_var, allowed_values) = ($env_var:tt, $allowed_values:expr);
      let from_str = |$arg:ident| $body:expr;
     ) => {
+        #[derive(Clone)]
         pub struct $name(pub $type);
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -125,14 +125,6 @@ macro_rules! from_env_var {
                     })),
                     None => self,
                 }
-
-                // if let Some(value) = var {
-                //     Self(Self::inner_from_str(value).unwrap_or_else(|| {
-                //         crate::err::env_var_fatal($env_var, value, $allowed_values)
-                //     }))
-                // } else {
-                //     self
-                // }
             }
         }
     };

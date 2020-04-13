@@ -1,7 +1,7 @@
 use super::{deployment_cfg_types::*, EnvVar};
 
 #[derive(Debug, Default)]
-pub struct DeploymentConfig<'a> {
+pub struct Deployment<'a> {
     pub env: Env,
     pub log_level: LogLevel,
     pub address: FlodgattAddr,
@@ -13,7 +13,7 @@ pub struct DeploymentConfig<'a> {
     pub whitelist_mode: WhitelistMode,
 }
 
-impl DeploymentConfig<'_> {
+impl Deployment<'_> {
     pub fn from_env(env: EnvVar) -> Self {
         let mut cfg = Self {
             env: Env::default().maybe_update(env.get("NODE_ENV")),

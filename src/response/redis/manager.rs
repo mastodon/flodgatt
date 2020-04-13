@@ -2,31 +2,24 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod err;
-pub use err::ReceiverErr;
+pub use err::ManagerErr;
 
-use super::redis::{redis_connection::RedisCmd, RedisConn};
-
-use crate::{
-    config,
-    messages::Event,
-    parse_client_request::{Stream, Subscription, Timeline},
-};
+use super::{RedisCmd, RedisConn};
+use crate::config;
+use crate::event::Event;
+use crate::request::{Stream, Subscription, Timeline};
 
 use futures::{Async, Stream as _Stream};
 use hashbrown::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 
-use std::{
-    result,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
-    time::{Duration, Instant},
-};
-
-type Result<T> = result::Result<T, ReceiverErr>;
+type Result<T> = std::result::Result<T, ManagerErr>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]
-pub struct Receiver {
+pub struct Manager {
     redis_connection: RedisConn,
     clients_per_timeline: HashMap<Timeline, i32>,
     tx: watch::Sender<(Timeline, Event)>,
@@ -34,18 +27,16 @@ pub struct Receiver {
     ping_time: Instant,
 }
 
-impl Receiver {
-    /// Create a new `Receiver`, with its own Redis connections (but, as yet, no
+impl Manager {
+    /// Create a new `Manager`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-
     pub fn try_from(
-        redis_cfg: config::RedisConfig,
+        redis_cfg: config::Redis,
         tx: watch::Sender<(Timeline, Event)>,
         rx: mpsc::UnboundedReceiver<Timeline>,
     ) -> Result<Self> {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
-
             clients_per_timeline: HashMap::new(),
             tx,
             rx,
@@ -57,7 +48,7 @@ impl Receiver {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription) -> Result<()> {
+    pub fn subscribe(&mut self, subscription: &Subscription) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
             self.redis_connection.update_cache(hashtag, id);
@@ -71,9 +62,10 @@ impl Receiver {
 
         use RedisCmd::*;
         if *number_of_subscriptions == 1 {
-            self.redis_connection.send_cmd(Subscribe, &tl)?
+            self.redis_connection
+                .send_cmd(Subscribe, &tl)
+                .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e));
         };
-        Ok(())
     }
 
     pub fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {

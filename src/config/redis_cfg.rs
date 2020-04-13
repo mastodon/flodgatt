@@ -3,7 +3,7 @@ use crate::config::EnvVar;
 use url::Url;
 
 #[derive(Debug, Default)]
-pub struct RedisConfig {
+pub struct Redis {
     pub user: RedisUser,
     pub password: RedisPass,
     pub port: RedisPort,
@@ -40,7 +40,7 @@ impl EnvVar {
     }
 }
 
-impl RedisConfig {
+impl Redis {
     const USER_SET_WARNING: &'static str =
         "Redis user specified, but Redis did not ask for a username.  Ignoring it.";
     const DB_SET_WARNING: &'static str = r"Redis database specified, but PubSub connections do not use databases.
@@ -52,7 +52,7 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
             None => env,
         };
 
-        let cfg = RedisConfig {
+        let cfg = Redis {
             user: RedisUser::default().maybe_update(env.get("REDIS_USER")),
             password: RedisPass::default().maybe_update(env.get("REDIS_PASSWORD")),
             port: RedisPort::default().maybe_update(env.get("REDIS_PORT")),

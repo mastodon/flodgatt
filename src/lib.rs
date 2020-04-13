@@ -35,10 +35,11 @@
 //! polls the `Receiver` and the frequency with which the `Receiver` polls Redis.
 //!
 
+//#![warn(clippy::pedantic)]
 #![allow(clippy::try_err, clippy::match_bool)]
 
 pub mod config;
 pub mod err;
-pub mod messages;
-pub mod parse_client_request;
-pub mod redis_to_client_stream;
+pub mod event;
+pub mod request;
+pub mod response;

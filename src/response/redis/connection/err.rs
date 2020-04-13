@@ -1,4 +1,4 @@
-use crate::err::TimelineErr;
+use crate::request::TimelineErr;
 use std::fmt;
 
 #[derive(Debug)]

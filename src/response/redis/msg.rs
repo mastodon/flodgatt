@@ -36,6 +36,8 @@ pub enum RedisParseOutput<'a> {
     NonMsg(&'a str),
 }
 
+// TODO -- should this impl Iterator?
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RedisMsg<'a> {
     pub timeline_txt: &'a str,
