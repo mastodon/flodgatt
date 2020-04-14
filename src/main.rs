@@ -25,7 +25,7 @@ fn main() -> Result<(), FatalErr> {
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
-    let request = Handler::new(postgres_cfg, *cfg.whitelist_mode);
+    let request = Handler::new(postgres_cfg, *cfg.whitelist_mode)?;
     let poll_freq = *redis_cfg.polling_interval;
     let shared_manager = redis::Manager::try_from(redis_cfg, event_tx, cmd_rx)?.into_arc();
 

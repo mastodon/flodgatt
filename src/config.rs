@@ -14,7 +14,6 @@ mod redis_cfg;
 mod redis_cfg_types;
 
 pub fn merge_dotenv() -> Result<(), err::FatalErr> {
-    // TODO -- should this allow the user to run in a dir without a `.env` file?
     dotenv::from_filename(match env::var("ENV").ok().as_deref() {
         Some("production") => ".env.production",
         Some("development") | None => ".env",

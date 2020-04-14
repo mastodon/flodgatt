@@ -50,7 +50,7 @@ impl Ws {
 
         incoming_events.for_each(move |(tl, event)| {
             if matches!(event, Event::Ping) {
-                self.send_ping()
+                self.send_msg(event)
             } else if target_timeline == tl {
                 use crate::event::{CheckedEvent::Update, Event::*, EventKind};
                 use crate::request::Stream::Public;
@@ -83,15 +83,8 @@ impl Ws {
         })
     }
 
-    fn send_ping(&mut self) -> Result<(), ()> {
-        self.send_txt("{}")
-    }
-
     fn send_msg(&mut self, event: Event) -> Result<(), ()> {
-        self.send_txt(&event.to_json_string())
-    }
-
-    fn send_txt(&mut self, txt: &str) -> Result<(), ()> {
+        let txt = &event.to_json_string();
         let tl = self.subscription.timeline;
         match self.ws_tx.clone().ok_or(())?.try_send(Message::text(txt)) {
             Ok(_) => Ok(()),

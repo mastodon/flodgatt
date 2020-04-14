@@ -6,18 +6,11 @@ use log;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use warp::reply::Reply;
-use warp::sse::{ServerSentEvent, Sse as WarpSse};
+use warp::sse::Sse as WarpSse;
 
 pub struct Sse;
 
 impl Sse {
-    fn reply_with(event: Event) -> Option<(impl ServerSentEvent, impl ServerSentEvent)> {
-        Some((
-            warp::sse::event(event.event_name()),
-            warp::sse::data(event.payload().unwrap_or_else(String::new)),
-        ))
-    }
-
     pub fn send_events(
         sse: WarpSse,
         mut unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
@@ -40,21 +33,20 @@ impl Sse {
                     TypeSafe(Update { payload, queued_at }) => match timeline {
                         Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,
                         _ if payload.involves_any(&blocks) => None,
-                        _ => Self::reply_with(Event::TypeSafe(CheckedEvent::Update {
-                            payload,
-                            queued_at,
-                        })),
+                        _ => Event::TypeSafe(CheckedEvent::Update { payload, queued_at })
+                            .to_warp_reply(),
                     },
-                    TypeSafe(non_update) => Self::reply_with(Event::TypeSafe(non_update)),
+                    TypeSafe(non_update) => Event::TypeSafe(non_update).to_warp_reply(),
                     Dynamic(dyn_event) => {
                         if let EventKind::Update(s) = dyn_event.kind {
                             match timeline {
                                 Timeline(Public, _, _) if s.language_not(&allowed_langs) => None,
                                 _ if s.involves_any(&blocks) => None,
-                                _ => Self::reply_with(Dynamic(DynEvent {
+                                _ => Dynamic(DynEvent {
                                     kind: EventKind::Update(s),
                                     ..dyn_event
-                                })),
+                                })
+                                .to_warp_reply(),
                             }
                         } else {
                             None

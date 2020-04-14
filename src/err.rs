@@ -1,3 +1,4 @@
+use crate::request::RequestErr;
 use crate::response::ManagerErr;
 use std::fmt;
 
@@ -6,6 +7,7 @@ pub enum FatalErr {
     ReceiverErr(ManagerErr),
     DotEnv(dotenv::Error),
     Logger(log::SetLoggerError),
+    Postgres(RequestErr),
 }
 
 impl FatalErr {
@@ -33,8 +35,15 @@ impl fmt::Display for FatalErr {
                 ReceiverErr(e) => format!("{}", e),
                 Logger(e) => format!("{}", e),
                 DotEnv(e) => format!("Could not load specified environmental file: {}", e),
+                Postgres(e) => format!("Could not connect to Postgres: {}", e),
             }
         )
+    }
+}
+
+impl From<RequestErr> for FatalErr {
+    fn from(e: RequestErr) -> Self {
+        Self::Postgres(e)
     }
 }
 

@@ -3,8 +3,10 @@ mod postgres;
 mod query;
 pub mod timeline;
 
+mod err;
 mod subscription;
 
+pub use self::err::RequestErr;
 pub use self::postgres::PgPool;
 // TODO consider whether we can remove `Stream` from public API
 pub use subscription::{Blocks, Subscription};
@@ -21,6 +23,8 @@ use warp::{Filter, Rejection};
 mod sse_test;
 #[cfg(test)]
 mod ws_test;
+
+type Result<T> = std::result::Result<T, err::RequestErr>;
 
 /// Helper macro to match on the first of any of the provided filters
 macro_rules! any_of {
@@ -56,10 +60,10 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn new(postgres_cfg: config::Postgres, whitelist_mode: bool) -> Self {
-        Self {
-            pg_conn: PgPool::new(postgres_cfg, whitelist_mode),
-        }
+    pub fn new(postgres_cfg: config::Postgres, whitelist_mode: bool) -> Result<Self> {
+        Ok(Self {
+            pg_conn: PgPool::new(postgres_cfg, whitelist_mode)?,
+        })
     }
 
     pub fn sse_subscription(&self) -> BoxedFilter<(Subscription,)> {
@@ -113,7 +117,7 @@ impl Handler {
         warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline").boxed()
     }
 
-    pub fn err(r: Rejection) -> Result<impl warp::Reply, warp::Rejection> {
+    pub fn err(r: Rejection) -> std::result::Result<impl warp::Reply, warp::Rejection> {
         let json_err = match r.cause() {
             Some(text) if text.to_string() == "Missing request header 'authorization'" => {
                 warp::reply::json(&"Error: Missing access token".to_string())

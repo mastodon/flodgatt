@@ -54,7 +54,7 @@ impl Subscription {
                     let tag = pool.select_hashtag_id(&q.hashtag)?;
                     Timeline(Hashtag(tag), reach, stream)
                 }
-                Timeline(List(list_id), _, _) if !pool.user_owns_list(user.id, list_id) => {
+                Timeline(List(list_id), _, _) if !pool.user_owns_list(user.id, list_id)? => {
                     Err(warp::reject::custom("Error: Missing access token"))?
                 }
                 other_tl => other_tl,
@@ -70,9 +70,9 @@ impl Subscription {
             timeline,
             allowed_langs: user.allowed_langs,
             blocks: Blocks {
-                blocking_users: pool.clone().select_blocking_users(user.id),
-                blocked_users: pool.clone().select_blocked_users(user.id),
-                blocked_domains: pool.select_blocked_domains(user.id),
+                blocking_users: pool.clone().select_blocking_users(user.id)?,
+                blocked_users: pool.clone().select_blocked_users(user.id)?,
+                blocked_domains: pool.select_blocked_domains(user.id)?,
             },
             hashtag_name,
             access_token: q.access_token,

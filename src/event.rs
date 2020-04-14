@@ -2,14 +2,14 @@ mod checked_event;
 mod dynamic_event;
 mod err;
 
-pub use {
-    checked_event::{CheckedEvent, Id},
-    dynamic_event::{DynEvent, DynStatus, EventKind},
-    err::EventErr,
-};
+pub use checked_event::{CheckedEvent, Id};
+pub use dynamic_event::{DynEvent, DynStatus, EventKind};
+pub use err::EventErr;
 
 use serde::Serialize;
-use std::{convert::TryFrom, string::String};
+use std::convert::TryFrom;
+use std::string::String;
+use warp::sse::ServerSentEvent;
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -20,15 +20,30 @@ pub enum Event {
 
 impl Event {
     pub fn to_json_string(&self) -> String {
-        let event = &self.event_name();
-        let sendable_event = match self.payload() {
-            Some(payload) => SendableEvent::WithPayload { event, payload },
-            None => SendableEvent::NoPayload { event },
-        };
-        serde_json::to_string(&sendable_event).expect("Guaranteed: SendableEvent is Serialize")
+        if let Event::Ping = self {
+            "{}".to_string()
+        } else {
+            let event = &self.event_name();
+            let sendable_event = match self.payload() {
+                Some(payload) => SendableEvent::WithPayload { event, payload },
+                None => SendableEvent::NoPayload { event },
+            };
+            serde_json::to_string(&sendable_event).expect("Guaranteed: SendableEvent is Serialize")
+        }
     }
 
-    pub fn event_name(&self) -> String {
+    pub fn to_warp_reply(&self) -> Option<(impl ServerSentEvent, impl ServerSentEvent)> {
+        if let Event::Ping = self {
+            None
+        } else {
+            Some((
+                warp::sse::event(self.event_name()),
+                warp::sse::data(self.payload().unwrap_or_else(String::new)),
+            ))
+        }
+    }
+
+    fn event_name(&self) -> String {
         String::from(match self {
             Self::TypeSafe(checked) => match checked {
                 CheckedEvent::Update { .. } => "update",
@@ -45,11 +60,11 @@ impl Event {
                 ..
             }) => "update",
             Self::Dynamic(DynEvent { event, .. }) => event,
-            Self::Ping => panic!("event_name() called on Ping"),
+            Self::Ping => unreachable!(), // private method only called above
         })
     }
 
-    pub fn payload(&self) -> Option<String> {
+    fn payload(&self) -> Option<String> {
         use CheckedEvent::*;
         match self {
             Self::TypeSafe(checked) => match checked {
@@ -63,7 +78,7 @@ impl Event {
                 FiltersChanged => None,
             },
             Self::Dynamic(DynEvent { payload, .. }) => Some(payload.to_string()),
-            Self::Ping => panic!("payload() called on Ping"),
+            Self::Ping => unreachable!(), // private method only called above
         }
     }
 }
