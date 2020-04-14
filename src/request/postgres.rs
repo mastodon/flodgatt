@@ -19,7 +19,7 @@ type Result<T> = std::result::Result<T, err::RequestErr>;
 type Rejectable<T> = std::result::Result<T, warp::Rejection>;
 
 impl PgPool {
-    pub fn new(pg_cfg: config::Postgres, whitelist_mode: bool) -> Result<Self> {
+    pub fn new(pg_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
         let mut cfg = postgres::Config::new();
         cfg.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
@@ -29,6 +29,8 @@ impl PgPool {
             cfg.password(password);
         };
 
+        cfg.connect(postgres::NoTls)?; // Test connection, letting us immediately exit with an error
+                                       // when Postgres isn't running instead of timing out below
         let manager = PostgresConnectionManager::new(cfg, postgres::NoTls);
         let pool = r2d2::Pool::builder().max_size(10).build(manager)?;
 

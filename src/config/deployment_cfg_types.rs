@@ -17,7 +17,7 @@ from_env_var!(
 from_env_var!(
     /// The address to run Flodgatt on
     let name = FlodgattAddr;
-    let default: IpAddr = IpAddr::V4("127.0.0.1".parse().expect("hardcoded"));
+    let default: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     let (env_var, allowed_values) = ("BIND", "a valid address (e.g., 127.0.0.1)");
     let from_str = |s| match s {
         "localhost" => Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),

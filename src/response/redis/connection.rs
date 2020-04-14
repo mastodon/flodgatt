@@ -28,7 +28,7 @@ pub struct RedisConn {
 }
 
 impl RedisConn {
-    pub fn new(redis_cfg: Redis) -> Result<Self> {
+    pub fn new(redis_cfg: &Redis) -> Result<Self> {
         let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
         let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
         conn.set_nonblocking(true)
@@ -49,7 +49,7 @@ impl RedisConn {
 
     pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
         let mut size = 100; // large enough to handle subscribe/unsubscribe notice
-        let (mut buffer, mut first_read) = (vec![0u8; size], true);
+        let (mut buffer, mut first_read) = (vec![0_u8; size], true);
         loop {
             match self.primary.read(&mut buffer) {
                 Ok(n) if n != size => break self.redis_input.extend_from_slice(&buffer[..n]),

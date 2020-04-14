@@ -43,7 +43,7 @@ type Result<T> = std::result::Result<T, EventErr>;
 impl DynEvent {
     pub fn set_update(self) -> Result<Self> {
         if self.event == "update" {
-            let kind = EventKind::Update(DynStatus::new(self.payload.clone())?);
+            let kind = EventKind::Update(DynStatus::new(&self.payload.clone())?);
             Ok(Self { kind, ..self })
         } else {
             Ok(self)
@@ -52,7 +52,7 @@ impl DynEvent {
 }
 
 impl DynStatus {
-    pub fn new(payload: Value) -> Result<Self> {
+    pub fn new(payload: &Value) -> Result<Self> {
         use EventErr::*;
 
         Ok(Self {
@@ -61,7 +61,7 @@ impl DynStatus {
                 .as_str()
                 .ok_or(DynParse)?
                 .to_string(),
-            language: payload["language"].as_str().map(|s| s.to_string()),
+            language: payload["language"].as_str().map(String::from),
             mentioned_users: HashSet::new(),
             replied_to_user: Id::try_from(&payload["in_reply_to_account_id"]).ok(),
             boosted_user: Id::try_from(&payload["reblog"]["account"]["id"]).ok(),

@@ -60,7 +60,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn new(postgres_cfg: config::Postgres, whitelist_mode: bool) -> Result<Self> {
+    pub fn new(postgres_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
         Ok(Self {
             pg_conn: PgPool::new(postgres_cfg, whitelist_mode)?,
         })

@@ -12,7 +12,7 @@ pub enum RedisCmd {
 }
 
 impl RedisCmd {
-    pub fn into_sendable(&self, tl: &String) -> (Vec<u8>, Vec<u8>) {
+    pub fn into_sendable(self, tl: &str) -> (Vec<u8>, Vec<u8>) {
         match self {
             RedisCmd::Subscribe => (
                 format!("*2\r\n$9\r\nsubscribe\r\n${}\r\n{}\r\n", tl.len(), tl).into_bytes(),

@@ -37,6 +37,7 @@
 
 //#![warn(clippy::pedantic)]
 #![allow(clippy::try_err, clippy::match_bool)]
+//#![allow(clippy::large_enum_variant)]
 
 pub mod config;
 pub mod err;

@@ -25,17 +25,6 @@ impl EnvVar {
             self.0.insert(key.to_string(), value.to_string());
         }
     }
-
-    pub fn err(env_var: &str, supplied_value: &str, allowed_values: &str) -> ! {
-        log::error!(
-            r"{var} is set to `{value}`, which is invalid.
-             {var} must be {allowed_vals}.",
-            var = env_var,
-            value = supplied_value,
-            allowed_vals = allowed_values
-        );
-        std::process::exit(1);
-    }
 }
 impl fmt::Display for EnvVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -98,7 +87,7 @@ macro_rules! from_env_var {
         #[derive(Clone)]
         pub struct $name(pub $type);
         impl std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(f, "{:?}", self.0)
             }
         }
@@ -117,14 +106,14 @@ macro_rules! from_env_var {
             fn inner_from_str($arg: &str) -> Option<$type> {
                 $body
             }
-            pub fn maybe_update(self, var: Option<&String>) -> Self {
-                match var {
+            pub fn maybe_update(self, var: Option<&String>) -> Result<Self, crate::err::FatalErr> {
+                Ok(match var {
                     Some(empty_string) if empty_string.is_empty() => Self::default(),
-                    Some(value) => Self(Self::inner_from_str(value).unwrap_or_else(|| {
-                        crate::config::EnvVar::err($env_var, value, $allowed_values)
-                    })),
+                    Some(value) => Self(Self::inner_from_str(value).ok_or_else(|| {
+                        crate::err::FatalErr::config($env_var, value, $allowed_values)
+                    })?),
                     None => self,
-                }
+                })
             }
         }
     };

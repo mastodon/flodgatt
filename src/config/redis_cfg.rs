@@ -1,6 +1,10 @@
 use super::redis_cfg_types::*;
-use crate::config::EnvVar;
+use super::EnvVar;
+use crate::err::FatalErr;
+
 use url::Url;
+
+type Result<T> = std::result::Result<T, FatalErr>;
 
 #[derive(Debug, Default)]
 pub struct Redis {
@@ -17,8 +21,8 @@ pub struct Redis {
 }
 
 impl EnvVar {
-    fn update_with_redis_url(mut self, url_str: &str) -> Self {
-        let url = Url::parse(url_str).unwrap();
+    fn update_with_redis_url(mut self, url_str: &str) -> Result<Self> {
+        let url = Url::parse(url_str)?;
         let none_if_empty = |s: String| if s.is_empty() { None } else { Some(s) };
 
         self.maybe_add_env_var("REDIS_PORT", url.port());
@@ -29,14 +33,14 @@ impl EnvVar {
             match k.to_string().as_str() {
                 "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
                 "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
-                _ => crate::err::die_with_msg(format!(
-                    r"Unsupported parameter {} in REDIS_URL.
-             Flodgatt supports only `password` and `db` parameters.",
-                    k
-                )),
+                _ => Err(FatalErr::config(
+                    "REDIS_URL",
+                    &k,
+                    "a URL with parameters `password`, `db`,  only",
+                ))?,
             }
         }
-        self
+        Ok(self)
     }
 }
 
@@ -46,20 +50,20 @@ impl Redis {
     const DB_SET_WARNING: &'static str = r"Redis database specified, but PubSub connections do not use databases.
 For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
-    pub fn from_env(env: EnvVar) -> Self {
+    pub fn from_env(env: EnvVar) -> Result<Self> {
         let env = match env.get("REDIS_URL").cloned() {
-            Some(url_str) => env.update_with_redis_url(&url_str),
+            Some(url_str) => env.update_with_redis_url(&url_str)?,
             None => env,
         };
 
         let cfg = Redis {
-            user: RedisUser::default().maybe_update(env.get("REDIS_USER")),
-            password: RedisPass::default().maybe_update(env.get("REDIS_PASSWORD")),
-            port: RedisPort::default().maybe_update(env.get("REDIS_PORT")),
-            host: RedisHost::default().maybe_update(env.get("REDIS_HOST")),
-            db: RedisDb::default().maybe_update(env.get("REDIS_DB")),
-            namespace: RedisNamespace::default().maybe_update(env.get("REDIS_NAMESPACE")),
-            polling_interval: RedisInterval::default().maybe_update(env.get("REDIS_FREQ")),
+            user: RedisUser::default().maybe_update(env.get("REDIS_USER"))?,
+            password: RedisPass::default().maybe_update(env.get("REDIS_PASSWORD"))?,
+            port: RedisPort::default().maybe_update(env.get("REDIS_PORT"))?,
+            host: RedisHost::default().maybe_update(env.get("REDIS_HOST"))?,
+            db: RedisDb::default().maybe_update(env.get("REDIS_DB"))?,
+            namespace: RedisNamespace::default().maybe_update(env.get("REDIS_NAMESPACE"))?,
+            polling_interval: RedisInterval::default().maybe_update(env.get("REDIS_FREQ"))?,
         };
 
         if cfg.db.is_some() {
@@ -68,7 +72,6 @@ For similar functionality, you may wish to set a REDIS_NAMESPACE";
         if cfg.user.is_some() {
             log::warn!("{}", Self::USER_SET_WARNING);
         }
-        log::info!("Redis configuration:\n{:#?},", &cfg);
-        cfg
+        Ok(cfg)
     }
 }
