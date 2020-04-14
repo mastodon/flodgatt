@@ -29,7 +29,8 @@ pub struct RedisConn {
 
 impl RedisConn {
     pub fn new(redis_cfg: &Redis) -> Result<Self> {
-        let addr = format!("{}:{}", *redis_cfg.host, *redis_cfg.port);
+        let addr = [&*redis_cfg.host, ":", &*redis_cfg.port.to_string()].concat();
+
         let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
         conn.set_nonblocking(true)
             .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
@@ -81,7 +82,7 @@ impl RedisConn {
         use {Async::*, RedisParseOutput::*};
         let (res, leftover) = match RedisParseOutput::try_from(input) {
             Ok(Msg(msg)) => match &self.redis_namespace {
-                Some(ns) if msg.timeline_txt.starts_with(&format!("{}:timeline:", ns)) => {
+                Some(ns) if msg.timeline_txt.starts_with(&[ns, ":timeline:"].concat()) => {
                     let trimmed_tl = &msg.timeline_txt[ns.len() + ":timeline:".len()..];
                     let tl = Timeline::from_redis_text(trimmed_tl, &mut self.tag_id_cache)?;
                     let event = msg.event_txt.try_into()?;
@@ -135,8 +136,17 @@ impl RedisConn {
     }
 
     fn auth_connection(conn: &mut TcpStream, addr: &str, pass: &str) -> Result<()> {
-        conn.write_all(&format!("*2\r\n$4\r\nauth\r\n${}\r\n{}\r\n", pass.len(), pass).as_bytes())
-            .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
+        conn.write_all(
+            &[
+                b"*2\r\n$4\r\nauth\r\n$",
+                pass.len().to_string().as_bytes(),
+                b"\r\n",
+                pass.as_bytes(),
+                b"\r\n",
+            ]
+            .concat(),
+        )
+        .map_err(|e| RedisConnErr::with_addr(&addr, e))?;
         let mut buffer = vec![0_u8; 5];
         conn.read_exact(&mut buffer)
             .map_err(|e| RedisConnErr::with_addr(&addr, e))?;

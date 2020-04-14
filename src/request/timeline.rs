@@ -19,25 +19,29 @@ impl Timeline {
     }
 
     pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
-        use {Content::*, Reach::*, Stream::*};
+        // TODO -- does this need to account for namespaces?
+        use {Content::*, Reach::*, Stream::*, TimelineErr::*};
+
         Ok(match self {
-            Timeline(Public, Federated, All) => "timeline:public".into(),
-            Timeline(Public, Local, All) => "timeline:public:local".into(),
-            Timeline(Public, Federated, Media) => "timeline:public:media".into(),
-            Timeline(Public, Local, Media) => "timeline:public:local:media".into(),
-            // TODO -- would `.push_str` be faster here?
-            Timeline(Hashtag(_id), Federated, All) => format!(
-                "timeline:hashtag:{}",
-                hashtag.ok_or(TimelineErr::MissingHashtag)?
-            ),
-            Timeline(Hashtag(_id), Local, All) => format!(
-                "timeline:hashtag:{}:local",
-                hashtag.ok_or(TimelineErr::MissingHashtag)?
-            ),
-            Timeline(User(id), Federated, All) => format!("timeline:{}", id),
-            Timeline(User(id), Federated, Notification) => format!("timeline:{}:notification", id),
-            Timeline(List(id), Federated, All) => format!("timeline:list:{}", id),
-            Timeline(Direct(id), Federated, All) => format!("timeline:direct:{}", id),
+            Timeline(Public, Federated, All) => "timeline:public".to_string(),
+            Timeline(Public, Local, All) => "timeline:public:local".to_string(),
+            Timeline(Public, Federated, Media) => "timeline:public:media".to_string(),
+            Timeline(Public, Local, Media) => "timeline:public:local:media".to_string(),
+            Timeline(Hashtag(_id), Federated, All) => {
+                ["timeline:hashtag:", hashtag.ok_or(MissingHashtag)?].concat()
+            }
+            Timeline(Hashtag(_id), Local, All) => [
+                "timeline:hashtag:",
+                hashtag.ok_or(MissingHashtag)?,
+                ":local",
+            ]
+            .concat(),
+            Timeline(User(id), Federated, All) => ["timeline:", &id.to_string()].concat(),
+            Timeline(User(id), Federated, Notification) => {
+                ["timeline:", &id.to_string(), ":notification"].concat()
+            }
+            Timeline(List(id), Federated, All) => ["timeline:list:", &id.to_string()].concat(),
+            Timeline(Direct(id), Federated, All) => ["timeline:direct:", &id.to_string()].concat(),
             Timeline(_one, _two, _three) => Err(TimelineErr::InvalidInput)?,
         })
     }
@@ -57,8 +61,7 @@ impl Timeline {
             [id, "notification"] => Timeline(User(id.parse()?), Federated, Notification),
             ["list", id] => Timeline(List(id.parse()?), Federated, All),
             ["direct", id] => Timeline(Direct(id.parse()?), Federated, All),
-            // Other endpoints don't exist:
-            [..] => Err(InvalidInput)?,
+            [..] => Err(InvalidInput)?, // Other endpoints don't exist
         })
     }
 

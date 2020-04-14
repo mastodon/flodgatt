@@ -82,10 +82,7 @@ fn utf8_to_redis_data<'a>(s: &'a str) -> Result<(RedisData, &'a str), RedisParse
         ":" => parse_redis_int(s),
         "$" => parse_redis_bulk_string(s),
         "*" => parse_redis_array(s),
-        e => Err(InvalidLineStart(format!(
-            "Encountered invalid initial character `{}` in line `{}`",
-            e, s
-        ))),
+        e => Err(InvalidLineStart(e.to_string())),
     }
 }
 
