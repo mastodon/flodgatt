@@ -58,7 +58,7 @@ impl RedisConn {
                 Err(_) => break,
             };
             if first_read {
-                size = 2000;
+                size = 5000;
                 buffer = vec![0_u8; size];
                 first_read = false;
             }
@@ -115,6 +115,14 @@ impl RedisConn {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
             _non_hashtag_timeline => None,
         };
+        log::info!(
+            "RedisConn.redis_input size: {}\n\
+             RedisConn.redis_input capacity: {}\n\
+             RedisConn.redis_input length: {}",
+            std::mem::size_of_val(&self.redis_input),
+            self.redis_input.capacity(),
+            self.redis_input.len()
+        );
 
         let tl = timeline.to_redis_raw_timeline(hashtag)?;
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
