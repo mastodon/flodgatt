@@ -19,20 +19,19 @@ use warp::Filter;
 fn main() -> Result<(), FatalErr> {
     config::merge_dotenv()?;
     pretty_env_logger::try_init()?;
-    let (postgres_cfg, redis_cfg, cfg) = config::from_env(dotenv::vars().collect());
+    let (postgres_cfg, redis_cfg, cfg) = config::from_env(dotenv::vars().collect())?;
+    let poll_freq = *redis_cfg.polling_interval;
 
     // Create channels to communicate between threads
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
-    let request = Handler::new(postgres_cfg, *cfg.whitelist_mode);
-    let poll_freq = *redis_cfg.polling_interval;
-    let shared_manager = redis::Manager::try_from(redis_cfg, event_tx, cmd_rx)?.into_arc();
+    let request = Handler::new(&postgres_cfg, *cfg.whitelist_mode)?;
+    let shared_manager = redis::Manager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
 
     // Server Sent Events
     let sse_manager = shared_manager.clone();
     let (sse_rx, sse_cmd_tx) = (event_rx.clone(), cmd_tx.clone());
-
     let sse = request
         .sse_subscription()
         .and(warp::sse())
@@ -85,8 +84,7 @@ fn main() -> Result<(), FatalErr> {
             .map_err(|e| log::error!("{}", e))
             .for_each(move |_| {
                 let mut manager = manager.lock().unwrap_or_else(redis::Manager::recover);
-                manager.poll_broadcast().unwrap_or_else(FatalErr::exit);
-                Ok(())
+                manager.poll_broadcast().map_err(FatalErr::log)
             });
         warp::spawn(lazy(move || stream));
         warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))
@@ -95,13 +93,13 @@ fn main() -> Result<(), FatalErr> {
     if let Some(socket) = &*cfg.unix_socket {
         log::info!("Using Unix socket {}", socket);
         fs::remove_file(socket).unwrap_or_default();
-        let incoming = UnixListener::bind(socket).expect("TODO").incoming();
-        fs::set_permissions(socket, PermissionsExt::from_mode(0o666)).expect("TODO");
+        let incoming = UnixListener::bind(socket)?.incoming();
+        fs::set_permissions(socket, PermissionsExt::from_mode(0o666))?;
 
         tokio::run(lazy(|| streaming_server().serve_incoming(incoming)));
     } else {
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
         tokio::run(lazy(move || streaming_server().bind(server_addr)));
     }
-    Ok(())
+    Err(FatalErr::Unrecoverable) // on get here if there's an unrecoverable error in poll_broadcast.
 }

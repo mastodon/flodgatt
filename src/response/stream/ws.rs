@@ -39,9 +39,11 @@ impl Ws {
                 .map_err(|_| -> warp::Error { unreachable!() })
                 .forward(transmit_to_ws)
                 .map(|_r| ())
-                .map_err(|e| match e.to_string().as_ref() {
-                    "IO error: Broken pipe (os error 32)" => (), // just closed unix socket
-                    _ => log::warn!("WebSocket send error: {}", e),
+                .map_err(|e| {
+                    match e.to_string().as_ref() {
+                        "IO error: Broken pipe (os error 32)" => (), // just closed unix socket
+                        _ => log::warn!("WebSocket send error: {}", e),
+                    }
                 }),
         );
 
@@ -50,7 +52,7 @@ impl Ws {
 
         incoming_events.for_each(move |(tl, event)| {
             if matches!(event, Event::Ping) {
-                self.send_ping()
+                self.send_msg(&event)
             } else if target_timeline == tl {
                 use crate::event::{CheckedEvent::Update, Event::*, EventKind};
                 use crate::request::Stream::Public;
@@ -61,18 +63,18 @@ impl Ws {
                     TypeSafe(Update { payload, queued_at }) => match tl {
                         Timeline(Public, _, _) if payload.language_not(allowed_langs) => Ok(()),
                         _ if payload.involves_any(&blocks) => Ok(()),
-                        _ => self.send_msg(TypeSafe(Update { payload, queued_at })),
+                        _ => self.send_msg(&TypeSafe(Update { payload, queued_at })),
                     },
-                    TypeSafe(non_update) => self.send_msg(TypeSafe(non_update)),
+                    TypeSafe(non_update) => self.send_msg(&TypeSafe(non_update)),
                     Dynamic(dyn_event) => {
                         if let EventKind::Update(s) = dyn_event.kind.clone() {
                             match tl {
                                 Timeline(Public, _, _) if s.language_not(allowed_langs) => Ok(()),
                                 _ if s.involves_any(&blocks) => Ok(()),
-                                _ => self.send_msg(Dynamic(dyn_event)),
+                                _ => self.send_msg(&Dynamic(dyn_event)),
                             }
                         } else {
-                            self.send_msg(Dynamic(dyn_event))
+                            self.send_msg(&Dynamic(dyn_event))
                         }
                     }
                     Ping => unreachable!(), // handled pings above
@@ -83,24 +85,14 @@ impl Ws {
         })
     }
 
-    fn send_ping(&mut self) -> Result<(), ()> {
-        self.send_txt("{}")
-    }
-
-    fn send_msg(&mut self, event: Event) -> Result<(), ()> {
-        self.send_txt(&event.to_json_string())
-    }
-
-    fn send_txt(&mut self, txt: &str) -> Result<(), ()> {
+    fn send_msg(&mut self, event: &Event) -> Result<(), ()> {
+        let txt = &event.to_json_string();
         let tl = self.subscription.timeline;
-        match self.ws_tx.clone().ok_or(())?.try_send(Message::text(txt)) {
-            Ok(_) => Ok(()),
-            Err(_) => {
-                self.unsubscribe_tx
-                    .try_send(tl)
-                    .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
-                Err(())
-            }
-        }
+        let mut channel = self.ws_tx.clone().ok_or(())?;
+        channel.try_send(Message::text(txt)).map_err(|_| {
+            self.unsubscribe_tx
+                .try_send(tl)
+                .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
+        })
     }
 }

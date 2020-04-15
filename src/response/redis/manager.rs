@@ -31,7 +31,7 @@ impl Manager {
     /// Create a new `Manager`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
     pub fn try_from(
-        redis_cfg: config::Redis,
+        redis_cfg: &config::Redis,
         tx: watch::Sender<(Timeline, Event)>,
         rx: mpsc::UnboundedReceiver<Timeline>,
     ) -> Result<Self> {
@@ -99,11 +99,10 @@ impl Manager {
             self.tx.broadcast((Timeline::empty(), Event::Ping))?
         } else {
             match self.redis_connection.poll_redis() {
-                Ok(Async::NotReady) => (),
+                Ok(Async::NotReady) | Ok(Async::Ready(None)) => (), // None = cmd or msg for other namespace
                 Ok(Async::Ready(Some((timeline, event)))) => {
                     self.tx.broadcast((timeline, event))?
                 }
-                Ok(Async::Ready(None)) => (), // subscription cmd or msg for other namespace
                 Err(err) => log::error!("{}", err), // drop msg, log err, and proceed
             }
         }

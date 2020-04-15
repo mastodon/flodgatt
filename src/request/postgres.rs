@@ -1,13 +1,13 @@
 //! Postgres queries
+use super::err;
+use super::timeline::{Scope, UserData};
 use crate::config;
 use crate::event::Id;
-use crate::request::timeline::{Scope, UserData};
 
 use ::postgres;
 use hashbrown::HashSet;
 use r2d2_postgres::PostgresConnectionManager;
 use std::convert::TryFrom;
-use warp::reject::Rejection;
 
 #[derive(Clone, Debug)]
 pub struct PgPool {
@@ -15,8 +15,11 @@ pub struct PgPool {
     whitelist_mode: bool,
 }
 
+type Result<T> = std::result::Result<T, err::RequestErr>;
+type Rejectable<T> = std::result::Result<T, warp::Rejection>;
+
 impl PgPool {
-    pub fn new(pg_cfg: config::Postgres, whitelist_mode: bool) -> Self {
+    pub fn new(pg_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
         let mut cfg = postgres::Config::new();
         cfg.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
@@ -26,19 +29,20 @@ impl PgPool {
             cfg.password(password);
         };
 
+        cfg.connect(postgres::NoTls)?; // Test connection, letting us immediately exit with an error
+                                       // when Postgres isn't running instead of timing out below
         let manager = PostgresConnectionManager::new(cfg, postgres::NoTls);
-        let pool = r2d2::Pool::builder()
-            .max_size(10)
-            .build(manager)
-            .expect("Can connect to local postgres");
-        Self {
+        let pool = r2d2::Pool::builder().max_size(10).build(manager)?;
+
+        Ok(Self {
             conn: pool,
             whitelist_mode,
-        }
+        })
     }
 
-    pub fn select_user(self, token: &Option<String>) -> Result<UserData, Rejection> {
-        let mut conn = self.conn.get().unwrap();
+    pub fn select_user(self, token: &Option<String>) -> Rejectable<UserData> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
+
         if let Some(token) = token {
             let query_rows = conn
                 .query("
@@ -47,9 +51,9 @@ SELECT oauth_access_tokens.resource_owner_id, users.account_id, users.chosen_lan
 INNER JOIN users ON oauth_access_tokens.resource_owner_id = users.id
   WHERE oauth_access_tokens.token = $1 AND oauth_access_tokens.revoked_at IS NULL
 LIMIT 1",
-                &[&token.to_owned()],
-            )
-        .expect("Hard-coded query will return Some([0 or more rows])");
+                       &[&token.to_owned()],
+                ).map_err(warp::reject::custom)?;
+
             if let Some(result_columns) = query_rows.get(0) {
                 let id = Id(result_columns.get(1));
                 let allowed_langs = result_columns
@@ -85,10 +89,10 @@ LIMIT 1",
         }
     }
 
-    pub fn select_hashtag_id(self, tag_name: &str) -> Result<i64, Rejection> {
-        let mut conn = self.conn.get().expect("TODO");
+    pub fn select_hashtag_id(self, tag_name: &str) -> Rejectable<i64> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query("SELECT id FROM tags WHERE name = $1 LIMIT 1", &[&tag_name])
-            .expect("Hard-coded query will return Some([0 or more rows])")
+            .map_err(warp::reject::custom)?
             .get(0)
             .map(|row| row.get(0))
             .ok_or_else(|| warp::reject::custom("Error: Hashtag does not exist."))
@@ -98,31 +102,31 @@ LIMIT 1",
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_users(self, user_id: Id) -> HashSet<Id> {
-        let mut conn = self.conn.get().expect("TODO");
+    pub fn select_blocked_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT target_account_id FROM blocks WHERE account_id = $1
                  UNION SELECT target_account_id FROM mutes WHERE account_id = $1",
             &[&*user_id],
         )
-        .expect("Hard-coded query will return Some([0 or more rows])")
+        .map_err(warp::reject::custom)?
         .iter()
-        .map(|row| Id(row.get(0)))
+        .map(|row| Ok(Id(row.get(0))))
         .collect()
     }
     /// Query Postgres for everyone who has blocked the user
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocking_users(self, user_id: Id) -> HashSet<Id> {
-        let mut conn = self.conn.get().expect("TODO");
+    pub fn select_blocking_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT account_id FROM blocks WHERE target_account_id = $1",
             &[&*user_id],
         )
-        .expect("Hard-coded query will return Some([0 or more rows])")
+        .map_err(warp::reject::custom)?
         .iter()
-        .map(|row| Id(row.get(0)))
+        .map(|row| Ok(Id(row.get(0))))
         .collect()
     }
 
@@ -130,28 +134,28 @@ LIMIT 1",
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_domains(self, user_id: Id) -> HashSet<String> {
-        let mut conn = self.conn.get().expect("TODO");
+    pub fn select_blocked_domains(self, user_id: Id) -> Rejectable<HashSet<String>> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT domain FROM account_domain_blocks WHERE account_id = $1",
             &[&*user_id],
         )
-        .expect("Hard-coded query will return Some([0 or more rows])")
+        .map_err(warp::reject::custom)?
         .iter()
-        .map(|row| row.get(0))
+        .map(|row| Ok(row.get(0)))
         .collect()
     }
 
     /// Test whether a user owns a list
-    pub fn user_owns_list(self, user_id: Id, list_id: i64) -> bool {
-        let mut conn = self.conn.get().expect("TODO");
+    pub fn user_owns_list(self, user_id: Id, list_id: i64) -> Rejectable<bool> {
+        let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn
             .query(
                 "SELECT id, account_id FROM lists WHERE id = $1 LIMIT 1",
                 &[&list_id],
             )
-            .expect("Hard-coded query will return Some([0 or more rows])");
-        rows.get(0).map_or(false, |row| Id(row.get(1)) == user_id)
+            .map_err(warp::reject::custom)?;
+        Ok(rows.get(0).map_or(false, |row| Id(row.get(1)) == user_id))
     }
 }

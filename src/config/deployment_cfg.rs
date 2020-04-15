@@ -1,4 +1,5 @@
 use super::{deployment_cfg_types::*, EnvVar};
+use crate::err::FatalErr;
 
 #[derive(Debug, Default)]
 pub struct Deployment<'a> {
@@ -14,20 +15,19 @@ pub struct Deployment<'a> {
 }
 
 impl Deployment<'_> {
-    pub fn from_env(env: EnvVar) -> Self {
+    pub fn from_env(env: &EnvVar) -> Result<Self, FatalErr> {
         let mut cfg = Self {
-            env: Env::default().maybe_update(env.get("NODE_ENV")),
-            log_level: LogLevel::default().maybe_update(env.get("RUST_LOG")),
-            address: FlodgattAddr::default().maybe_update(env.get("BIND")),
-            port: Port::default().maybe_update(env.get("PORT")),
-            unix_socket: Socket::default().maybe_update(env.get("SOCKET")),
-            sse_interval: SseInterval::default().maybe_update(env.get("SSE_FREQ")),
-            ws_interval: WsInterval::default().maybe_update(env.get("WS_FREQ")),
-            whitelist_mode: WhitelistMode::default().maybe_update(env.get("WHITELIST_MODE")),
+            env: Env::default().maybe_update(env.get("NODE_ENV"))?,
+            log_level: LogLevel::default().maybe_update(env.get("RUST_LOG"))?,
+            address: FlodgattAddr::default().maybe_update(env.get("BIND"))?,
+            port: Port::default().maybe_update(env.get("PORT"))?,
+            unix_socket: Socket::default().maybe_update(env.get("SOCKET"))?,
+            sse_interval: SseInterval::default().maybe_update(env.get("SSE_FREQ"))?,
+            ws_interval: WsInterval::default().maybe_update(env.get("WS_FREQ"))?,
+            whitelist_mode: WhitelistMode::default().maybe_update(env.get("WHITELIST_MODE"))?,
             cors: Cors::default(),
         };
-        cfg.env = cfg.env.maybe_update(env.get("RUST_ENV"));
-        log::info!("Using deployment configuration:\n {:#?}", &cfg);
-        cfg
+        cfg.env = cfg.env.maybe_update(env.get("RUST_ENV"))?;
+        Ok(cfg)
     }
 }
