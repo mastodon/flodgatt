@@ -1,0 +1,20 @@
+#!/bin/sh
+instance='127.0.0.1:4000'
+timeline='public:local'
+number_of_ws=300
+
+command -v websocat >/dev/null || { echo >&2 "Install websocat with `cargo install websocat` to use this script"; exit 1; }
+
+
+echo "Opening $number_of_ws WebSockets to $timeline"
+for i in $(seq 0 $number_of_ws); do
+    sleep 0.1
+    websocat wss://${instance}/api/v1/streaming/?stream=${timeline} --no-close > /dev/null &
+done
+
+echo "$number_of_ws WebSocket connections established..."
+
+sleep 60
+
+echo "Closing WebSockets"
+echo "Done"

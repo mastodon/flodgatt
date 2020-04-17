@@ -78,14 +78,23 @@ fn main() -> Result<(), FatalErr> {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
+    //    use futures::future::Future;
     let streaming_server = move || {
         let manager = shared_manager.clone();
         let stream = Interval::new(Instant::now(), poll_freq)
+            //          .take(1200)
             .map_err(|e| log::error!("{}", e))
-            .for_each(move |_| {
-                let mut manager = manager.lock().unwrap_or_else(redis::Manager::recover);
-                manager.poll_broadcast().map_err(FatalErr::log)
-            });
+            .for_each(
+                move |_| {
+                    let mut manager = manager.lock().unwrap_or_else(redis::Manager::recover);
+                    manager.poll_broadcast().map_err(FatalErr::log)
+                }, // ).and_then(|_| {
+                   //     log::info!("shutting down!");
+                   //     std::process::exit(0);
+                   //     futures::future::ok(())
+                   // }
+            );
+
         warp::spawn(lazy(move || stream));
         warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))
     };
@@ -95,7 +104,6 @@ fn main() -> Result<(), FatalErr> {
         fs::remove_file(socket).unwrap_or_default();
         let incoming = UnixListener::bind(socket)?.incoming();
         fs::set_permissions(socket, PermissionsExt::from_mode(0o666))?;
-
         tokio::run(lazy(|| streaming_server().serve_incoming(incoming)));
     } else {
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
