@@ -10,7 +10,7 @@ use crate::request::{Stream, Timeline};
 use futures::{Async, Poll};
 use lru::LruCache;
 use std::convert::{TryFrom, TryInto};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::str;
 use std::time::Duration;
@@ -25,6 +25,7 @@ pub struct RedisConn {
     tag_id_cache: LruCache<String, i64>,
     tag_name_cache: LruCache<i64, String>,
     redis_input: Vec<u8>,
+    cursor: usize,
 }
 
 impl RedisConn {
@@ -43,34 +44,32 @@ impl RedisConn {
             //       the tag number instead of the tag name.  This would save us from dealing
             //       with a cache here and would be consistent with how lists/users are handled.
             redis_namespace: redis_cfg.namespace.clone().0,
-            redis_input: Vec::new(),
+            redis_input: vec![0_u8; 5000],
+            cursor: 0,
         };
         Ok(redis_conn)
     }
 
     pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
-        let mut size = 100; // large enough to handle subscribe/unsubscribe notice
-        let (mut buffer, mut first_read) = (vec![0_u8; size], true);
         loop {
-            match self.primary.read(&mut buffer) {
-                Ok(n) if n != size => break self.redis_input.extend_from_slice(&buffer[..n]),
-                Ok(n) => self.redis_input.extend_from_slice(&buffer[..n]),
-                Err(_) => break,
+            match self.primary.read(&mut self.redis_input[self.cursor..]) {
+                Ok(n) => {
+                    self.cursor += n;
+                    if self.redis_input.len() - 1 == self.cursor {
+                        self.redis_input.resize(self.redis_input.len() * 2, 0);
+                    } else {
+                        break;
+                    }
+                }
+                Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock) => {
+                    return Ok(Async::NotReady);
+                }
+                Err(e) => break log::error!("{}", e),
             };
-            if first_read {
-                size = 5000;
-                buffer = vec![0_u8; size];
-                first_read = false;
-            }
         }
 
-        if self.redis_input.is_empty() {
-            return Ok(Async::NotReady);
-        }
-
-        // at this point, we have the raw bytes; now, parse what we can and leave the remainder
-        let input = self.redis_input.clone();
-        self.redis_input.clear();
+        // at this point, we have the raw bytes; now, parse a msg
+        let input = &self.redis_input[..self.cursor];
 
         let (input, invalid_bytes) = str::from_utf8(&input)
             .map(|input| (input, &b""[..]))
@@ -100,8 +99,26 @@ impl RedisConn {
             Err(RedisParseErr::Incomplete) => (Ok(NotReady), input),
             Err(other_parse_err) => (Err(ManagerErr::RedisParseErr(other_parse_err)), input),
         };
-        self.redis_input.extend_from_slice(leftover.as_bytes());
-        self.redis_input.extend_from_slice(invalid_bytes);
+
+        self.cursor = [leftover.as_bytes(), invalid_bytes]
+            .concat()
+            .bytes()
+            .fold(0, |acc, cur| {
+                // TODO - make clearer and comment side-effect
+                self.redis_input[acc] = cur.expect("TODO");
+                acc + 1
+            });
+
+        // self.cursor = 0;
+        // for (i, byte) in [leftover.as_bytes(), invalid_bytes]
+        //     .concat()
+        //     .bytes()
+        //     .enumerate()
+        // {
+        //     self.redis_input[i] = byte.expect("TODO");
+        //     self.cursor += 1;
+        // }
+
         res
     }
 
@@ -115,14 +132,6 @@ impl RedisConn {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
             _non_hashtag_timeline => None,
         };
-        log::info!(
-            "RedisConn.redis_input size: {}\n\
-             RedisConn.redis_input capacity: {}\n\
-             RedisConn.redis_input length: {}",
-            std::mem::size_of_val(&self.redis_input),
-            self.redis_input.capacity(),
-            self.redis_input.len()
-        );
 
         let tl = timeline.to_redis_raw_timeline(hashtag)?;
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);

@@ -1,2 +1,4 @@
 /target
+load_test.sh
+/benches/perf_statistics
 **/*.rs.bk

@@ -1,7 +1,7 @@
 [package]
 name = "flodgatt"
 description = "A blazingly fast drop-in replacement for the Mastodon streaming api server"
-version = "0.8.4"
+version = "0.8.5"
 authors = ["Daniel Long Sockwell <daniel@codesections.com", "Julian Laubstein <contact@julianlaubstein.de>"]
 edition = "2018"
 
@@ -28,12 +28,11 @@ hashbrown = "0.7.1"
 
 [dev-dependencies]
 criterion = "0.3"
-regex = "1.3.2"
+
 
 [[bench]]
 name = "parse_redis"
 harness = false
-
 
 [features]
 default = [ "production" ]
@@ -43,7 +42,7 @@ production = []
 
 [profile.release]
 lto = "fat"
-#panic = "abort"
+panic = "abort"
 codegen-units = 1
 
 
