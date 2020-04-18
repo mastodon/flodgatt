@@ -8,12 +8,12 @@ type Result<T> = std::result::Result<T, FatalErr>;
 
 #[derive(Debug, Clone)]
 pub struct Postgres {
-    pub user: PgUser,
-    pub host: PgHost,
-    pub password: PgPass,
-    pub database: PgDatabase,
-    pub port: PgPort,
-    pub ssl_mode: PgSslMode,
+    pub(crate) user: PgUser,
+    pub(crate) host: PgHost,
+    pub(crate) password: PgPass,
+    pub(crate) database: PgDatabase,
+    pub(crate) port: PgPort,
+    pub(crate) ssl_mode: PgSslMode,
 }
 
 impl EnvVar {
@@ -51,7 +51,7 @@ impl EnvVar {
 
 impl Postgres {
     /// Configure Postgres and return a connection
-    pub fn from_env(env: EnvVar) -> Result<Self> {
+    pub(crate) fn from_env(env: EnvVar) -> Result<Self> {
         let env = match env.get("DATABASE_URL").cloned() {
             Some(url_str) => env.update_with_postgres_url(&url_str)?,
             None => env,

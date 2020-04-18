@@ -2,7 +2,7 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod err;
-pub use err::ManagerErr;
+pub(crate) use err::ManagerErr;
 
 use super::{RedisCmd, RedisConn};
 use crate::config;
@@ -68,7 +68,7 @@ impl Manager {
         };
     }
 
-    pub fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {
+    pub(crate) fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {
         let number_of_subscriptions = self
             .clients_per_timeline
             .entry(tl)

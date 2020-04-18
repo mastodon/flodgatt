@@ -1,10 +1,7 @@
 use crate::from_env_var;
-use std::{
-    fmt,
-    net::{IpAddr, Ipv4Addr},
-    str::FromStr,
-    time::Duration,
-};
+use std::fmt;
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
 use strum_macros::{EnumString, EnumVariantNames};
 
 from_env_var!(
@@ -37,20 +34,6 @@ from_env_var!(
     let default: Option<String> = None;
     let (env_var, allowed_values) = ("SOCKET", "any string");
     let from_str = |s| Some(Some(s.to_string()));
-);
-from_env_var!(
-    /// The time between replies sent via WebSocket
-    let name = WsInterval;
-    let default: Duration = Duration::from_millis(100);
-    let (env_var, allowed_values) = ("WS_FREQ",  "a number of milliseconds");
-    let from_str = |s| s.parse().map(Duration::from_millis).ok();
-);
-from_env_var!(
-    /// The time between replies sent via Server Sent Events
-    let name = SseInterval;
-    let default: Duration = Duration::from_millis(100);
-    let (env_var, allowed_values) = ("WS_FREQ", "a number of milliseconds");
-    let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );
 from_env_var!(
     /// The port to run Flodgatt on

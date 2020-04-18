@@ -19,28 +19,24 @@
 //! Read that as: an array with three elements: the first element is a bulk string with
 //! three characters, the second is a bulk string with ten characters, and the third is a
 //! bulk string with 1,386 characters.
+use self::RedisParseOutput::*;
+pub use err::RedisParseErr;
+use std::convert::{TryFrom, TryInto};
+use std::str;
 
 mod err;
-pub use err::RedisParseErr;
-
-use self::RedisParseOutput::*;
-
-use std::{
-    convert::{TryFrom, TryInto},
-    str,
-};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RedisParseOutput<'a> {
+pub(crate) enum RedisParseOutput<'a> {
     Msg(RedisMsg<'a>),
     NonMsg(&'a str),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RedisMsg<'a> {
-    pub timeline_txt: &'a str,
-    pub event_txt: &'a str,
-    pub leftover_input: &'a str,
+pub(crate) struct RedisMsg<'a> {
+    pub(crate) timeline_txt: &'a str,
+    pub(crate) event_txt: &'a str,
+    pub(crate) leftover_input: &'a str,
 }
 
 impl<'a> TryFrom<&'a str> for RedisParseOutput<'a> {

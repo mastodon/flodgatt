@@ -2,9 +2,9 @@ mod checked_event;
 mod dynamic_event;
 mod err;
 
-pub use checked_event::{CheckedEvent, Id};
-pub use dynamic_event::{DynEvent, DynStatus, EventKind};
-pub use err::EventErr;
+pub(crate) use checked_event::{CheckedEvent, Id};
+pub(crate) use dynamic_event::{DynEvent, EventKind};
+pub(crate) use err::EventErr;
 
 use serde::Serialize;
 use std::convert::TryFrom;
@@ -19,7 +19,7 @@ pub enum Event {
 }
 
 impl Event {
-    pub fn to_json_string(&self) -> String {
+    pub(crate) fn to_json_string(&self) -> String {
         if let Event::Ping = self {
             "{}".to_string()
         } else {
@@ -32,7 +32,7 @@ impl Event {
         }
     }
 
-    pub fn to_warp_reply(&self) -> Option<(impl ServerSentEvent, impl ServerSentEvent)> {
+    pub(crate) fn to_warp_reply(&self) -> Option<(impl ServerSentEvent, impl ServerSentEvent)> {
         if let Event::Ping = self {
             None
         } else {
@@ -103,8 +103,8 @@ impl TryFrom<&str> for Event {
                              Forwarding Redis payload without type checking it.",
                     e
                 );
-
-                Ok(Event::Dynamic(serde_json::from_str(&event_txt)?))
+                let dyn_event: DynEvent = serde_json::from_str(&event_txt)?;
+                Ok(Event::Dynamic(dyn_event.set_update()?))
             }
         }
     }

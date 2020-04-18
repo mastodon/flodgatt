@@ -11,7 +11,7 @@ use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 pub struct PgPool {
-    pub conn: r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>,
+    conn: r2d2::Pool<PostgresConnectionManager<postgres::NoTls>>,
     whitelist_mode: bool,
 }
 
@@ -19,7 +19,7 @@ type Result<T> = std::result::Result<T, err::RequestErr>;
 type Rejectable<T> = std::result::Result<T, warp::Rejection>;
 
 impl PgPool {
-    pub fn new(pg_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
+    pub(crate) fn new(pg_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
         let mut cfg = postgres::Config::new();
         cfg.user(&pg_cfg.user)
             .host(&*pg_cfg.host.to_string())
@@ -40,7 +40,7 @@ impl PgPool {
         })
     }
 
-    pub fn select_user(self, token: &Option<String>) -> Rejectable<UserData> {
+    pub(crate) fn select_user(self, token: &Option<String>) -> Rejectable<UserData> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
 
         if let Some(token) = token {
@@ -89,7 +89,7 @@ LIMIT 1",
         }
     }
 
-    pub fn select_hashtag_id(self, tag_name: &str) -> Rejectable<i64> {
+    pub(crate) fn select_hashtag_id(self, tag_name: &str) -> Rejectable<i64> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query("SELECT id FROM tags WHERE name = $1 LIMIT 1", &[&tag_name])
             .map_err(warp::reject::custom)?
@@ -102,7 +102,7 @@ LIMIT 1",
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
+    pub(crate) fn select_blocked_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT target_account_id FROM blocks WHERE account_id = $1
@@ -114,11 +114,12 @@ LIMIT 1",
         .map(|row| Ok(Id(row.get(0))))
         .collect()
     }
+
     /// Query Postgres for everyone who has blocked the user
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocking_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
+    pub(crate) fn select_blocking_users(self, user_id: Id) -> Rejectable<HashSet<Id>> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT account_id FROM blocks WHERE target_account_id = $1",
@@ -134,7 +135,7 @@ LIMIT 1",
     ///
     /// **NOTE**: because we check this when the user connects, it will not include any blocks
     /// the user adds until they refresh/reconnect.
-    pub fn select_blocked_domains(self, user_id: Id) -> Rejectable<HashSet<String>> {
+    pub(crate) fn select_blocked_domains(self, user_id: Id) -> Rejectable<HashSet<String>> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         conn.query(
             "SELECT domain FROM account_domain_blocks WHERE account_id = $1",
@@ -147,7 +148,7 @@ LIMIT 1",
     }
 
     /// Test whether a user owns a list
-    pub fn user_owns_list(self, user_id: Id, list_id: i64) -> Rejectable<bool> {
+    pub(crate) fn user_owns_list(self, user_id: Id, list_id: i64) -> Rejectable<bool> {
         let mut conn = self.conn.get().map_err(warp::reject::custom)?;
         // For the Postgres query, `id` = list number; `account_id` = user.id
         let rows = &conn

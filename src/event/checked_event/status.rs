@@ -3,10 +3,16 @@ mod attachment;
 mod card;
 mod poll;
 
-use super::{
-    account::Account, emoji::Emoji, id::Id, mention::Mention, tag::Tag, visibility::Visibility,
-};
-use {application::Application, attachment::Attachment, card::Card, poll::Poll};
+use super::account::Account;
+use super::emoji::Emoji;
+use super::id::Id;
+use super::mention::Mention;
+use super::tag::Tag;
+use super::visibility::Visibility;
+use application::Application;
+use attachment::Attachment;
+use card::Card;
+use poll::Poll;
 
 use crate::request::Blocks;
 
@@ -53,7 +59,7 @@ pub struct Status {
 
 impl Status {
     /// Returns `true` if the status is filtered out based on its language
-    pub fn language_not(&self, allowed_langs: &HashSet<String>) -> bool {
+    pub(crate) fn language_not(&self, allowed_langs: &HashSet<String>) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
 
@@ -84,7 +90,7 @@ impl Status {
     ///  * Wrote this toot
     ///  * Wrote a toot that this toot is replying to (if any)
     ///  * Wrote the toot that this toot is boosting (if any)
-    pub fn involves_any(&self, blocks: &Blocks) -> bool {
+    pub(crate) fn involves_any(&self, blocks: &Blocks) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
         let Blocks {

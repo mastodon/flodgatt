@@ -1,5 +1,5 @@
 mod err;
-pub use err::RedisConnErr;
+pub(crate) use err::RedisConnErr;
 
 use super::msg::{RedisParseErr, RedisParseOutput};
 use super::{ManagerErr, RedisCmd};
@@ -18,7 +18,7 @@ use std::time::Duration;
 type Result<T> = std::result::Result<T, RedisConnErr>;
 
 #[derive(Debug)]
-pub struct RedisConn {
+pub(crate) struct RedisConn {
     primary: TcpStream,
     secondary: TcpStream,
     redis_namespace: Option<String>,
@@ -29,7 +29,7 @@ pub struct RedisConn {
 }
 
 impl RedisConn {
-    pub fn new(redis_cfg: &Redis) -> Result<Self> {
+    pub(crate) fn new(redis_cfg: &Redis) -> Result<Self> {
         let addr = [&*redis_cfg.host, ":", &*redis_cfg.port.to_string()].concat();
 
         let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
@@ -50,7 +50,7 @@ impl RedisConn {
         Ok(redis_conn)
     }
 
-    pub fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
+    pub(crate) fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
         loop {
             match self.primary.read(&mut self.redis_input[self.cursor..]) {
                 Ok(n) => {
@@ -108,26 +108,15 @@ impl RedisConn {
                 self.redis_input[acc] = cur.expect("TODO");
                 acc + 1
             });
-
-        // self.cursor = 0;
-        // for (i, byte) in [leftover.as_bytes(), invalid_bytes]
-        //     .concat()
-        //     .bytes()
-        //     .enumerate()
-        // {
-        //     self.redis_input[i] = byte.expect("TODO");
-        //     self.cursor += 1;
-        // }
-
         res
     }
 
-    pub fn update_cache(&mut self, hashtag: String, id: i64) {
+    pub(crate) fn update_cache(&mut self, hashtag: String, id: i64) {
         self.tag_id_cache.put(hashtag.clone(), id);
         self.tag_name_cache.put(id, hashtag);
     }
 
-    pub fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
+    pub(crate) fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
         let hashtag = match timeline {
             Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
             _non_hashtag_timeline => None,

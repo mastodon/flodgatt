@@ -1,4 +1,7 @@
-pub use {deployment_cfg::Deployment, postgres_cfg::Postgres, redis_cfg::Redis};
+pub(crate) use postgres_cfg::Postgres;
+pub(crate) use redis_cfg::Redis;
+
+use deployment_cfg::Deployment;
 
 use self::environmental_variables::EnvVar;
 use super::err::FatalErr;
