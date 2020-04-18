@@ -39,8 +39,10 @@
 #![allow(clippy::try_err, clippy::match_bool)]
 //#![allow(clippy::large_enum_variant)]
 
+pub use err::Error;
+
 pub mod config;
-pub mod err;
+mod err;
 pub mod event;
 pub mod request;
 pub mod response;

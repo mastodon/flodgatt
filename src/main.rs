@@ -1,9 +1,9 @@
 use flodgatt::config;
-use flodgatt::err::FatalErr;
 use flodgatt::event::Event;
 use flodgatt::request::{Handler, Subscription, Timeline};
-use flodgatt::response::redis;
+use flodgatt::response::redis::Manager;
 use flodgatt::response::stream;
+use flodgatt::Error;
 
 use futures::{future::lazy, stream::Stream as _};
 use std::fs;
@@ -16,7 +16,7 @@ use tokio::timer::Interval;
 use warp::ws::Ws2;
 use warp::Filter;
 
-fn main() -> Result<(), FatalErr> {
+fn main() -> Result<(), Error> {
     config::merge_dotenv()?;
     pretty_env_logger::try_init()?;
     let (postgres_cfg, redis_cfg, cfg) = config::from_env(dotenv::vars().collect())?;
@@ -27,7 +27,7 @@ fn main() -> Result<(), FatalErr> {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     let request = Handler::new(&postgres_cfg, *cfg.whitelist_mode)?;
-    let shared_manager = redis::Manager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
+    let shared_manager = Manager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
 
     // Server Sent Events
     let sse_manager = shared_manager.clone();
@@ -37,7 +37,7 @@ fn main() -> Result<(), FatalErr> {
         .and(warp::sse())
         .map(move |subscription: Subscription, sse: warp::sse::Sse| {
             log::info!("Incoming SSE request for {:?}", subscription.timeline);
-            let mut manager = sse_manager.lock().unwrap_or_else(redis::Manager::recover);
+            let mut manager = sse_manager.lock().unwrap_or_else(Manager::recover);
             manager.subscribe(&subscription);
 
             stream::Sse::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
@@ -51,7 +51,7 @@ fn main() -> Result<(), FatalErr> {
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
-            let mut manager = ws_manager.lock().unwrap_or_else(redis::Manager::recover);
+            let mut manager = ws_manager.lock().unwrap_or_else(Manager::recover);
             manager.subscribe(&subscription);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
             let ws_stream = stream::Ws::new(cmd_tx.clone(), event_rx.clone(), subscription);
@@ -78,22 +78,14 @@ fn main() -> Result<(), FatalErr> {
         .allow_methods(cfg.cors.allowed_methods)
         .allow_headers(cfg.cors.allowed_headers);
 
-    //    use futures::future::Future;
     let streaming_server = move || {
         let manager = shared_manager.clone();
         let stream = Interval::new(Instant::now(), poll_freq)
-            //          .take(1200)
             .map_err(|e| log::error!("{}", e))
-            .for_each(
-                move |_| {
-                    let mut manager = manager.lock().unwrap_or_else(redis::Manager::recover);
-                    manager.poll_broadcast().map_err(FatalErr::log)
-                }, // ).and_then(|_| {
-                   //     log::info!("shutting down!");
-                   //     std::process::exit(0);
-                   //     futures::future::ok(())
-                   // }
-            );
+            .for_each(move |_| {
+                let mut manager = manager.lock().unwrap_or_else(Manager::recover);
+                manager.poll_broadcast().map_err(Error::log)
+            });
 
         warp::spawn(lazy(move || stream));
         warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))
@@ -109,5 +101,5 @@ fn main() -> Result<(), FatalErr> {
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
         tokio::run(lazy(move || streaming_server().bind(server_addr)));
     }
-    Err(FatalErr::Unrecoverable) // on get here if there's an unrecoverable error in poll_broadcast.
+    Err(Error::Unrecoverable) // only get here if there's an unrecoverable error in poll_broadcast.
 }

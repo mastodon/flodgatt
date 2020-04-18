@@ -1,5 +1,5 @@
-pub(crate) use self::err::TimelineErr;
 pub(crate) use self::inner::{Content, Reach, Scope, Stream, UserData};
+use super::err::Timeline as Error;
 use super::query::Query;
 
 use lru::LruCache;
@@ -8,7 +8,7 @@ use warp::reject::Rejection;
 mod err;
 mod inner;
 
-type Result<T> = std::result::Result<T, TimelineErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
 pub struct Timeline(pub(crate) Stream, pub(crate) Reach, pub(crate) Content);
@@ -20,7 +20,7 @@ impl Timeline {
 
     pub(crate) fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
         // TODO -- does this need to account for namespaces?
-        use {Content::*, Reach::*, Stream::*, TimelineErr::*};
+        use {Content::*, Error::*, Reach::*, Stream::*};
 
         Ok(match self {
             Timeline(Public, Federated, All) => "timeline:public".to_string(),
@@ -42,7 +42,7 @@ impl Timeline {
             }
             Timeline(List(id), Federated, All) => ["timeline:list:", &id.to_string()].concat(),
             Timeline(Direct(id), Federated, All) => ["timeline:direct:", &id.to_string()].concat(),
-            Timeline(_one, _two, _three) => Err(TimelineErr::InvalidInput)?,
+            Timeline(_one, _two, _three) => Err(Error::InvalidInput)?,
         })
     }
 
@@ -50,7 +50,7 @@ impl Timeline {
         timeline: &str,
         cache: &mut LruCache<String, i64>,
     ) -> Result<Self> {
-        use {Content::*, Reach::*, Stream::*, TimelineErr::*};
+        use {Content::*, Error::*, Reach::*, Stream::*};
         let mut tag_id = |t: &str| cache.get(&t.to_string()).map_or(Err(BadTag), |id| Ok(*id));
 
         Ok(match &timeline.split(':').collect::<Vec<&str>>()[..] {

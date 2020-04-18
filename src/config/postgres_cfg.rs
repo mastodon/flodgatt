@@ -1,10 +1,10 @@
 use super::{postgres_cfg_types::*, EnvVar};
-use crate::err::FatalErr;
+use crate::err::Error;
 
 use url::Url;
 use urlencoding;
 
-type Result<T> = std::result::Result<T, FatalErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub struct Postgres {
@@ -27,7 +27,7 @@ impl EnvVar {
                 "password" => self.maybe_add_env_var("DB_PASS", Some(v.to_string())),
                 "host" => self.maybe_add_env_var("DB_HOST", Some(v.to_string())),
                 "sslmode" => self.maybe_add_env_var("DB_SSLMODE", Some(v.to_string())),
-                _ => Err(FatalErr::config(
+                _ => Err(Error::config(
                     "POSTGRES_URL",
                     &k,
                     "a URL with parameters `password`, `user`, `host`, and `sslmode` only",

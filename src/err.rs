@@ -1,11 +1,11 @@
-use crate::request::RequestErr;
-use crate::response::ManagerErr;
+use crate::request;
+use crate::response;
 use std::fmt;
 
-pub enum FatalErr {
-    ReceiverErr(ManagerErr),
+pub enum Error {
+    ReceiverErr(response::Error),
     Logger(log::SetLoggerError),
-    Postgres(RequestErr),
+    Postgres(request::Error),
     Unrecoverable,
     StdIo(std::io::Error),
     // config errs
@@ -14,7 +14,7 @@ pub enum FatalErr {
     ConfigErr(String),
 }
 
-impl FatalErr {
+impl Error {
     pub fn log(msg: impl fmt::Display) {
         eprintln!("{}", msg);
     }
@@ -27,16 +27,16 @@ impl FatalErr {
     }
 }
 
-impl std::error::Error for FatalErr {}
-impl fmt::Debug for FatalErr {
+impl std::error::Error for Error {}
+impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "{}", self)
     }
 }
 
-impl fmt::Display for FatalErr {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use FatalErr::*;
+        use Error::*;
         write!(
             f,
             "{}",
@@ -54,33 +54,33 @@ impl fmt::Display for FatalErr {
     }
 }
 
-impl From<RequestErr> for FatalErr {
-    fn from(e: RequestErr) -> Self {
+impl From<request::Error> for Error {
+    fn from(e: request::Error) -> Self {
         Self::Postgres(e)
     }
 }
 
-impl From<ManagerErr> for FatalErr {
-    fn from(e: ManagerErr) -> Self {
+impl From<response::Error> for Error {
+    fn from(e: response::Error) -> Self {
         Self::ReceiverErr(e)
     }
 }
-impl From<urlencoding::FromUrlEncodingError> for FatalErr {
+impl From<urlencoding::FromUrlEncodingError> for Error {
     fn from(e: urlencoding::FromUrlEncodingError) -> Self {
         Self::UrlEncoding(e)
     }
 }
-impl From<url::ParseError> for FatalErr {
+impl From<url::ParseError> for Error {
     fn from(e: url::ParseError) -> Self {
         Self::UrlParse(e)
     }
 }
-impl From<std::io::Error> for FatalErr {
+impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Self::StdIo(e)
     }
 }
-impl From<log::SetLoggerError> for FatalErr {
+impl From<log::SetLoggerError> for Error {
     fn from(e: log::SetLoggerError) -> Self {
         Self::Logger(e)
     }

@@ -1,4 +1,4 @@
-use crate::request::TimelineErr;
+use crate::request;
 use std::fmt;
 
 #[derive(Debug)]
@@ -9,11 +9,11 @@ pub enum RedisConnErr {
     IncorrectPassword(String),
     MissingPassword,
     NotRedis(String),
-    TimelineErr(TimelineErr),
+    TimelineErr(request::err::Timeline),
 }
 
 impl RedisConnErr {
-    pub(crate) fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
+    pub(super) fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
         Self::ConnectionErr {
             addr: address.as_ref().to_string(),
             inner,
@@ -57,8 +57,8 @@ impl fmt::Display for RedisConnErr {
     }
 }
 
-impl From<TimelineErr> for RedisConnErr {
-    fn from(e: TimelineErr) -> RedisConnErr {
+impl From<request::err::Timeline> for RedisConnErr {
+    fn from(e: request::err::Timeline) -> RedisConnErr {
         RedisConnErr::TimelineErr(e)
     }
 }

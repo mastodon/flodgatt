@@ -109,11 +109,11 @@ macro_rules! from_env_var {
             pub(crate) fn maybe_update(
                 self,
                 var: Option<&String>,
-            ) -> Result<Self, crate::err::FatalErr> {
+            ) -> Result<Self, crate::err::Error> {
                 Ok(match var {
                     Some(empty_string) if empty_string.is_empty() => Self::default(),
                     Some(value) => Self(Self::inner_from_str(value).ok_or_else(|| {
-                        crate::err::FatalErr::config($env_var, value, $allowed_values)
+                        crate::err::Error::config($env_var, value, $allowed_values)
                     })?),
                     None => self,
                 })

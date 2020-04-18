@@ -1,4 +1,4 @@
-use super::TimelineErr;
+use super::Error;
 use crate::event::Id;
 
 use hashbrown::HashSet;
@@ -36,18 +36,18 @@ pub(crate) enum Scope {
 }
 
 impl TryFrom<&str> for Scope {
-    type Error = TimelineErr;
+    type Error = Error;
 
-    fn try_from(s: &str) -> Result<Self, TimelineErr> {
+    fn try_from(s: &str) -> Result<Self, Error> {
         match s {
             "read" => Ok(Scope::Read),
             "read:statuses" => Ok(Scope::Statuses),
             "read:notifications" => Ok(Scope::Notifications),
             "read:lists" => Ok(Scope::Lists),
-            "write" | "follow" => Err(TimelineErr::InvalidInput), // ignore write scopes
+            "write" | "follow" => Err(Error::InvalidInput), // ignore write scopes
             unexpected => {
                 log::warn!("Ignoring unknown scope `{}`", unexpected);
-                Err(TimelineErr::InvalidInput)
+                Err(Error::InvalidInput)
             }
         }
     }

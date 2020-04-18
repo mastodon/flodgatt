@@ -2,7 +2,7 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod err;
-pub(crate) use err::ManagerErr;
+pub(crate) use err::Error;
 
 use super::{RedisCmd, RedisConn};
 use crate::config;
@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 
-type Result<T> = std::result::Result<T, ManagerErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 #[derive(Debug)]

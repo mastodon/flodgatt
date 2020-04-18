@@ -1,10 +1,10 @@
 use super::redis_cfg_types::*;
 use super::EnvVar;
-use crate::err::FatalErr;
+use crate::err::Error;
 
 use url::Url;
 
-type Result<T> = std::result::Result<T, FatalErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Default)]
 pub struct Redis {
@@ -33,7 +33,7 @@ impl EnvVar {
             match k.to_string().as_str() {
                 "password" => self.maybe_add_env_var("REDIS_PASSWORD", Some(v.to_string())),
                 "db" => self.maybe_add_env_var("REDIS_DB", Some(v.to_string())),
-                _ => Err(FatalErr::config(
+                _ => Err(Error::config(
                     "REDIS_URL",
                     &k,
                     "a URL with parameters `password`, `db`,  only",

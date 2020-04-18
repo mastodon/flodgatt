@@ -4,7 +4,7 @@ pub(crate) use redis_cfg::Redis;
 use deployment_cfg::Deployment;
 
 use self::environmental_variables::EnvVar;
-use super::err::FatalErr;
+use super::err::Error;
 use hashbrown::HashMap;
 use std::env;
 
@@ -16,13 +16,13 @@ mod postgres_cfg_types;
 mod redis_cfg;
 mod redis_cfg_types;
 
-type Result<T> = std::result::Result<T, FatalErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 pub fn merge_dotenv() -> Result<()> {
     let env_file = match env::var("ENV").ok().as_deref() {
         Some("production") => ".env.production",
         Some("development") | None => ".env",
-        Some(v) => Err(FatalErr::config("ENV", v, "`production` or `development`"))?,
+        Some(v) => Err(Error::config("ENV", v, "`production` or `development`"))?,
     };
     let res = dotenv::from_filename(env_file);
 
