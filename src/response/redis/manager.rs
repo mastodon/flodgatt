@@ -7,7 +7,7 @@ pub(crate) use err::Error;
 use super::{RedisCmd, RedisConn};
 use crate::config;
 use crate::event::Event;
-use crate::request::{Stream, Subscription, Timeline};
+use crate::request::{Subscription, Timeline};
 
 use futures::{Async, Stream as _Stream};
 use hashbrown::HashMap;
@@ -50,7 +50,7 @@ impl Manager {
 
     pub fn subscribe(&mut self, subscription: &Subscription) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
-        if let (Some(hashtag), Timeline(Stream::Hashtag(id), _, _)) = (tag, tl) {
+        if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);
         };
 

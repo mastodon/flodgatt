@@ -1,5 +1,5 @@
+use super::Payload;
 use super::{EventErr, Id};
-use crate::request::Blocks;
 
 use std::convert::TryFrom;
 
@@ -49,8 +49,14 @@ impl DynEvent {
             Ok(self)
         }
     }
+    pub(crate) fn update(&self) -> Option<DynStatus> {
+        if let EventKind::Update(status) = self.kind.clone() {
+            Some(status)
+        } else {
+            None
+        }
+    }
 }
-
 impl DynStatus {
     pub(crate) fn new(payload: &Value) -> Result<Self> {
         use EventErr::*;
@@ -67,68 +73,50 @@ impl DynStatus {
             boosted_user: Id::try_from(&payload["reblog"]["account"]["id"]).ok(),
         })
     }
-    /// Returns `true` if the status is filtered out based on its language
-    pub(crate) fn language_not(&self, allowed_langs: &HashSet<String>) -> bool {
-        const ALLOW: bool = false;
-        const REJECT: bool = true;
+}
 
-        if allowed_langs.is_empty() {
-            return ALLOW; // listing no allowed_langs results in allowing all languages
-        }
-
-        match self.language.clone() {
-            Some(toot_language) if allowed_langs.contains(&toot_language) => ALLOW, //
-            None => ALLOW, // If toot language is unknown, toot is always allowed
-            Some(empty) if empty == String::new() => ALLOW,
-            Some(_toot_language) => REJECT,
+impl Payload for DynStatus {
+    fn language_unset(&self) -> bool {
+        match &self.language {
+            None => true,
+            Some(empty) if empty == &String::new() => true,
+            Some(_language) => false,
         }
     }
 
-    /// Returns `true` if the toot contained in this Event originated from a blocked domain,
-    /// is from an account that has blocked the current user, or if the User's list of
-    /// blocked/muted users includes a user involved in the toot.
+    fn language(&self) -> String {
+        self.language.clone().unwrap_or_default()
+    }
+    /// Returns all users involved in the `Status`.
     ///
-    /// A user is involved in the toot if they:
+    /// A user is involved in the Status/toot if they:
     ///  * Are mentioned in this toot
     ///  * Wrote this toot
     ///  * Wrote a toot that this toot is replying to (if any)
     ///  * Wrote the toot that this toot is boosting (if any)
-    pub(crate) fn involves_any(&self, blocks: &Blocks) -> bool {
-        const ALLOW: bool = false;
-        const REJECT: bool = true;
-        let Blocks {
-            blocked_users,
-            blocking_users,
-            blocked_domains,
-        } = blocks;
-
-        if self.involves(blocked_users) || blocking_users.contains(&self.id) {
-            REJECT
-        } else {
-            match self.username.split('@').nth(1) {
-                Some(originating_domain) if blocked_domains.contains(originating_domain) => REJECT,
-                Some(_) | None => ALLOW, // None means the local instance, which can't be blocked
-            }
-        }
-    }
-
-    fn involves(&self, blocked_users: &HashSet<Id>) -> bool {
-        // mentions
+    fn involved_users(&self) -> HashSet<Id> {
+        // involved_users = mentioned_users + author + replied-to user + boosted user
         let mut involved_users: HashSet<Id> = self.mentioned_users.clone();
 
         // author
         involved_users.insert(self.id);
-
         // replied-to user
         if let Some(user_id) = self.replied_to_user {
             involved_users.insert(user_id);
         }
-
         // boosted user
-        if let Some(user_id) = self.boosted_user {
-            involved_users.insert(user_id);
+        if let Some(boosted_status) = self.boosted_user {
+            involved_users.insert(boosted_status);
         }
+        involved_users
+    }
 
-        !involved_users.is_disjoint(blocked_users)
+    fn author(&self) -> &Id {
+        &self.id
+    }
+
+    fn sent_from(&self) -> &str {
+        let sender_username = &self.username;
+        sender_username.split('@').nth(1).unwrap_or_default() // default occurs when sent from local instance
     }
 }

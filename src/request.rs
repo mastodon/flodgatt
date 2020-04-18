@@ -6,15 +6,12 @@ mod timeline;
 pub mod err;
 mod subscription;
 
-pub(crate) use self::postgres::PgPool;
-
 pub(crate) use err::Error;
-pub(crate) use subscription::Blocks;
 pub use subscription::Subscription;
-pub(crate) use timeline::Stream;
 pub use timeline::Timeline;
-use timeline::{Content, Reach};
+use timeline::{Content, Reach, Stream};
 
+use self::postgres::PgPool;
 use self::query::Query;
 use crate::config::Postgres;
 use warp::filters::BoxedFilter;

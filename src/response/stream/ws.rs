@@ -50,38 +50,88 @@ impl Ws {
         let target_timeline = self.subscription.timeline;
         let incoming_events = self.ws_rx.clone().map_err(|_| ());
 
+        use crate::event::Payload; // TODO -- move up
         incoming_events.for_each(move |(tl, event)| {
             if matches!(event, Event::Ping) {
-                self.send_msg(&event)
+                self.send_msg(&event)?
             } else if target_timeline == tl {
-                use crate::event::{CheckedEvent::Update, Event::*, EventKind};
-                use crate::request::Stream::Public;
                 let blocks = &self.subscription.blocks;
                 let allowed_langs = &self.subscription.allowed_langs;
 
-                match event {
-                    TypeSafe(Update { payload, queued_at }) => match tl {
-                        Timeline(Public, _, _) if payload.language_not(allowed_langs) => Ok(()),
-                        _ if payload.involves_any(&blocks) => Ok(()),
-                        _ => self.send_msg(&TypeSafe(Update { payload, queued_at })),
-                    },
-                    TypeSafe(non_update) => self.send_msg(&TypeSafe(non_update)),
-                    Dynamic(dyn_event) => {
-                        if let EventKind::Update(s) = dyn_event.kind.clone() {
-                            match tl {
-                                Timeline(Public, _, _) if s.language_not(allowed_langs) => Ok(()),
-                                _ if s.involves_any(&blocks) => Ok(()),
-                                _ => self.send_msg(&Dynamic(dyn_event)),
+                if let Some(payload) = event.update_payload() {
+                    match tl {
+                        tl if tl.is_public()
+                            && !payload.language_unset()
+                            && !allowed_langs.is_empty()
+                            && !allowed_langs.contains(&payload.language()) =>
+                        {
+                            ()
+                        }
+                        _ if blocks.blocked_users.is_disjoint(&payload.involved_users()) => (),
+                        _ if blocks.blocking_users.contains(payload.author()) => (),
+                        _ if blocks.blocked_domains.contains(payload.sent_from()) => (),
+                        _ => self.send_msg(&event)?,
+                    }
+                } else {
+                    if let Some(payload) = event.dyn_update_payload() {
+                        match tl {
+                            tl if tl.is_public()
+                                && !payload.language_unset()
+                                && !allowed_langs.is_empty()
+                                && !allowed_langs.contains(&payload.language()) =>
+                            {
+                                ()
                             }
-                        } else {
-                            self.send_msg(&Dynamic(dyn_event))
+                            _ if blocks.blocked_users.is_disjoint(&payload.involved_users()) => (),
+                            _ if blocks.blocking_users.contains(payload.author()) => (),
+                            _ if blocks.blocked_domains.contains(payload.sent_from()) => (),
+                            _ => self.send_msg(&event)?,
                         }
                     }
-                    Ping => unreachable!(), // handled pings above
                 }
+
+            // TODO handle non-updates
+
+            // match event {
+            //     TypeSafe(Update { payload, queued_at }) => match tl {
+            //         tl if tl.is_public()
+            //             && !payload.language_unset()
+            //             && !allowed_langs.is_empty()
+            //             && !allowed_langs.contains(&payload.language()) =>
+            //         {
+            //             SKIP
+            //         }
+            //         _ if blocks.blocked_users.is_disjoint(&payload.involved_users()) => SKIP,
+            //         _ if blocks.blocking_users.contains(payload.author()) => SKIP,
+            //         _ if blocks.blocked_domains.contains(payload.sent_from()) => SKIP,
+            //         _ => self.send_msg(&TypeSafe(Update { payload, queued_at })),
+            //     },
+            //     TypeSafe(non_update) => self.send_msg(&TypeSafe(non_update)),
+            //     Dynamic(dyn_event) => {
+            //         if let Some(s) = dyn_event.update() {
+            //             match tl {
+            //                 tl if tl.is_public()
+            //                     && !s.language_unset()
+            //                     && !allowed_langs.is_empty()
+            //                     && !allowed_langs.contains(&s.language()) =>
+            //                 {
+            //                     SKIP
+            //                 }
+            //                 _ if blocks.blocked_users.is_disjoint(&s.involved_users()) => SKIP,
+            //                 _ if blocks.blocking_users.contains(s.author()) => SKIP,
+            //                 _ if blocks.blocked_domains.contains(s.sent_from()) => SKIP,
+            //                 _ => self.send_msg(&Dynamic(dyn_event)),
+            //             }
+            //         } else {
+            //             self.send_msg(&Dynamic(dyn_event))
+            //         }
+            //     }
+            //     Ping => unreachable!(), // handled pings above
+            // }
             } else {
-                Ok(())
+                ()
             }
+            Ok(())
         })
     }
 

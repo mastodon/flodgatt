@@ -16,7 +16,7 @@ pub(in crate::event) use announcement_reaction::AnnouncementReaction;
 use conversation::Conversation;
 pub(crate) use id::Id;
 use notification::Notification;
-use status::Status;
+pub(crate) use status::Status;
 
 use serde::Deserialize;
 

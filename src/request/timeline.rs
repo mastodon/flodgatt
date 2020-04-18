@@ -18,6 +18,22 @@ impl Timeline {
         Self(Stream::Unset, Reach::Local, Content::Notification)
     }
 
+    pub(crate) fn is_public(&self) -> bool {
+        if let Self(Stream::Public, _, _) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn tag(&self) -> Option<i64> {
+        if let Self(Stream::Hashtag(id), _, _) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
         // TODO -- does this need to account for namespaces?
         use {Content::*, Error::*, Reach::*, Stream::*};

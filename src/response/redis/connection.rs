@@ -6,7 +6,7 @@ use super::Error as ManagerErr;
 use super::RedisCmd;
 use crate::config::Redis;
 use crate::event::Event;
-use crate::request::{Stream, Timeline};
+use crate::request::Timeline;
 
 use futures::{Async, Poll};
 use lru::LruCache;
@@ -118,12 +118,9 @@ impl RedisConn {
     }
 
     pub(crate) fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
-        let hashtag = match timeline {
-            Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
-            _non_hashtag_timeline => None,
-        };
-
+        let hashtag = timeline.tag().and_then(|id| self.tag_name_cache.get(&id));
         let tl = timeline.to_redis_raw_timeline(hashtag)?;
+
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
         self.primary.write_all(&primary_cmd)?;
         self.secondary.write_all(&secondary_cmd)?;

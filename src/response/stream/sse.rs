@@ -24,15 +24,24 @@ impl Sse {
         let event_stream = sse_rx
             .filter(move |(timeline, _)| target_timeline == *timeline)
             .filter_map(move |(timeline, event)| {
+                use crate::event::Payload;
                 use crate::event::{
                     CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
-                };
+                }; // TODO -- move up
 
-                use crate::request::Stream::Public;
                 match event {
                     TypeSafe(Update { payload, queued_at }) => match timeline {
-                        Timeline(Public, _, _) if payload.language_not(&allowed_langs) => None,
-                        _ if payload.involves_any(&blocks) => None,
+                        tl if tl.is_public()
+                            && !payload.language_unset()
+                            && !allowed_langs.is_empty()
+                            && !allowed_langs.contains(&payload.language()) =>
+                        {
+                            None
+                        }
+                        _ if blocks.blocked_users.is_disjoint(&payload.involved_users()) => None,
+                        _ if blocks.blocking_users.contains(payload.author()) => None,
+                        _ if blocks.blocked_domains.contains(payload.sent_from()) => None,
+
                         _ => Event::TypeSafe(CheckedEvent::Update { payload, queued_at })
                             .to_warp_reply(),
                     },
@@ -40,8 +49,17 @@ impl Sse {
                     Dynamic(dyn_event) => {
                         if let EventKind::Update(s) = dyn_event.kind {
                             match timeline {
-                                Timeline(Public, _, _) if s.language_not(&allowed_langs) => None,
-                                _ if s.involves_any(&blocks) => None,
+                                tl if tl.is_public()
+                                    && !s.language_unset()
+                                    && !allowed_langs.is_empty()
+                                    && !allowed_langs.contains(&s.language()) =>
+                                {
+                                    None
+                                }
+                                _ if blocks.blocked_users.is_disjoint(&s.involved_users()) => None,
+                                _ if blocks.blocking_users.contains(s.author()) => None,
+                                _ if blocks.blocked_domains.contains(s.sent_from()) => None,
+
                                 _ => Dynamic(DynEvent {
                                     kind: EventKind::Update(s),
                                     ..dyn_event

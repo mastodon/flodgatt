@@ -6,6 +6,7 @@ pub(crate) use checked_event::{CheckedEvent, Id};
 pub(crate) use dynamic_event::{DynEvent, EventKind};
 pub(crate) use err::EventErr;
 
+use hashbrown::HashSet;
 use serde::Serialize;
 use std::convert::TryFrom;
 use std::string::String;
@@ -16,6 +17,18 @@ pub enum Event {
     TypeSafe(CheckedEvent),
     Dynamic(DynEvent),
     Ping,
+}
+
+pub(crate) trait Payload {
+    fn language_unset(&self) -> bool;
+
+    fn language(&self) -> String;
+
+    fn involved_users(&self) -> HashSet<Id>;
+
+    fn author(&self) -> &Id;
+
+    fn sent_from(&self) -> &str;
 }
 
 impl Event {
@@ -40,6 +53,26 @@ impl Event {
                 warp::sse::event(self.event_name()),
                 warp::sse::data(self.payload().unwrap_or_else(String::new)),
             ))
+        }
+    }
+
+    pub(crate) fn update_payload(&self) -> Option<&checked_event::Status> {
+        if let Self::TypeSafe(CheckedEvent::Update { payload, .. }) = self {
+            Some(&payload)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn dyn_update_payload(&self) -> Option<&dynamic_event::DynStatus> {
+        if let Self::Dynamic(DynEvent {
+            kind: EventKind::Update(s),
+            ..
+        }) = self
+        {
+            Some(&s)
+        } else {
+            None
         }
     }
 
