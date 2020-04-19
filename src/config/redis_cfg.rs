@@ -1,6 +1,5 @@
 use super::redis_cfg_types::*;
-use super::EnvVar;
-use crate::err::Error;
+use super::{EnvVar, Error};
 
 use url::Url;
 

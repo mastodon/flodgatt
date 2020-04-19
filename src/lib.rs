@@ -43,6 +43,6 @@ pub use err::Error;
 
 pub mod config;
 mod err;
-pub mod event;
+mod event;
 pub mod request;
 pub mod response;

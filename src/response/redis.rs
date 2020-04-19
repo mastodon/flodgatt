@@ -3,7 +3,7 @@ mod manager;
 mod msg;
 
 pub(self) use connection::RedisConn;
-pub(crate) use manager::Error;
+pub use manager::Error;
 pub use manager::Manager;
 
 use connection::RedisConnErr;

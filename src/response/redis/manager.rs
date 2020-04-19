@@ -2,7 +2,7 @@
 //! polled by the correct `ClientAgent`.  Also manages sububscriptions and
 //! unsubscriptions to/from Redis.
 mod err;
-pub(crate) use err::Error;
+pub use err::Error;
 
 use super::{RedisCmd, RedisConn};
 use crate::config;

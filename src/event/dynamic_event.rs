@@ -49,13 +49,6 @@ impl DynEvent {
             Ok(self)
         }
     }
-    pub(crate) fn update(&self) -> Option<DynStatus> {
-        if let EventKind::Update(status) = self.kind.clone() {
-            Some(status)
-        } else {
-            None
-        }
-    }
 }
 impl DynStatus {
     pub(crate) fn new(payload: &Value) -> Result<Self> {

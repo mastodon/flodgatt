@@ -1,9 +1,13 @@
 //! Stream the updates appropriate for a given `User`/`timeline` pair from Redis.
 
-pub mod redis;
-pub mod stream;
+pub use crate::event::Event;
+pub use redis::Manager as RedisManager;
+pub use stream::{Sse as SseStream, Ws as WsStream};
 
-pub(crate) use redis::Error;
+mod redis;
+mod stream;
+
+pub use redis::Error;
 
 #[cfg(feature = "bench")]
 pub use redis::msg::{RedisMsg, RedisParseOutput};

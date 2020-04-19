@@ -1,4 +1,4 @@
-use crate::event::Event;
+use crate::event::{Event, Payload};
 use crate::request::{Subscription, Timeline};
 
 use futures::stream::Stream;
@@ -18,59 +18,19 @@ impl Sse {
         sse_rx: watch::Receiver<(Timeline, Event)>,
     ) -> impl Reply {
         let target_timeline = subscription.timeline;
-        let allowed_langs = subscription.allowed_langs;
-        let blocks = subscription.blocks;
 
         let event_stream = sse_rx
             .filter(move |(timeline, _)| target_timeline == *timeline)
-            .filter_map(move |(timeline, event)| {
-                use crate::event::Payload;
-                use crate::event::{
-                    CheckedEvent, CheckedEvent::Update, DynEvent, Event::*, EventKind,
-                }; // TODO -- move up
-
-                match event {
-                    TypeSafe(Update { payload, queued_at }) => match timeline {
-                        tl if tl.is_public()
-                            && !payload.language_unset()
-                            && !allowed_langs.is_empty()
-                            && !allowed_langs.contains(&payload.language()) =>
-                        {
-                            None
-                        }
-                        _ if blocks.blocked_users.is_disjoint(&payload.involved_users()) => None,
-                        _ if blocks.blocking_users.contains(payload.author()) => None,
-                        _ if blocks.blocked_domains.contains(payload.sent_from()) => None,
-
-                        _ => Event::TypeSafe(CheckedEvent::Update { payload, queued_at })
-                            .to_warp_reply(),
-                    },
-                    TypeSafe(non_update) => Event::TypeSafe(non_update).to_warp_reply(),
-                    Dynamic(dyn_event) => {
-                        if let EventKind::Update(s) = dyn_event.kind {
-                            match timeline {
-                                tl if tl.is_public()
-                                    && !s.language_unset()
-                                    && !allowed_langs.is_empty()
-                                    && !allowed_langs.contains(&s.language()) =>
-                                {
-                                    None
-                                }
-                                _ if blocks.blocked_users.is_disjoint(&s.involved_users()) => None,
-                                _ if blocks.blocking_users.contains(s.author()) => None,
-                                _ if blocks.blocked_domains.contains(s.sent_from()) => None,
-
-                                _ => Dynamic(DynEvent {
-                                    kind: EventKind::Update(s),
-                                    ..dyn_event
-                                })
-                                .to_warp_reply(),
-                            }
-                        } else {
-                            None
-                        }
+            .filter_map(move |(_timeline, event)| {
+                match (event.update_payload(), event.dyn_update_payload()) {
+                    (Some(update), _) if Sse::update_not_filtered(subscription.clone(), update) => {
+                        event.to_warp_reply()
                     }
-                    Ping => None, // pings handled automatically
+                    (None, None) => event.to_warp_reply(), // send all non-updates
+                    (_, Some(update)) if Sse::update_not_filtered(subscription.clone(), update) => {
+                        event.to_warp_reply()
+                    }
+                    (_, _) => None,
                 }
             })
             .then(move |res| {
@@ -86,5 +46,24 @@ impl Sse {
                 .text("thump".to_string())
                 .stream(event_stream),
         )
+    }
+
+    fn update_not_filtered(subscription: Subscription, update: &impl Payload) -> bool {
+        let blocks = &subscription.blocks;
+        let allowed_langs = &subscription.allowed_langs;
+
+        match subscription.timeline {
+            tl if tl.is_public()
+                && !update.language_unset()
+                && !allowed_langs.is_empty()
+                && !allowed_langs.contains(&update.language()) =>
+            {
+                false
+            }
+            _ if !blocks.blocked_users.is_disjoint(&update.involved_users()) => false,
+            _ if blocks.blocking_users.contains(update.author()) => false,
+            _ if blocks.blocked_domains.contains(update.sent_from()) => false,
+            _ => true,
+        }
     }
 }

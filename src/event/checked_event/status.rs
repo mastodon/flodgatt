@@ -3,21 +3,18 @@ mod attachment;
 mod card;
 mod poll;
 
-use super::super::Payload;
 use super::account::Account;
 use super::emoji::Emoji;
 use super::id::Id;
 use super::mention::Mention;
 use super::tag::Tag;
 use super::visibility::Visibility;
+use super::Payload;
 use application::Application;
 use attachment::Attachment;
 use card::Card;
-use poll::Poll;
-
-//use crate::request::Blocks;
-
 use hashbrown::HashSet;
+use poll::Poll;
 use serde::{Deserialize, Serialize};
 use std::boxed::Box;
 use std::string::String;

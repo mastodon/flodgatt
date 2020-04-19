@@ -1,8 +1,6 @@
 use flodgatt::config;
-use flodgatt::event::Event;
 use flodgatt::request::{Handler, Subscription, Timeline};
-use flodgatt::response::redis::Manager;
-use flodgatt::response::stream;
+use flodgatt::response::{Event, RedisManager, SseStream, WsStream};
 use flodgatt::Error;
 
 use futures::{future::lazy, stream::Stream as _};
@@ -27,7 +25,7 @@ fn main() -> Result<(), Error> {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     let request = Handler::new(&postgres_cfg, *cfg.whitelist_mode)?;
-    let shared_manager = Manager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
+    let shared_manager = RedisManager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
 
     // Server Sent Events
     let sse_manager = shared_manager.clone();
@@ -37,10 +35,10 @@ fn main() -> Result<(), Error> {
         .and(warp::sse())
         .map(move |subscription: Subscription, sse: warp::sse::Sse| {
             log::info!("Incoming SSE request for {:?}", subscription.timeline);
-            let mut manager = sse_manager.lock().unwrap_or_else(Manager::recover);
+            let mut manager = sse_manager.lock().unwrap_or_else(RedisManager::recover);
             manager.subscribe(&subscription);
 
-            stream::Sse::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
+            SseStream::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
         })
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
@@ -51,10 +49,10 @@ fn main() -> Result<(), Error> {
         .and(warp::ws::ws2())
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
-            let mut manager = ws_manager.lock().unwrap_or_else(Manager::recover);
+            let mut manager = ws_manager.lock().unwrap_or_else(RedisManager::recover);
             manager.subscribe(&subscription);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
-            let ws_stream = stream::Ws::new(cmd_tx.clone(), event_rx.clone(), subscription);
+            let ws_stream = WsStream::new(cmd_tx.clone(), event_rx.clone(), subscription);
 
             (ws.on_upgrade(move |ws| ws_stream.send_to(ws)), token)
         })
@@ -66,9 +64,9 @@ fn main() -> Result<(), Error> {
         let (r1, r3) = (shared_manager.clone(), shared_manager.clone());
         request.health().map(|| "OK")
             .or(request.status()
-                .map(move || r1.lock().unwrap_or_else(redis::Manager::recover).count()))
+                .map(move || r1.lock().unwrap_or_else(RedisManager::recover).count()))
             .or(request.status_per_timeline()
-                .map(move || r3.lock().unwrap_or_else(redis::Manager::recover).list()))
+                .map(move || r3.lock().unwrap_or_else(RedisManager::recover).list()))
     };
     #[cfg(not(feature = "stub_status"))]
     let status = request.health().map(|| "OK");
@@ -83,7 +81,7 @@ fn main() -> Result<(), Error> {
         let stream = Interval::new(Instant::now(), poll_freq)
             .map_err(|e| log::error!("{}", e))
             .for_each(move |_| {
-                let mut manager = manager.lock().unwrap_or_else(Manager::recover);
+                let mut manager = manager.lock().unwrap_or_else(RedisManager::recover);
                 manager.poll_broadcast().map_err(Error::log)
             });
 

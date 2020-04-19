@@ -11,13 +11,14 @@ mod status;
 mod tag;
 mod visibility;
 
-use announcement::Announcement;
-pub(in crate::event) use announcement_reaction::AnnouncementReaction;
-use conversation::Conversation;
+pub(self) use super::Payload;
+pub(super) use announcement_reaction::AnnouncementReaction;
 pub(crate) use id::Id;
-use notification::Notification;
 pub(crate) use status::Status;
 
+use announcement::Announcement;
+use conversation::Conversation;
+use notification::Notification;
 use serde::Deserialize;
 
 #[serde(rename_all = "snake_case", tag = "event", deny_unknown_fields)]

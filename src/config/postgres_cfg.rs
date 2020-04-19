@@ -1,17 +1,19 @@
-use super::{postgres_cfg_types::*, EnvVar};
-use crate::err::Error;
+use super::postgres_cfg_types::*;
+use super::{EnvVar, Error};
 
 use url::Url;
 use urlencoding;
 
 type Result<T> = std::result::Result<T, Error>;
 
+/// Configuration values for Postgres
 #[derive(Debug, Clone)]
 pub struct Postgres {
     pub(crate) user: PgUser,
     pub(crate) host: PgHost,
     pub(crate) password: PgPass,
-    pub(crate) database: PgDatabase,
+    /// The name of the postgres database to connect to
+    pub database: PgDatabase,
     pub(crate) port: PgPort,
     pub(crate) ssl_mode: PgSslMode,
 }

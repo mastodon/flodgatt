@@ -1,5 +1,5 @@
-use super::{deployment_cfg_types::*, EnvVar};
-use crate::err::Error;
+use super::deployment_cfg_types::*;
+use super::{EnvVar, Error};
 
 #[derive(Debug, Default)]
 pub struct Deployment<'a> {

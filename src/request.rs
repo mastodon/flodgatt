@@ -7,7 +7,8 @@ pub mod err;
 mod subscription;
 
 pub(crate) use err::Error;
-pub use subscription::Subscription;
+pub use subscription::{Blocks, Subscription};
+#[doc(hidden)]
 pub use timeline::Timeline;
 use timeline::{Content, Reach, Stream};
 

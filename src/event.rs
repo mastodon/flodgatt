@@ -2,9 +2,11 @@ mod checked_event;
 mod dynamic_event;
 mod err;
 
-pub(crate) use checked_event::{CheckedEvent, Id};
-pub(crate) use dynamic_event::{DynEvent, EventKind};
+pub(crate) use checked_event::Id;
 pub(crate) use err::EventErr;
+
+use self::checked_event::CheckedEvent;
+use self::dynamic_event::{DynEvent, EventKind};
 
 use hashbrown::HashSet;
 use serde::Serialize;
@@ -32,17 +34,6 @@ pub(crate) trait Payload {
 }
 
 impl Event {
-    pub(crate) fn get_update_payload(&self) -> Option<Box<&(dyn Payload)>> {
-        match self {
-            Event::TypeSafe(CheckedEvent::Update { payload, .. }) => Some(Box::new(payload)),
-            Event::Dynamic(DynEvent {
-                kind: EventKind::Update(s),
-                ..
-            }) => Some(Box::new(s)),
-            _ => None,
-        }
-    }
-
     pub(crate) fn to_json_string(&self) -> String {
         if let Event::Ping = self {
             "{}".to_string()
