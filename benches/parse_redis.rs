@@ -22,20 +22,20 @@ fn parse_to_timeline(msg: RedisMsg) -> Timeline {
     assert_eq!(tl, Timeline(User(Id(1)), Federated, All));
     tl
 }
-fn parse_to_checked_event(msg: RedisMsg) -> Event {
-    Event::TypeSafe(serde_json::from_str(msg.event_txt).unwrap())
+fn parse_to_checked_event(msg: RedisMsg) -> EventKind {
+    EventKind::TypeSafe(serde_json::from_str(msg.event_txt).unwrap())
 }
 
-fn parse_to_dyn_event(msg: RedisMsg) -> Event {
-    Event::Dynamic(serde_json::from_str(msg.event_txt).unwrap())
+fn parse_to_dyn_event(msg: RedisMsg) -> EventKind {
+    EventKind::Dynamic(serde_json::from_str(msg.event_txt).unwrap())
 }
 
 fn redis_msg_to_event_string(msg: RedisMsg) -> String {
     msg.event_txt.to_string()
 }
 
-fn string_to_checked_event(event_txt: &String) -> Event {
-    Event::TypeSafe(serde_json::from_str(event_txt).unwrap())
+fn string_to_checked_event(event_txt: &String) -> EventKind {
+    EventKind::TypeSafe(serde_json::from_str(event_txt).unwrap())
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

@@ -32,6 +32,17 @@ pub(crate) trait Payload {
 }
 
 impl Event {
+    pub(crate) fn get_update_payload(&self) -> Option<Box<&(dyn Payload)>> {
+        match self {
+            Event::TypeSafe(CheckedEvent::Update { payload, .. }) => Some(Box::new(payload)),
+            Event::Dynamic(DynEvent {
+                kind: EventKind::Update(s),
+                ..
+            }) => Some(Box::new(s)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn to_json_string(&self) -> String {
         if let Event::Ping = self {
             "{}".to_string()
