@@ -6,7 +6,8 @@ jobs:
   fast_finish: true
 cache: cargo
 before_cache:
-  - rm -rfv target/debug/incremental/{flodgatt}-*
+  - rm -rfv "$TRAVIS_HOME/.cargo/registry/src"
+  - rm -rfv target/debug/incremental/flodgatt-*
   - rm -rfv target/debug/.fingerprint/flodgatt-*
   - rm -rfv target/debug/build/flodgatt-*
   - rm -rfv target/debug/deps/libflodgatt-*
