@@ -1,12 +1,10 @@
 mod checked_event;
 mod dynamic_event;
-mod err;
-
-pub(crate) use checked_event::Id;
-pub(crate) use err::EventErr;
+pub mod err;
 
 use self::checked_event::CheckedEvent;
 use self::dynamic_event::{DynEvent, EventKind};
+use crate::Id;
 
 use hashbrown::HashSet;
 use serde::Serialize;
@@ -119,14 +117,14 @@ impl Event {
 }
 
 impl TryFrom<String> for Event {
-    type Error = EventErr;
+    type Error = err::Event;
 
     fn try_from(event_txt: String) -> Result<Event, Self::Error> {
         Event::try_from(event_txt.as_str())
     }
 }
 impl TryFrom<&str> for Event {
-    type Error = EventErr;
+    type Error = err::Event;
 
     fn try_from(event_txt: &str) -> Result<Event, Self::Error> {
         match serde_json::from_str(event_txt) {

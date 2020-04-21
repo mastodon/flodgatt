@@ -2,7 +2,7 @@
 use super::err;
 use super::timeline::{Scope, UserData};
 use crate::config;
-use crate::event::Id;
+use crate::Id;
 
 use ::postgres;
 use hashbrown::HashSet;

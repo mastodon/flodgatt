@@ -1,7 +1,6 @@
 use super::super::{RedisConnErr, RedisParseErr};
-use crate::event::{Event, EventErr};
-use crate::request::err::Timeline as TimelineErr;
-use crate::request::Timeline;
+use super::{Event, EventErr};
+use crate::request::{Timeline, TimelineErr};
 
 use std::fmt;
 #[derive(Debug)]

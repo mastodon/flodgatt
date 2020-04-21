@@ -4,10 +4,12 @@
 mod err;
 pub use err::Error;
 
+use super::Event;
 use super::{RedisCmd, RedisConn};
 use crate::config;
-use crate::event::Event;
 use crate::request::{Subscription, Timeline};
+
+pub(self) use super::EventErr;
 
 use futures::{Async, Stream as _Stream};
 use hashbrown::HashMap;

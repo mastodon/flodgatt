@@ -43,6 +43,14 @@ pub use err::Error;
 
 pub mod config;
 mod err;
-mod event;
 pub mod request;
 pub mod response;
+
+/// A user ID.
+///
+/// Internally, Mastodon IDs are i64s, but are sent to clients as string because
+/// JavaScript numbers don't support i64s.  This newtype serializes to/from a string, but
+/// keeps the i64 as the "true" value for internal use.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[doc(hidden)]
+pub struct Id(pub i64);

@@ -3,9 +3,9 @@ pub(crate) use err::RedisConnErr;
 
 use super::msg::{RedisParseErr, RedisParseOutput};
 use super::Error as ManagerErr;
+use super::Event;
 use super::RedisCmd;
 use crate::config::Redis;
-use crate::event::Event;
 use crate::request::Timeline;
 
 use futures::{Async, Poll};

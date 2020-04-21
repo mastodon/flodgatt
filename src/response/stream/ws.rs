@@ -1,4 +1,4 @@
-use crate::event::{Event, Payload};
+use super::{Event, Payload};
 use crate::request::{Subscription, Timeline};
 
 use futures::{future::Future, stream::Stream};

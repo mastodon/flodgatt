@@ -2,6 +2,7 @@ mod connection;
 mod manager;
 mod msg;
 
+pub(self) use super::{Event, EventErr};
 pub(self) use connection::RedisConn;
 pub use manager::Error;
 pub use manager::Manager;

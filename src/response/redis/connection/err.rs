@@ -9,7 +9,7 @@ pub enum RedisConnErr {
     IncorrectPassword(String),
     MissingPassword,
     NotRedis(String),
-    TimelineErr(request::err::Timeline),
+    TimelineErr(request::TimelineErr),
 }
 
 impl RedisConnErr {
@@ -57,8 +57,8 @@ impl fmt::Display for RedisConnErr {
     }
 }
 
-impl From<request::err::Timeline> for RedisConnErr {
-    fn from(e: request::err::Timeline) -> RedisConnErr {
+impl From<request::TimelineErr> for RedisConnErr {
+    fn from(e: request::TimelineErr) -> RedisConnErr {
         RedisConnErr::TimelineErr(e)
     }
 }

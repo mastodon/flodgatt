@@ -1,17 +1,17 @@
 use std::{fmt, num::ParseIntError};
 
 #[derive(Debug)]
-pub enum EventErr {
+pub enum Event {
     SerdeParse(serde_json::Error),
     NonNumId(ParseIntError),
     DynParse,
 }
 
-impl std::error::Error for EventErr {}
+impl std::error::Error for Event {}
 
-impl fmt::Display for EventErr {
+impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        use EventErr::*;
+        use Event::*;
         match self {
             SerdeParse(inner) => write!(f, "{}", inner),
             NonNumId(inner) => write!(f, "ID could not be parsed: {}", inner),
@@ -21,12 +21,12 @@ impl fmt::Display for EventErr {
     }
 }
 
-impl From<ParseIntError> for EventErr {
+impl From<ParseIntError> for Event {
     fn from(error: ParseIntError) -> Self {
         Self::NonNumId(error)
     }
 }
-impl From<serde_json::Error> for EventErr {
+impl From<serde_json::Error> for Event {
     fn from(error: serde_json::Error) -> Self {
         Self::SerdeParse(error)
     }

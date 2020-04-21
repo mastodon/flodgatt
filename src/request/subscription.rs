@@ -8,7 +8,7 @@
 use super::postgres::PgPool;
 use super::query::Query;
 use super::{Content, Reach, Stream, Timeline};
-use crate::event::Id;
+use crate::Id;
 
 use hashbrown::HashSet;
 

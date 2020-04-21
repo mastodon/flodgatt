@@ -13,7 +13,6 @@ mod visibility;
 
 pub(self) use super::Payload;
 pub(super) use announcement_reaction::AnnouncementReaction;
-pub(crate) use id::Id;
 pub(crate) use status::Status;
 
 use announcement::Announcement;

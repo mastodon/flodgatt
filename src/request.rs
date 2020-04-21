@@ -3,16 +3,15 @@ mod postgres;
 mod query;
 mod timeline;
 
-pub mod err;
+mod err;
 mod subscription;
 
-pub(crate) use err::Error;
+pub use err::{Error, Timeline as TimelineErr};
 pub use subscription::{Blocks, Subscription};
-#[doc(hidden)]
 pub use timeline::Timeline;
 use timeline::{Content, Reach, Stream};
 
-use self::postgres::PgPool;
+pub use self::postgres::PgPool;
 use self::query::Query;
 use crate::config::Postgres;
 use warp::filters::BoxedFilter;

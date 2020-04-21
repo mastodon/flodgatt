@@ -1,5 +1,6 @@
+use super::err;
 use super::Payload;
-use super::{EventErr, Id};
+use crate::Id;
 
 use std::convert::TryFrom;
 
@@ -38,7 +39,7 @@ pub(crate) struct DynStatus {
     pub(crate) boosted_user: Option<Id>,
 }
 
-type Result<T> = std::result::Result<T, EventErr>;
+type Result<T> = std::result::Result<T, err::Event>;
 
 impl DynEvent {
     pub(crate) fn set_update(self) -> Result<Self> {
@@ -52,13 +53,11 @@ impl DynEvent {
 }
 impl DynStatus {
     pub(crate) fn new(payload: &Value) -> Result<Self> {
-        use EventErr::*;
-
         Ok(Self {
             id: Id::try_from(&payload["account"]["id"])?,
             username: payload["account"]["acct"]
                 .as_str()
-                .ok_or(DynParse)?
+                .ok_or(err::Event::DynParse)?
                 .to_string(),
             language: payload["language"].as_str().map(String::from),
             mentioned_users: HashSet::new(),

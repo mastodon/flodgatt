@@ -5,11 +5,11 @@ mod poll;
 
 use super::account::Account;
 use super::emoji::Emoji;
-use super::id::Id;
 use super::mention::Mention;
 use super::tag::Tag;
 use super::visibility::Visibility;
 use super::Payload;
+use crate::Id;
 use application::Application;
 use attachment::Attachment;
 use card::Card;

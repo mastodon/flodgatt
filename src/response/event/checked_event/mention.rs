@@ -1,4 +1,4 @@
-use super::id::Id;
+use crate::Id;
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]

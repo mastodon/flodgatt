@@ -1,5 +1,5 @@
 use super::Error;
-use crate::event::Id;
+use crate::Id;
 
 use hashbrown::HashSet;
 use std::convert::TryFrom;
