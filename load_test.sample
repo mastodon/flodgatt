@@ -8,7 +8,6 @@ command -v websocat >/dev/null || { echo >&2 "Install websocat with `cargo insta
 
 echo "Opening $number_of_ws WebSockets to $timeline"
 for i in $(seq 0 $number_of_ws); do
-    sleep 0.1
     websocat wss://${instance}/api/v1/streaming/?stream=${timeline} --no-close > /dev/null &
 done
 
