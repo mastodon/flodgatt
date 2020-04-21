@@ -11,12 +11,12 @@ mod status;
 mod tag;
 mod visibility;
 
-pub use announcement::Announcement;
+use announcement::Announcement;
 pub(in crate::event) use announcement_reaction::AnnouncementReaction;
-pub use conversation::Conversation;
-pub use id::Id;
-pub use notification::Notification;
-pub use status::Status;
+use conversation::Conversation;
+pub(crate) use id::Id;
+use notification::Notification;
+use status::Status;
 
 use serde::Deserialize;
 

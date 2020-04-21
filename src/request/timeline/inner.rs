@@ -5,7 +5,7 @@ use hashbrown::HashSet;
 use std::convert::TryFrom;
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub enum Stream {
+pub(crate) enum Stream {
     User(Id),
     List(i64),
     Direct(i64),
@@ -15,20 +15,20 @@ pub enum Stream {
 }
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub enum Reach {
+pub(crate) enum Reach {
     Local,
     Federated,
 }
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub enum Content {
+pub(crate) enum Content {
     All,
     Media,
     Notification,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Scope {
+pub(crate) enum Scope {
     Read,
     Statuses,
     Notifications,
@@ -53,10 +53,10 @@ impl TryFrom<&str> for Scope {
     }
 }
 
-pub struct UserData {
-    pub id: Id,
-    pub allowed_langs: HashSet<String>,
-    pub scopes: HashSet<Scope>,
+pub(crate) struct UserData {
+    pub(crate) id: Id,
+    pub(crate) allowed_langs: HashSet<String>,
+    pub(crate) scopes: HashSet<Scope>,
 }
 
 impl UserData {

@@ -6,11 +6,13 @@ pub mod timeline;
 mod err;
 mod subscription;
 
-pub use self::err::RequestErr;
-pub use self::postgres::PgPool;
-// TODO consider whether we can remove `Stream` from public API
-pub use subscription::{Blocks, Subscription};
-pub use timeline::{Content, Reach, Stream, Timeline, TimelineErr};
+pub(crate) use self::err::RequestErr;
+pub(crate) use self::postgres::PgPool;
+
+pub(crate) use subscription::Blocks;
+pub use subscription::Subscription;
+pub use timeline::Timeline;
+pub(crate) use timeline::{Content, Reach, Stream, TimelineErr};
 
 use self::query::Query;
 use crate::config;

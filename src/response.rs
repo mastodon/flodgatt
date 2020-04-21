@@ -3,7 +3,7 @@
 pub mod redis;
 pub mod stream;
 
-pub use redis::{Manager, ManagerErr};
+pub(crate) use redis::ManagerErr;
 
 #[cfg(feature = "bench")]
 pub use redis::msg::{RedisMsg, RedisParseOutput};

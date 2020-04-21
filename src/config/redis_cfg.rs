@@ -8,12 +8,12 @@ type Result<T> = std::result::Result<T, FatalErr>;
 
 #[derive(Debug, Default)]
 pub struct Redis {
-    pub user: RedisUser,
-    pub password: RedisPass,
-    pub port: RedisPort,
-    pub host: RedisHost,
-    pub db: RedisDb,
-    pub namespace: RedisNamespace,
+    pub(crate) user: RedisUser,
+    pub(crate) password: RedisPass,
+    pub(crate) port: RedisPort,
+    pub(crate) host: RedisHost,
+    pub(crate) db: RedisDb,
+    pub(crate) namespace: RedisNamespace,
     // **NOTE**:  Polling Redis is much more time consuming than polling the `Receiver` (~1ms
     // compared to ~50μs).  Thus, changing this setting with REDIS_POLL_INTERVAL may be a good
     // place to start for performance improvements at the cost of delaying all updates.
@@ -50,7 +50,7 @@ impl Redis {
     const DB_SET_WARNING: &'static str = r"Redis database specified, but PubSub connections do not use databases.
 For similar functionality, you may wish to set a REDIS_NAMESPACE";
 
-    pub fn from_env(env: EnvVar) -> Result<Self> {
+    pub(crate) fn from_env(env: EnvVar) -> Result<Self> {
         let env = match env.get("REDIS_URL").cloned() {
             Some(url_str) => env.update_with_redis_url(&url_str)?,
             None => env,

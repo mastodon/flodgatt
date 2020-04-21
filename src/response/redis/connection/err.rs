@@ -13,7 +13,7 @@ pub enum RedisConnErr {
 }
 
 impl RedisConnErr {
-    pub fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
+    pub(crate) fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
         Self::ConnectionErr {
             addr: address.as_ref().to_string(),
             inner,

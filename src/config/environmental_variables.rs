@@ -2,7 +2,7 @@ use hashbrown::HashMap;
 use std::fmt;
 
 #[derive(Debug)]
-pub struct EnvVar(pub HashMap<String, String>);
+pub(crate) struct EnvVar(pub HashMap<String, String>);
 impl std::ops::Deref for EnvVar {
     type Target = HashMap<String, String>;
     fn deref(&self) -> &HashMap<String, String> {
@@ -16,11 +16,11 @@ impl Clone for EnvVar {
     }
 }
 impl EnvVar {
-    pub fn new(vars: HashMap<String, String>) -> Self {
+    pub(crate) fn new(vars: HashMap<String, String>) -> Self {
         Self(vars)
     }
 
-    pub fn maybe_add_env_var(&mut self, key: &str, maybe_value: Option<impl ToString>) {
+    pub(crate) fn maybe_add_env_var(&mut self, key: &str, maybe_value: Option<impl ToString>) {
         if let Some(value) = maybe_value {
             self.0.insert(key.to_string(), value.to_string());
         }
@@ -63,7 +63,7 @@ impl fmt::Display for EnvVar {
 #[macro_export]
 macro_rules! maybe_update {
     ($name:ident; $item: tt:$type:ty) => (
-        pub fn $name(self, item: Option<$type>) -> Self {
+        pub(crate) fn $name(self, item: Option<$type>) -> Self {
             match item {
                 Some($item) => Self{ $item, ..self },
                 None => Self { ..self }
@@ -106,7 +106,10 @@ macro_rules! from_env_var {
             fn inner_from_str($arg: &str) -> Option<$type> {
                 $body
             }
-            pub fn maybe_update(self, var: Option<&String>) -> Result<Self, crate::err::FatalErr> {
+            pub(crate) fn maybe_update(
+                self,
+                var: Option<&String>,
+            ) -> Result<Self, crate::err::FatalErr> {
                 Ok(match var {
                     Some(empty_string) if empty_string.is_empty() => Self::default(),
                     Some(value) => Self(Self::inner_from_str(value).ok_or_else(|| {

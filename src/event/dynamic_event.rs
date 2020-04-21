@@ -10,14 +10,14 @@ use serde_json::Value;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DynEvent {
     #[serde(skip)]
-    pub kind: EventKind,
-    pub event: String,
-    pub payload: Value,
-    pub queued_at: Option<i64>,
+    pub(crate) kind: EventKind,
+    pub(crate) event: String,
+    pub(crate) payload: Value,
+    pub(crate) queued_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum EventKind {
+pub(crate) enum EventKind {
     Update(DynStatus),
     NonUpdate,
 }
@@ -29,19 +29,19 @@ impl Default for EventKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DynStatus {
-    pub id: Id,
-    pub username: String,
-    pub language: Option<String>,
-    pub mentioned_users: HashSet<Id>,
-    pub replied_to_user: Option<Id>,
-    pub boosted_user: Option<Id>,
+pub(crate) struct DynStatus {
+    pub(crate) id: Id,
+    pub(crate) username: String,
+    pub(crate) language: Option<String>,
+    pub(crate) mentioned_users: HashSet<Id>,
+    pub(crate) replied_to_user: Option<Id>,
+    pub(crate) boosted_user: Option<Id>,
 }
 
 type Result<T> = std::result::Result<T, EventErr>;
 
 impl DynEvent {
-    pub fn set_update(self) -> Result<Self> {
+    pub(crate) fn set_update(self) -> Result<Self> {
         if self.event == "update" {
             let kind = EventKind::Update(DynStatus::new(&self.payload.clone())?);
             Ok(Self { kind, ..self })
@@ -52,7 +52,7 @@ impl DynEvent {
 }
 
 impl DynStatus {
-    pub fn new(payload: &Value) -> Result<Self> {
+    pub(crate) fn new(payload: &Value) -> Result<Self> {
         use EventErr::*;
 
         Ok(Self {
@@ -68,7 +68,7 @@ impl DynStatus {
         })
     }
     /// Returns `true` if the status is filtered out based on its language
-    pub fn language_not(&self, allowed_langs: &HashSet<String>) -> bool {
+    pub(crate) fn language_not(&self, allowed_langs: &HashSet<String>) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
 
@@ -93,7 +93,7 @@ impl DynStatus {
     ///  * Wrote this toot
     ///  * Wrote a toot that this toot is replying to (if any)
     ///  * Wrote the toot that this toot is boosting (if any)
-    pub fn involves_any(&self, blocks: &Blocks) -> bool {
+    pub(crate) fn involves_any(&self, blocks: &Blocks) -> bool {
         const ALLOW: bool = false;
         const REJECT: bool = true;
         let Blocks {
@@ -112,7 +112,6 @@ impl DynStatus {
         }
     }
 
-    // involved_users = mentioned_users + author + replied-to user + boosted user
     fn involves(&self, blocked_users: &HashSet<Id>) -> bool {
         // mentions
         let mut involved_users: HashSet<Id> = self.mentioned_users.clone();

@@ -4,16 +4,16 @@ use warp::filters::BoxedFilter;
 use warp::Filter as WarpFilter;
 
 #[derive(Debug)]
-pub struct Query {
-    pub access_token: Option<String>,
-    pub stream: String,
-    pub media: bool,
-    pub hashtag: String,
-    pub list: i64,
+pub(crate) struct Query {
+    pub(crate) access_token: Option<String>,
+    pub(crate) stream: String,
+    pub(crate) media: bool,
+    pub(crate) hashtag: String,
+    pub(crate) list: i64,
 }
 
 impl Query {
-    pub fn update_access_token(
+    pub(crate) fn update_access_token(
         self,
         token: Option<String>,
     ) -> Result<Self, warp::reject::Rejection> {
@@ -30,17 +30,17 @@ impl Query {
 macro_rules! make_query_type {
     (Stream => $parameter:tt:$type:ty) => {
         #[derive(Deserialize, Debug, Default)]
-        pub struct Stream {
-            pub $parameter: $type,
+        pub(crate) struct Stream {
+            pub(crate) $parameter: $type,
         }
     };
     ($name:tt => $parameter:tt:$type:ty) => {
         #[derive(Deserialize, Debug, Default)]
-        pub struct $name {
-            pub $parameter: $type,
+        pub(crate) struct $name {
+            pub(crate) $parameter: $type,
         }
         impl $name {
-            pub fn to_filter() -> BoxedFilter<(Self,)> {
+            pub(crate) fn to_filter() -> BoxedFilter<(Self,)> {
                 warp::query()
                     .or(warp::any().map(Self::default))
                     .unify()
@@ -51,7 +51,7 @@ macro_rules! make_query_type {
 }
 make_query_type!(Media => only_media:String);
 impl Media {
-    pub fn is_truthy(&self) -> bool {
+    pub(crate) fn is_truthy(&self) -> bool {
         self.only_media == "true" || self.only_media == "1"
     }
 }
@@ -65,19 +65,10 @@ impl ToString for Stream {
     }
 }
 
-// pub fn optional_media_query() -> BoxedFilter<(Media,)> {
-//     warp::query()
-//         .or(warp::any().map(|| Media {
-//             only_media: "false".to_owned(),
-//         }))
-//         .unify()
-//         .boxed()
-// }
-
-pub struct OptionalAccessToken;
+pub(super) struct OptionalAccessToken;
 
 impl OptionalAccessToken {
-    pub fn from_sse_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
+    pub(super) fn from_sse_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
         let from_header = warp::header::header::<String>("authorization").map(|auth: String| {
             match auth.split(' ').nth(1) {
                 Some(s) => Some(s.to_string()),
@@ -88,7 +79,7 @@ impl OptionalAccessToken {
 
         from_header.or(no_token).unify().boxed()
     }
-    pub fn from_ws_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
+    pub(super) fn from_ws_header() -> warp::filters::BoxedFilter<(Option<String>,)> {
         let from_header = warp::header::header::<String>("Sec-Websocket-Protocol").map(Some);
         let no_token = warp::any().map(|| None);
 

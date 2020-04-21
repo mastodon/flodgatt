@@ -1,5 +1,5 @@
-pub use self::err::TimelineErr;
-pub use self::inner::{Content, Reach, Scope, Stream, UserData};
+pub(crate) use self::err::TimelineErr;
+pub(crate) use self::inner::{Content, Reach, Scope, Stream, UserData};
 use super::query::Query;
 
 use lru::LruCache;
@@ -11,14 +11,14 @@ mod inner;
 type Result<T> = std::result::Result<T, TimelineErr>;
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub struct Timeline(pub Stream, pub Reach, pub Content);
+pub struct Timeline(pub(crate) Stream, pub(crate) Reach, pub(crate) Content);
 
 impl Timeline {
     pub fn empty() -> Self {
         Self(Stream::Unset, Reach::Local, Content::Notification)
     }
 
-    pub fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
+    pub(crate) fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
         // TODO -- does this need to account for namespaces?
         use {Content::*, Reach::*, Stream::*, TimelineErr::*};
 
@@ -46,7 +46,10 @@ impl Timeline {
         })
     }
 
-    pub fn from_redis_text(timeline: &str, cache: &mut LruCache<String, i64>) -> Result<Self> {
+    pub(crate) fn from_redis_text(
+        timeline: &str,
+        cache: &mut LruCache<String, i64>,
+    ) -> Result<Self> {
         use {Content::*, Reach::*, Stream::*, TimelineErr::*};
         let mut tag_id = |t: &str| cache.get(&t.to_string()).map_or(Err(BadTag), |id| Ok(*id));
 
@@ -65,7 +68,10 @@ impl Timeline {
         })
     }
 
-    pub fn from_query_and_user(q: &Query, user: &UserData) -> std::result::Result<Self, Rejection> {
+    pub(crate) fn from_query_and_user(
+        q: &Query,
+        user: &UserData,
+    ) -> std::result::Result<Self, Rejection> {
         use {warp::reject::custom, Content::*, Reach::*, Scope::*, Stream::*};
 
         Ok(match q.stream.as_ref() {

@@ -17,17 +17,17 @@ use warp::reject::Rejection;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subscription {
     pub timeline: Timeline,
-    pub allowed_langs: HashSet<String>,
-    pub blocks: Blocks,
-    pub hashtag_name: Option<String>,
+    pub(crate) allowed_langs: HashSet<String>,
+    pub(crate) blocks: Blocks,
+    pub(crate) hashtag_name: Option<String>,
     pub access_token: Option<String>,
 }
 
 #[derive(Clone, Default, Debug, PartialEq)]
-pub struct Blocks {
-    pub blocked_domains: HashSet<String>,
-    pub blocked_users: HashSet<Id>,
-    pub blocking_users: HashSet<Id>,
+pub(crate) struct Blocks {
+    pub(crate) blocked_domains: HashSet<String>,
+    pub(crate) blocked_users: HashSet<Id>,
+    pub(crate) blocking_users: HashSet<Id>,
 }
 
 impl Default for Subscription {

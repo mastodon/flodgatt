@@ -1,18 +1,19 @@
-pub mod connection;
+mod connection;
 mod manager;
-pub mod msg;
+mod msg;
 
-pub use connection::{RedisConn, RedisConnErr};
-pub use manager::{Manager, ManagerErr};
-pub use msg::RedisParseErr;
+pub(crate) use connection::{RedisConn, RedisConnErr};
+pub use manager::Manager;
+pub(crate) use manager::ManagerErr;
+pub(crate) use msg::RedisParseErr;
 
-pub enum RedisCmd {
+pub(crate) enum RedisCmd {
     Subscribe,
     Unsubscribe,
 }
 
 impl RedisCmd {
-    pub fn into_sendable(self, tl: &str) -> (Vec<u8>, Vec<u8>) {
+    pub(crate) fn into_sendable(self, tl: &str) -> (Vec<u8>, Vec<u8>) {
         match self {
             RedisCmd::Subscribe => (
                 [

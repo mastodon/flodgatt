@@ -1,7 +1,6 @@
 use std::fmt;
 #[derive(Debug)]
 pub enum RequestErr {
-    Unknown,
     PgPool(r2d2::Error),
     Pg(postgres::Error),
 }
@@ -12,7 +11,6 @@ impl fmt::Display for RequestErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         use RequestErr::*;
         let msg = match self {
-            Unknown => "Encountered an unrecoverable error related to handling a request".into(),
             PgPool(e) => format!("{}", e),
             Pg(e) => format!("{}", e),
         };
