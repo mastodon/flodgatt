@@ -53,6 +53,7 @@ impl TryFrom<&str> for Scope {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct UserData {
     pub(crate) id: Id,
     pub(crate) allowed_langs: HashSet<String>,
