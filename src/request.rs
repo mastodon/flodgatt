@@ -124,13 +124,16 @@ impl Handler {
             Some(PgPool::BAD_TOKEN) => (PgPool::BAD_TOKEN, Code::UNAUTHORIZED),
             Some(PgPool::PG_NULL) => (PgPool::PG_NULL, Code::BAD_REQUEST),
             Some(PgPool::MISSING_HASHTAG) => (PgPool::MISSING_HASHTAG, Code::BAD_REQUEST),
-            Some(PgPool::INTERNAL_ERR) | _ => (PgPool::INTERNAL_ERR, Code::INTERNAL_SERVER_ERROR),
+            Some(PgPool::SERVER_ERR) | Some(_) => (PgPool::SERVER_ERR, Code::INTERNAL_SERVER_ERROR),
+            None if r.is_not_found() => return Err(r),
+
+            None => (PgPool::SERVER_ERR, Code::INTERNAL_SERVER_ERROR),
         };
 
         if code == Code::INTERNAL_SERVER_ERROR {
-            log::error!("Internal error: {:?}", r);
+            log::error!("Internal error: {:?}", &r);
         } else {
-            log::info!("Request rejected: {} - {:?}", code, r);
+            log::info!("Request rejected: {} - {:?}", code, &r);
         };
         Ok(reply::with_status(reply::json(&msg), code))
     }
