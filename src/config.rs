@@ -1,13 +1,12 @@
-pub(crate) use postgres_cfg::Postgres;
-pub(crate) use redis_cfg::Redis;
-
-use deployment_cfg::Deployment;
+pub use self::deployment_cfg::Deployment;
+pub use self::postgres_cfg::Postgres;
+pub use self::redis_cfg::Redis;
 
 use self::environmental_variables::EnvVar;
-use super::err::FatalErr;
+
 use hashbrown::HashMap;
 use std::env;
-
+use std::fmt;
 mod deployment_cfg;
 mod deployment_cfg_types;
 mod environmental_variables;
@@ -16,13 +15,13 @@ mod postgres_cfg_types;
 mod redis_cfg;
 mod redis_cfg_types;
 
-type Result<T> = std::result::Result<T, FatalErr>;
+type Result<T> = std::result::Result<T, Error>;
 
 pub fn merge_dotenv() -> Result<()> {
     let env_file = match env::var("ENV").ok().as_deref() {
         Some("production") => ".env.production",
         Some("development") | None => ".env",
-        Some(v) => Err(FatalErr::config("ENV", v, "`production` or `development`"))?,
+        Some(v) => Err(Error::config("ENV", v, "`production` or `development`"))?,
     };
     let res = dotenv::from_filename(env_file);
 
@@ -57,4 +56,48 @@ pub fn from_env<'a>(
     log::info!("Configuration for {:#?}", &deployment_cfg);
 
     Ok((pg_cfg, redis_cfg, deployment_cfg))
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Config(String),
+    UrlEncoding(urlencoding::FromUrlEncodingError),
+    UrlParse(url::ParseError),
+}
+
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), fmt::Error> {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Config(e) => e.to_string(),
+                Self::UrlEncoding(e) => format!("could not parse POSTGRES_URL.\n{:7}{:?}", "", e),
+                Self::UrlParse(e) => format!("could parse Postgres URL.\n{:7}{}", "", e),
+            }
+        )
+    }
+}
+
+impl Error {
+    pub fn config<T: fmt::Display>(var: T, value: T, allowed_vals: T) -> Self {
+        Self::Config(format!(
+            "{0} is set to `{1}`, which is invalid.\n{3:7}{0} must be {2}.",
+            var, value, allowed_vals, ""
+        ))
+    }
+}
+
+impl From<urlencoding::FromUrlEncodingError> for Error {
+    fn from(e: urlencoding::FromUrlEncodingError) -> Self {
+        Self::UrlEncoding(e)
+    }
+}
+
+impl From<url::ParseError> for Error {
+    fn from(e: url::ParseError) -> Self {
+        Self::UrlParse(e)
+    }
 }

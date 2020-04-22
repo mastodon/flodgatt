@@ -1,17 +1,19 @@
-use super::{postgres_cfg_types::*, EnvVar};
-use crate::err::FatalErr;
+use super::postgres_cfg_types::*;
+use super::{EnvVar, Error};
 
 use url::Url;
 use urlencoding;
 
-type Result<T> = std::result::Result<T, FatalErr>;
+type Result<T> = std::result::Result<T, Error>;
 
+/// Configuration values for Postgres
 #[derive(Debug, Clone)]
 pub struct Postgres {
     pub(crate) user: PgUser,
     pub(crate) host: PgHost,
     pub(crate) password: PgPass,
-    pub(crate) database: PgDatabase,
+    /// The name of the postgres database to connect to
+    pub database: PgDatabase,
     pub(crate) port: PgPort,
     pub(crate) ssl_mode: PgSslMode,
 }
@@ -27,7 +29,7 @@ impl EnvVar {
                 "password" => self.maybe_add_env_var("DB_PASS", Some(v.to_string())),
                 "host" => self.maybe_add_env_var("DB_HOST", Some(v.to_string())),
                 "sslmode" => self.maybe_add_env_var("DB_SSLMODE", Some(v.to_string())),
-                _ => Err(FatalErr::config(
+                _ => Err(Error::config(
                     "POSTGRES_URL",
                     &k,
                     "a URL with parameters `password`, `user`, `host`, and `sslmode` only",

@@ -35,12 +35,22 @@
 //! polls the `Receiver` and the frequency with which the `Receiver` polls Redis.
 //!
 
-//#![warn(clippy::pedantic)]
+#![warn(clippy::pedantic)]
 #![allow(clippy::try_err, clippy::match_bool)]
-//#![allow(clippy::large_enum_variant)]
+#![allow(clippy::large_enum_variant)]
+
+pub use err::Error;
 
 pub mod config;
-pub mod err;
-pub mod event;
+mod err;
 pub mod request;
 pub mod response;
+
+/// A user ID.
+///
+/// Internally, Mastodon IDs are i64s, but are sent to clients as string because
+/// JavaScript numbers don't support i64s.  This newtype serializes to/from a string, but
+/// keeps the i64 as the "true" value for internal use.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[doc(hidden)]
+pub struct Id(pub i64);

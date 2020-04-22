@@ -61,6 +61,7 @@ impl fmt::Display for EnvVar {
     }
 }
 #[macro_export]
+#[doc(hidden)]
 macro_rules! maybe_update {
     ($name:ident; $item: tt:$type:ty) => (
         pub(crate) fn $name(self, item: Option<$type>) -> Self {
@@ -76,7 +77,9 @@ macro_rules! maybe_update {
                 None => Self { ..self }
             }
         })}
+
 #[macro_export]
+#[doc(hidden)]
 macro_rules! from_env_var {
     ($(#[$outer:meta])*
      let name = $name:ident;
@@ -106,15 +109,14 @@ macro_rules! from_env_var {
             fn inner_from_str($arg: &str) -> Option<$type> {
                 $body
             }
-            pub(crate) fn maybe_update(
-                self,
-                var: Option<&String>,
-            ) -> Result<Self, crate::err::FatalErr> {
+            pub(crate) fn maybe_update(self, var: Option<&String>) -> Result<Self, super::Error> {
                 Ok(match var {
                     Some(empty_string) if empty_string.is_empty() => Self::default(),
-                    Some(value) => Self(Self::inner_from_str(value).ok_or_else(|| {
-                        crate::err::FatalErr::config($env_var, value, $allowed_values)
-                    })?),
+                    Some(value) => {
+                        Self(Self::inner_from_str(value).ok_or_else(|| {
+                            super::Error::config($env_var, value, $allowed_values)
+                        })?)
+                    }
                     None => self,
                 })
             }

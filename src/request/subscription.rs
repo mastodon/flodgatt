@@ -8,7 +8,7 @@
 use super::postgres::PgPool;
 use super::query::Query;
 use super::{Content, Reach, Stream, Timeline};
-use crate::event::Id;
+use crate::Id;
 
 use hashbrown::HashSet;
 
@@ -17,17 +17,19 @@ use warp::reject::Rejection;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subscription {
     pub timeline: Timeline,
-    pub(crate) allowed_langs: HashSet<String>,
-    pub(crate) blocks: Blocks,
-    pub(crate) hashtag_name: Option<String>,
+    pub allowed_langs: HashSet<String>,
+    /// [Blocks](./request/struct.Blocks.html)
+    pub blocks: Blocks,
+    pub hashtag_name: Option<String>,
     pub access_token: Option<String>,
 }
 
+/// Blocked and muted users and domains
 #[derive(Clone, Default, Debug, PartialEq)]
-pub(crate) struct Blocks {
-    pub(crate) blocked_domains: HashSet<String>,
-    pub(crate) blocked_users: HashSet<Id>,
-    pub(crate) blocking_users: HashSet<Id>,
+pub struct Blocks {
+    pub blocked_domains: HashSet<String>,
+    pub blocked_users: HashSet<Id>,
+    pub blocking_users: HashSet<Id>,
 }
 
 impl Default for Subscription {

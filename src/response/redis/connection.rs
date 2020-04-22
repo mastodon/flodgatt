@@ -2,10 +2,11 @@ mod err;
 pub(crate) use err::RedisConnErr;
 
 use super::msg::{RedisParseErr, RedisParseOutput};
-use super::{ManagerErr, RedisCmd};
+use super::Error as ManagerErr;
+use super::Event;
+use super::RedisCmd;
 use crate::config::Redis;
-use crate::event::Event;
-use crate::request::{Stream, Timeline};
+use crate::request::Timeline;
 
 use futures::{Async, Poll};
 use lru::LruCache;
@@ -18,7 +19,7 @@ use std::time::Duration;
 type Result<T> = std::result::Result<T, RedisConnErr>;
 
 #[derive(Debug)]
-pub(crate) struct RedisConn {
+pub(super) struct RedisConn {
     primary: TcpStream,
     secondary: TcpStream,
     redis_namespace: Option<String>,
@@ -29,7 +30,7 @@ pub(crate) struct RedisConn {
 }
 
 impl RedisConn {
-    pub(crate) fn new(redis_cfg: &Redis) -> Result<Self> {
+    pub(super) fn new(redis_cfg: &Redis) -> Result<Self> {
         let addr = [&*redis_cfg.host, ":", &*redis_cfg.port.to_string()].concat();
 
         let conn = Self::new_connection(&addr, redis_cfg.password.as_ref())?;
@@ -50,7 +51,7 @@ impl RedisConn {
         Ok(redis_conn)
     }
 
-    pub(crate) fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
+    pub(super) fn poll_redis(&mut self) -> Poll<Option<(Timeline, Event)>, ManagerErr> {
         loop {
             match self.primary.read(&mut self.redis_input[self.cursor..]) {
                 Ok(n) => {
@@ -111,18 +112,15 @@ impl RedisConn {
         res
     }
 
-    pub(crate) fn update_cache(&mut self, hashtag: String, id: i64) {
+    pub(super) fn update_cache(&mut self, hashtag: String, id: i64) {
         self.tag_id_cache.put(hashtag.clone(), id);
         self.tag_name_cache.put(id, hashtag);
     }
 
     pub(crate) fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
-        let hashtag = match timeline {
-            Timeline(Stream::Hashtag(id), _, _) => self.tag_name_cache.get(id),
-            _non_hashtag_timeline => None,
-        };
-
+        let hashtag = timeline.tag().and_then(|id| self.tag_name_cache.get(&id));
         let tl = timeline.to_redis_raw_timeline(hashtag)?;
+
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
         self.primary.write_all(&primary_cmd)?;
         self.secondary.write_all(&secondary_cmd)?;

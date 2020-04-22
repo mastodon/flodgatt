@@ -1,4 +1,5 @@
-use super::super::EventErr;
+use super::super::err;
+use crate::Id;
 
 use serde::{
     de::{self, Visitor},
@@ -7,19 +8,11 @@ use serde::{
 use serde_json::Value;
 use std::{convert::TryFrom, fmt, num::ParseIntError, str::FromStr};
 
-/// A user ID.
-///
-/// Internally, Mastodon IDs are i64s, but are sent to clients as string because
-/// JavaScript numbers don't support i64s.  This newtype serializes to/from a string, but
-/// keeps the i64 as the "true" value for internal use.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Id(pub i64);
-
 impl TryFrom<&Value> for Id {
-    type Error = EventErr;
+    type Error = err::Event;
 
     fn try_from(v: &Value) -> Result<Self, Self::Error> {
-        Ok(v.as_str().ok_or(EventErr::DynParse)?.parse()?)
+        Ok(v.as_str().ok_or(err::Event::DynParse)?.parse()?)
     }
 }
 

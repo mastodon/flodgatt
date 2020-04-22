@@ -2,7 +2,7 @@
 use super::err;
 use super::timeline::{Scope, UserData};
 use crate::config;
-use crate::event::Id;
+use crate::Id;
 
 use ::postgres;
 use hashbrown::HashSet;
@@ -15,7 +15,7 @@ pub struct PgPool {
     whitelist_mode: bool,
 }
 
-type Result<T> = std::result::Result<T, err::RequestErr>;
+type Result<T> = std::result::Result<T, err::Error>;
 type Rejectable<T> = std::result::Result<T, warp::Rejection>;
 
 impl PgPool {

@@ -1,5 +1,5 @@
-use super::{deployment_cfg_types::*, EnvVar};
-use crate::err::FatalErr;
+use super::deployment_cfg_types::*;
+use super::{EnvVar, Error};
 
 #[derive(Debug, Default)]
 pub struct Deployment<'a> {
@@ -13,7 +13,7 @@ pub struct Deployment<'a> {
 }
 
 impl Deployment<'_> {
-    pub(crate) fn from_env(env: &EnvVar) -> Result<Self, FatalErr> {
+    pub(crate) fn from_env(env: &EnvVar) -> Result<Self, Error> {
         let mut cfg = Self {
             env: Env::default().maybe_update(env.get("NODE_ENV"))?,
             log_level: LogLevel::default().maybe_update(env.get("RUST_LOG"))?,

@@ -1,21 +1,19 @@
 //! Parse the client request and return a Subscription
 mod postgres;
 mod query;
-pub mod timeline;
+mod timeline;
 
 mod err;
 mod subscription;
 
-pub(crate) use self::err::RequestErr;
-pub(crate) use self::postgres::PgPool;
-
-pub(crate) use subscription::Blocks;
-pub use subscription::Subscription;
+pub use err::{Error, Timeline as TimelineErr};
+pub use subscription::{Blocks, Subscription};
 pub use timeline::Timeline;
-pub(crate) use timeline::{Content, Reach, Stream, TimelineErr};
+use timeline::{Content, Reach, Stream};
 
+pub use self::postgres::PgPool;
 use self::query::Query;
-use crate::config;
+use crate::config::Postgres;
 use warp::filters::BoxedFilter;
 use warp::http::StatusCode;
 use warp::path;
@@ -26,7 +24,7 @@ mod sse_test;
 #[cfg(test)]
 mod ws_test;
 
-type Result<T> = std::result::Result<T, err::RequestErr>;
+type Result<T> = std::result::Result<T, err::Error>;
 
 /// Helper macro to match on the first of any of the provided filters
 macro_rules! any_of {
@@ -62,7 +60,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn new(postgres_cfg: &config::Postgres, whitelist_mode: bool) -> Result<Self> {
+    pub fn new(postgres_cfg: &Postgres, whitelist_mode: bool) -> Result<Self> {
         Ok(Self {
             pg_conn: PgPool::new(postgres_cfg, whitelist_mode)?,
         })

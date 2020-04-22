@@ -1,9 +1,11 @@
-use crate::event::Event;
+use super::{Event, Payload};
 use crate::request::{Subscription, Timeline};
 
 use futures::{future::Future, stream::Stream};
 use tokio::sync::{mpsc, watch};
 use warp::ws::{Message, WebSocket};
+
+type Result<T> = std::result::Result<T, ()>;
 
 pub struct Ws {
     unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
@@ -52,40 +54,38 @@ impl Ws {
 
         incoming_events.for_each(move |(tl, event)| {
             if matches!(event, Event::Ping) {
-                self.send_msg(&event)
+                self.send_msg(&event)?
             } else if target_timeline == tl {
-                use crate::event::{CheckedEvent::Update, Event::*, EventKind};
-                use crate::request::Stream::Public;
-                let blocks = &self.subscription.blocks;
-                let allowed_langs = &self.subscription.allowed_langs;
-
-                match event {
-                    TypeSafe(Update { payload, queued_at }) => match tl {
-                        Timeline(Public, _, _) if payload.language_not(allowed_langs) => Ok(()),
-                        _ if payload.involves_any(&blocks) => Ok(()),
-                        _ => self.send_msg(&TypeSafe(Update { payload, queued_at })),
-                    },
-                    TypeSafe(non_update) => self.send_msg(&TypeSafe(non_update)),
-                    Dynamic(dyn_event) => {
-                        if let EventKind::Update(s) = dyn_event.kind.clone() {
-                            match tl {
-                                Timeline(Public, _, _) if s.language_not(allowed_langs) => Ok(()),
-                                _ if s.involves_any(&blocks) => Ok(()),
-                                _ => self.send_msg(&Dynamic(dyn_event)),
-                            }
-                        } else {
-                            self.send_msg(&Dynamic(dyn_event))
-                        }
-                    }
-                    Ping => unreachable!(), // handled pings above
+                match (event.update_payload(), event.dyn_update_payload()) {
+                    (Some(update), _) => self.send_or_filter(tl, &event, update)?,
+                    (None, None) => self.send_msg(&event)?, // send all non-updates
+                    (_, Some(dyn_update)) => self.send_or_filter(tl, &event, dyn_update)?,
                 }
-            } else {
-                Ok(())
             }
+            Ok(())
         })
     }
 
-    fn send_msg(&mut self, event: &Event) -> Result<(), ()> {
+    fn send_or_filter(&mut self, tl: Timeline, event: &Event, update: &impl Payload) -> Result<()> {
+        let blocks = &self.subscription.blocks;
+        let allowed_langs = &self.subscription.allowed_langs;
+        const SKIP: Result<()> = Ok(());
+        match tl {
+            tl if tl.is_public()
+                && !update.language_unset()
+                && !allowed_langs.is_empty()
+                && !allowed_langs.contains(&update.language()) =>
+            {
+                SKIP
+            }
+            _ if !blocks.blocked_users.is_disjoint(&update.involved_users()) => SKIP,
+            _ if blocks.blocking_users.contains(update.author()) => SKIP,
+            _ if blocks.blocked_domains.contains(update.sent_from()) => SKIP,
+            _ => Ok(self.send_msg(&event)?),
+        }
+    }
+
+    fn send_msg(&mut self, event: &Event) -> Result<()> {
         let txt = &event.to_json_string();
         let tl = self.subscription.timeline;
         let mut channel = self.ws_tx.clone().ok_or(())?;
