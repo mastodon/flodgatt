@@ -2,7 +2,7 @@ use super::{Event, Payload};
 use crate::request::{Subscription, Timeline};
 
 use futures::{future::Future, stream::Stream};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use warp::ws::{Message, WebSocket};
 
 type Result<T> = std::result::Result<T, ()>;
@@ -10,25 +10,27 @@ type Result<T> = std::result::Result<T, ()>;
 pub struct Ws {
     unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
     subscription: Subscription,
-    ws_rx: watch::Receiver<(Timeline, Event)>,
     ws_tx: Option<mpsc::UnboundedSender<Message>>,
 }
 
 impl Ws {
     pub fn new(
         unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
-        ws_rx: watch::Receiver<(Timeline, Event)>,
         subscription: Subscription,
     ) -> Self {
         Self {
             unsubscribe_tx,
             subscription,
-            ws_rx,
+
             ws_tx: None,
         }
     }
 
-    pub fn send_to(mut self, ws: WebSocket) -> impl Future<Item = (), Error = ()> {
+    pub fn send_to(
+        mut self,
+        ws: WebSocket,
+        incoming_events: mpsc::UnboundedReceiver<Event>,
+    ) -> impl Future<Item = (), Error = ()> {
         let (transmit_to_ws, _receive_from_ws) = ws.split();
         // Create a pipe
         let (ws_tx, ws_rx) = mpsc::unbounded_channel();
@@ -49,29 +51,25 @@ impl Ws {
                 }),
         );
 
-        let target_timeline = self.subscription.timeline;
-        let incoming_events = self.ws_rx.clone().map_err(|_| ());
-
-        incoming_events.for_each(move |(tl, event)| {
-            //TODO            log::info!("{:?}, {:?}", &tl, &event);
+        incoming_events.map_err(|_| ()).for_each(move |event| {
             if matches!(event, Event::Ping) {
                 self.send_msg(&event)?
-            } else if target_timeline == tl {
+            } else {
                 match (event.update_payload(), event.dyn_update_payload()) {
-                    (Some(update), _) => self.send_or_filter(tl, &event, update)?,
+                    (Some(update), _) => self.send_or_filter(&event, update)?,
                     (None, None) => self.send_msg(&event)?, // send all non-updates
-                    (_, Some(dyn_update)) => self.send_or_filter(tl, &event, dyn_update)?,
+                    (_, Some(dyn_update)) => self.send_or_filter(&event, dyn_update)?,
                 }
             }
             Ok(())
         })
     }
 
-    fn send_or_filter(&mut self, tl: Timeline, event: &Event, update: &impl Payload) -> Result<()> {
+    fn send_or_filter(&mut self, event: &Event, update: &impl Payload) -> Result<()> {
         let (blocks, allowed_langs) = (&self.subscription.blocks, &self.subscription.allowed_langs);
         const SKIP: Result<()> = Ok(());
 
-        match tl {
+        match self.subscription.timeline {
             tl if tl.is_public()
                 && !update.language_unset()
                 && !allowed_langs.is_empty()

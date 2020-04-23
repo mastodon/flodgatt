@@ -11,6 +11,7 @@ pub enum Error {
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
     ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
+    ChannelSendErr2(tokio::sync::mpsc::error::UnboundedTrySendError<Event>),
 }
 
 impl std::error::Error for Error {}
@@ -28,6 +29,7 @@ impl fmt::Display for Error {
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
             ChannelSendErr(inner) => write!(f, "{}", inner),
+            ChannelSendErr2(inner) => write!(f, "{}", inner),
         }?;
         Ok(())
     }
@@ -36,6 +38,11 @@ impl fmt::Display for Error {
 impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for Error {
     fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
         Self::ChannelSendErr(error)
+    }
+}
+impl From<tokio::sync::mpsc::error::UnboundedTrySendError<Event>> for Error {
+    fn from(error: tokio::sync::mpsc::error::UnboundedTrySendError<Event>) -> Self {
+        Self::ChannelSendErr2(error)
     }
 }
 

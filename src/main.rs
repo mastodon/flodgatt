@@ -22,6 +22,7 @@ fn main() -> Result<(), Error> {
 
     // Create channels to communicate between threads
     let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
+
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
 
     let request = Handler::new(&postgres_cfg, *cfg.whitelist_mode)?;
@@ -36,7 +37,8 @@ fn main() -> Result<(), Error> {
         .map(move |subscription: Subscription, sse: warp::sse::Sse| {
             log::info!("Incoming SSE request for {:?}", subscription.timeline);
             let mut manager = sse_manager.lock().unwrap_or_else(RedisManager::recover);
-            manager.subscribe(&subscription);
+            let (event_tx_2, _event_rx_2) = mpsc::unbounded_channel();
+            manager.subscribe(&subscription, event_tx_2);
 
             SseStream::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
         })
@@ -50,11 +52,15 @@ fn main() -> Result<(), Error> {
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             let mut manager = ws_manager.lock().unwrap_or_else(RedisManager::recover);
-            manager.subscribe(&subscription);
+            let (event_tx_2, event_rx_2) = mpsc::unbounded_channel();
+            manager.subscribe(&subscription, event_tx_2);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
-            let ws_stream = WsStream::new(cmd_tx.clone(), event_rx.clone(), subscription);
+            let ws_stream = WsStream::new(cmd_tx.clone(), subscription);
 
-            (ws.on_upgrade(move |ws| ws_stream.send_to(ws)), token)
+            (
+                ws.on_upgrade(move |ws| ws_stream.send_to(ws, event_rx_2)),
+                token,
+            )
         })
         .map(|(reply, token)| warp::reply::with_header(reply, "sec-websocket-protocol", token));
 

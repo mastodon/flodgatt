@@ -25,6 +25,7 @@ pub struct Manager {
     redis_connection: RedisConn,
     clients_per_timeline: HashMap<Timeline, i32>,
     tx: watch::Sender<(Timeline, Event)>,
+    timelines: HashMap<Timeline, Vec<mpsc::UnboundedSender<Event>>>,
     rx: mpsc::UnboundedReceiver<Timeline>,
     ping_time: Instant,
 }
@@ -40,6 +41,7 @@ impl Manager {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
             clients_per_timeline: HashMap::new(),
+            timelines: HashMap::new(),
             tx,
             rx,
             ping_time: Instant::now(),
@@ -50,11 +52,20 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription) {
+    pub fn subscribe(
+        &mut self,
+        subscription: &Subscription,
+        channel: mpsc::UnboundedSender<Event>,
+    ) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);
         };
+
+        self.timelines
+            .entry(tl)
+            .and_modify(|vec| vec.push(channel.clone()))
+            .or_insert_with(|| vec![channel]);
 
         let number_of_subscriptions = self
             .clients_per_timeline
@@ -70,7 +81,16 @@ impl Manager {
         };
     }
 
-    pub(crate) fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {
+    pub(crate) fn unsubscribe(
+        &mut self,
+        tl: Timeline,
+        _target_channel: mpsc::UnboundedSender<Event>,
+    ) -> Result<()> {
+        let channels = self.timelines.get(&tl).expect("TODO");
+        for (_i, _channel) in channels.iter().enumerate() {
+            // TODO - find alternate implementation
+        }
+
         let number_of_subscriptions = self
             .clients_per_timeline
             .entry(tl)
@@ -92,21 +112,39 @@ impl Manager {
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
-        while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
-            self.unsubscribe(tl)?
-        }
-
+        // while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
+        //     self.unsubscribe(tl)?
+        // }
+        let mut completed_timelines = Vec::new();
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
-            self.tx.broadcast((Timeline::empty(), Event::Ping))?
-        } else {
-            match self.redis_connection.poll_redis() {
-                Ok(Async::NotReady) | Ok(Async::Ready(None)) => (), // None = cmd or msg for other namespace
-                Ok(Async::Ready(Some((timeline, event)))) => {
-                    self.tx.broadcast((timeline, event))?
+            for (timeline, channels) in self.timelines.iter_mut() {
+                for channel in channels.iter_mut() {
+                    match channel.try_send(Event::Ping) {
+                        Ok(_) => (),
+                        Err(_) => completed_timelines.push((*timeline, channel.clone())),
+                    }
                 }
+            }
+        };
+        loop {
+            match self.redis_connection.poll_redis() {
+                Ok(Async::NotReady) => break,
+                Ok(Async::Ready(Some((timeline, event)))) => {
+                    for channel in self.timelines.get_mut(&timeline).ok_or(Error::InvalidId)? {
+                        match channel.try_send(event.clone()) {
+                            Ok(_) => (),
+                            Err(_) => completed_timelines.push((timeline, channel.clone())),
+                        }
+                    }
+                }
+                Ok(Async::Ready(None)) => (), // None = cmd or msg for other namespace
                 Err(err) => log::error!("{}", err), // drop msg, log err, and proceed
             }
+        }
+
+        for (tl, channel) in completed_timelines {
+            self.unsubscribe(tl, channel)?;
         }
         Ok(())
     }
