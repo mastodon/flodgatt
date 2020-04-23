@@ -53,7 +53,7 @@ impl Ws {
         let incoming_events = self.ws_rx.clone().map_err(|_| ());
 
         incoming_events.for_each(move |(tl, event)| {
-            //            dbg!(&tl, &event);
+            //TODO            log::info!("{:?}, {:?}", &tl, &event);
             if matches!(event, Event::Ping) {
                 self.send_msg(&event)?
             } else if target_timeline == tl {
@@ -70,6 +70,7 @@ impl Ws {
     fn send_or_filter(&mut self, tl: Timeline, event: &Event, update: &impl Payload) -> Result<()> {
         let (blocks, allowed_langs) = (&self.subscription.blocks, &self.subscription.allowed_langs);
         const SKIP: Result<()> = Ok(());
+
         match tl {
             tl if tl.is_public()
                 && !update.language_unset()
