@@ -8,7 +8,7 @@ use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct DynEvent {
     #[serde(skip)]
     pub(crate) kind: EventKind,
@@ -17,7 +17,7 @@ pub struct DynEvent {
     pub(crate) queued_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum EventKind {
     Update(DynStatus),
     NonUpdate,
@@ -29,7 +29,7 @@ impl Default for EventKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DynStatus {
     pub(crate) id: Id,
     pub(crate) username: String,

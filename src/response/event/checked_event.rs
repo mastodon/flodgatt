@@ -22,7 +22,7 @@ use serde::Deserialize;
 
 #[serde(rename_all = "snake_case", tag = "event", deny_unknown_fields)]
 #[rustfmt::skip]
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum CheckedEvent {
     Update { payload: Status, queued_at: Option<i64> },
     Notification { payload: Notification },

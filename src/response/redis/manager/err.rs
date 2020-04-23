@@ -6,11 +6,13 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     InvalidId,
+
     TimelineErr(TimelineErr),
     EventErr(EventErr),
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
     ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
+    ChannelSendErr2(tokio::sync::mpsc::error::UnboundedTrySendError<Event>),
 }
 
 impl std::error::Error for Error {}
@@ -21,13 +23,14 @@ impl fmt::Display for Error {
         match self {
             InvalidId => write!(
                 f,
-                "Attempted to get messages for a subscription that had not been set up."
+                "tried to access a timeline/channel subscription that does not exist"
             ),
             EventErr(inner) => write!(f, "{}", inner),
             RedisParseErr(inner) => write!(f, "{}", inner),
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
             ChannelSendErr(inner) => write!(f, "{}", inner),
+            ChannelSendErr2(inner) => write!(f, "{}", inner),
         }?;
         Ok(())
     }
@@ -36,6 +39,11 @@ impl fmt::Display for Error {
 impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for Error {
     fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
         Self::ChannelSendErr(error)
+    }
+}
+impl From<tokio::sync::mpsc::error::UnboundedTrySendError<Event>> for Error {
+    fn from(error: tokio::sync::mpsc::error::UnboundedTrySendError<Event>) -> Self {
+        Self::ChannelSendErr2(error)
     }
 }
 

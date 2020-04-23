@@ -1,41 +1,30 @@
 use super::{Event, Payload};
-use crate::request::{Subscription, Timeline};
+use crate::request::Subscription;
 
-use futures::{future::Future, stream::Stream};
-use tokio::sync::{mpsc, watch};
+use futures::future::Future;
+use futures::stream::Stream;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use warp::ws::{Message, WebSocket};
 
-type Result<T> = std::result::Result<T, ()>;
+type EventRx = UnboundedReceiver<Event>;
+type MsgTx = UnboundedSender<Message>;
 
-pub struct Ws {
-    unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
-    subscription: Subscription,
-    ws_rx: watch::Receiver<(Timeline, Event)>,
-    ws_tx: Option<mpsc::UnboundedSender<Message>>,
-}
+pub struct Ws(Subscription);
 
 impl Ws {
-    pub fn new(
-        unsubscribe_tx: mpsc::UnboundedSender<Timeline>,
-        ws_rx: watch::Receiver<(Timeline, Event)>,
-        subscription: Subscription,
-    ) -> Self {
-        Self {
-            unsubscribe_tx,
-            subscription,
-            ws_rx,
-            ws_tx: None,
-        }
+    pub fn new(subscription: Subscription) -> Self {
+        Self(subscription)
     }
 
-    pub fn send_to(mut self, ws: WebSocket) -> impl Future<Item = (), Error = ()> {
+    pub fn send_to(
+        mut self,
+        ws: WebSocket,
+        event_rx: EventRx,
+    ) -> impl Future<Item = (), Error = ()> {
         let (transmit_to_ws, _receive_from_ws) = ws.split();
-        // Create a pipe
-        let (ws_tx, ws_rx) = mpsc::unbounded_channel();
-        self.ws_tx = Some(ws_tx);
-
-        // Send one end of it to a different green thread and tell that end to forward
-        // whatever it gets on to the WebSocket client
+        // Create a pipe, send one end of it to a different green thread and tell that end
+        // to forward to the WebSocket client
+        let (mut ws_tx, ws_rx) = mpsc::unbounded_channel();
         warp::spawn(
             ws_rx
                 .map_err(|_| -> warp::Error { unreachable!() })
@@ -49,61 +38,53 @@ impl Ws {
                 }),
         );
 
-        let target_timeline = self.subscription.timeline;
-        let incoming_events = self.ws_rx.clone().map_err(|_| ());
-
-        incoming_events.for_each(move |(tl, event)| {
-            //TODO            log::info!("{:?}, {:?}", &tl, &event);
+        event_rx.map_err(|_| ()).for_each(move |event| {
             if matches!(event, Event::Ping) {
-                self.send_msg(&event)?
-            } else if target_timeline == tl {
+                send_msg(&event, &mut ws_tx)?
+            } else {
                 match (event.update_payload(), event.dyn_update_payload()) {
-                    (Some(update), _) => self.send_or_filter(tl, &event, update)?,
-                    (None, None) => self.send_msg(&event)?, // send all non-updates
-                    (_, Some(dyn_update)) => self.send_or_filter(tl, &event, dyn_update)?,
-                }
+                    (Some(update), _) => self.send_or_filter(&event, update, &mut ws_tx),
+                    (None, None) => send_msg(&event, &mut ws_tx), // send all non-updates
+                    (_, Some(dyn_update)) => self.send_or_filter(&event, dyn_update, &mut ws_tx),
+                }?
             }
             Ok(())
         })
     }
 
-    fn send_or_filter(&mut self, tl: Timeline, event: &Event, update: &impl Payload) -> Result<()> {
-        let (blocks, allowed_langs) = (&self.subscription.blocks, &self.subscription.allowed_langs);
-        const SKIP: Result<()> = Ok(());
+    fn send_or_filter(
+        &mut self,
+        event: &Event,
+        update: &impl Payload,
+        mut ws_tx: &mut MsgTx,
+    ) -> Result<(), ()> {
+        let (blocks, allowed_langs) = (&self.0.blocks, &self.0.allowed_langs);
 
-        match tl {
+        let skip = |reason, tl| Ok(log::info!("{:?} msg skipped - {}", tl, reason));
+
+        match self.0.timeline {
             tl if tl.is_public()
                 && !update.language_unset()
                 && !allowed_langs.is_empty()
                 && !allowed_langs.contains(&update.language()) =>
             {
-                log::info!("{:?} msg skipped - disallowed language", tl);
-                SKIP
+                skip("disallowed language", tl)
             }
+
             tl if !blocks.blocked_users.is_disjoint(&update.involved_users()) => {
-                log::info!("{:?} msg skipped - involves blocked user", tl);
-                SKIP
+                skip("involves blocked user", tl)
             }
-            tl if blocks.blocking_users.contains(update.author()) => {
-                log::info!("{:?} msg skipped - from blocking user", tl);
-                SKIP
-            }
+            tl if blocks.blocking_users.contains(update.author()) => skip("from blocking user", tl),
             tl if blocks.blocked_domains.contains(update.sent_from()) => {
-                log::info!("{:?} msg skipped - from blocked domain", tl);
-                SKIP
+                skip("from blocked domain", tl)
             }
-            _ => Ok(self.send_msg(&event)?),
+            _ => Ok(send_msg(event, &mut ws_tx)?),
         }
     }
+}
 
-    fn send_msg(&mut self, event: &Event) -> Result<()> {
-        let txt = &event.to_json_string();
-        let tl = self.subscription.timeline;
-        let mut channel = self.ws_tx.clone().ok_or(())?;
-        channel.try_send(Message::text(txt)).map_err(|_| {
-            self.unsubscribe_tx
-                .try_send(tl)
-                .unwrap_or_else(|e| log::error!("could not unsubscribe from channel: {}", e));
-        })
-    }
+fn send_msg(event: &Event, ws_tx: &mut MsgTx) -> Result<(), ()> {
+    ws_tx
+        .try_send(Message::text(&event.to_json_string()))
+        .map_err(|_| log::info!("WebSocket connection closed"))
 }

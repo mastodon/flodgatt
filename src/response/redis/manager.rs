@@ -11,37 +11,29 @@ use crate::request::{Subscription, Timeline};
 
 pub(self) use super::EventErr;
 
-use futures::{Async, Stream as _Stream};
+use futures::Async;
 use hashbrown::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc::UnboundedSender;
+use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Error>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
-#[derive(Debug)]
 pub struct Manager {
     redis_connection: RedisConn,
-    clients_per_timeline: HashMap<Timeline, i32>,
-    tx: watch::Sender<(Timeline, Event)>,
-    rx: mpsc::UnboundedReceiver<Timeline>,
+    timelines: HashMap<Timeline, HashMap<Uuid, UnboundedSender<Event>>>,
     ping_time: Instant,
 }
 
 impl Manager {
     /// Create a new `Manager`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-    pub fn try_from(
-        redis_cfg: &config::Redis,
-        tx: watch::Sender<(Timeline, Event)>,
-        rx: mpsc::UnboundedReceiver<Timeline>,
-    ) -> Result<Self> {
+    pub fn try_from(redis_cfg: &config::Redis) -> Result<Self> {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
-            clients_per_timeline: HashMap::new(),
-            tx,
-            rx,
+            timelines: HashMap::new(),
             ping_time: Instant::now(),
         })
     }
@@ -50,63 +42,63 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription) {
+    pub fn subscribe(&mut self, subscription: &Subscription, channel: UnboundedSender<Event>) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);
         };
 
-        let number_of_subscriptions = self
-            .clients_per_timeline
-            .entry(tl)
-            .and_modify(|n| *n += 1)
-            .or_insert(1);
+        let channels = self.timelines.entry(tl).or_default();
+        channels.insert(Uuid::new_v4(), channel);
 
-        use RedisCmd::*;
-        if *number_of_subscriptions == 1 {
+        if channels.len() == 1 {
             self.redis_connection
-                .send_cmd(Subscribe, &tl)
+                .send_cmd(RedisCmd::Subscribe, &tl)
                 .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e));
         };
     }
 
-    pub(crate) fn unsubscribe(&mut self, tl: Timeline) -> Result<()> {
-        let number_of_subscriptions = self
-            .clients_per_timeline
-            .entry(tl)
-            .and_modify(|n| *n -= 1)
-            .or_insert_with(|| {
-                log::error!(
-                    "Attempted to unsubscribe from a timeline to which you were not subscribed: {:?}",
-                    tl
-                );
-                0
-            });
-        use RedisCmd::*;
-        if *number_of_subscriptions == 0 {
-            self.redis_connection.send_cmd(Unsubscribe, &tl)?;
-            self.clients_per_timeline.remove_entry(&tl);
+    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &Uuid) -> Result<()> {
+        let channels = self.timelines.get_mut(tl).ok_or(Error::InvalidId)?;
+        channels.remove(id);
+
+        if channels.len() == 0 {
+            self.redis_connection.send_cmd(RedisCmd::Unsubscribe, &tl)?;
+            self.timelines.remove(&tl);
         };
         log::info!("Ended stream for {:?}", tl);
         Ok(())
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
-        while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
-            self.unsubscribe(tl)?
-        }
-
+        let mut completed_timelines = Vec::new();
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
-            self.tx.broadcast((Timeline::empty(), Event::Ping))?
-        } else {
-            match self.redis_connection.poll_redis() {
-                Ok(Async::NotReady) | Ok(Async::Ready(None)) => (), // None = cmd or msg for other namespace
-                Ok(Async::Ready(Some((timeline, event)))) => {
-                    self.tx.broadcast((timeline, event))?
+            for (timeline, channels) in self.timelines.iter_mut() {
+                for (uuid, channel) in channels.iter_mut() {
+                    match channel.try_send(Event::Ping) {
+                        Ok(_) => (),
+                        Err(_) => completed_timelines.push((*timeline, *uuid)),
+                    }
                 }
+            }
+        };
+        loop {
+            match self.redis_connection.poll_redis() {
+                Ok(Async::NotReady) => break,
+                Ok(Async::Ready(Some((tl, event)))) => {
+                    for (uuid, tx) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
+                        tx.try_send(event.clone())
+                            .unwrap_or_else(|_| completed_timelines.push((tl, *uuid)))
+                    }
+                }
+                Ok(Async::Ready(None)) => (), // cmd or msg for other namespace
                 Err(err) => log::error!("{}", err), // drop msg, log err, and proceed
             }
+        }
+
+        for (tl, channel) in completed_timelines.iter_mut() {
+            self.unsubscribe(tl, &channel)?;
         }
         Ok(())
     }
@@ -119,20 +111,20 @@ impl Manager {
     pub fn count(&self) -> String {
         format!(
             "Current connections: {}",
-            self.clients_per_timeline.values().sum::<i32>()
+            self.timelines.values().map(|el| el.len()).sum::<usize>()
         )
     }
 
     pub fn list(&self) -> String {
         let max_len = self
-            .clients_per_timeline
+            .timelines
             .keys()
             .fold(0, |acc, el| acc.max(format!("{:?}:", el).len()));
-        self.clients_per_timeline
+        self.timelines
             .iter()
-            .map(|(tl, n)| {
+            .map(|(tl, channel_map)| {
                 let tl_txt = format!("{:?}:", tl);
-                format!("{:>1$} {2}\n", tl_txt, max_len, n)
+                format!("{:>1$} {2}\n", tl_txt, max_len, channel_map.len())
             })
             .collect()
     }

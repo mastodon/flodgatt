@@ -3,7 +3,7 @@ use crate::Id;
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Account {
     pub id: Id,
     username: String,
@@ -31,7 +31,7 @@ pub(super) struct Account {
 }
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct Field {
     name: String,
     value: String,
@@ -39,7 +39,7 @@ struct Field {
 }
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct Source {
     note: String,
     fields: Vec<Field>,
