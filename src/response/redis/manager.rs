@@ -59,7 +59,7 @@ impl Manager {
     }
 
     pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &Uuid) -> Result<()> {
-        let channels = self.timelines.get_mut(tl).expect("TODO");
+        let channels = self.timelines.get_mut(tl).ok_or(Error::InvalidId)?;
         channels.remove(id);
 
         if channels.len() == 0 {
@@ -71,10 +71,8 @@ impl Manager {
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
-        let (start, mut sent) = (std::time::Instant::now(), false);
         let mut completed_timelines = Vec::new();
         if self.ping_time.elapsed() > Duration::from_secs(30) {
-            log::info!("Ping!");
             self.ping_time = Instant::now();
             for (timeline, channels) in self.timelines.iter_mut() {
                 for (uuid, channel) in channels.iter_mut() {
@@ -89,13 +87,9 @@ impl Manager {
             match self.redis_connection.poll_redis() {
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(Some((tl, event)))) => {
-                    for (uuid, channel) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
-                        log::info!("Sending real event for {:?}", tl);
-                        sent = true;
-                        match channel.try_send(event.clone()) {
-                            Ok(_) => (),
-                            Err(_) => completed_timelines.push((tl, *uuid)),
-                        }
+                    for (uuid, tx) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
+                        tx.try_send(event.clone())
+                            .unwrap_or_else(|_| completed_timelines.push((tl, *uuid)))
                     }
                 }
                 Ok(Async::Ready(None)) => (), // cmd or msg for other namespace
@@ -105,9 +99,6 @@ impl Manager {
 
         for (tl, channel) in completed_timelines.iter_mut() {
             self.unsubscribe(tl, &channel)?;
-        }
-        if sent {
-            log::info!("{:?}", start.elapsed())
         }
         Ok(())
     }

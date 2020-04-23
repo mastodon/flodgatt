@@ -6,6 +6,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     InvalidId,
+
     TimelineErr(TimelineErr),
     EventErr(EventErr),
     RedisParseErr(RedisParseErr),
@@ -22,7 +23,7 @@ impl fmt::Display for Error {
         match self {
             InvalidId => write!(
                 f,
-                "Attempted to get messages for a subscription that had not been set up."
+                "tried to access a timeline/channel subscription that does not exist"
             ),
             EventErr(inner) => write!(f, "{}", inner),
             RedisParseErr(inner) => write!(f, "{}", inner),

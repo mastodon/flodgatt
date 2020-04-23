@@ -1,7 +1,8 @@
 use super::{Event, Payload};
 use crate::request::Subscription;
 
-use futures::{future::Future, stream::Stream};
+use futures::future::Future;
+use futures::stream::Stream;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use warp::ws::{Message, WebSocket};
 
@@ -31,9 +32,7 @@ impl Ws {
                 .map(|_r| ())
                 .map_err(|e| {
                     match e.to_string().as_ref() {
-                        "IO error: Broken pipe (os error 32)" => {
-                            log::info!("Client connection lost")
-                        } // just closed unix socket
+                        "IO error: Broken pipe (os error 32)" => (), // just closed unix socket
                         _ => log::warn!("WebSocket send error: {}", e),
                     }
                 }),
