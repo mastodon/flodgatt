@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) enum Visibility {
     Public,
     Unlisted,

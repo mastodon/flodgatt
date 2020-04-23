@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Card {
     url: String,
     title: String,
@@ -19,7 +19,7 @@ pub(super) struct Card {
 }
 
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 enum CardType {
     Link,
     Photo,

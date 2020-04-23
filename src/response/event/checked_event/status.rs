@@ -20,7 +20,7 @@ use std::boxed::Box;
 use std::string::String;
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Status {
     id: Id,
     uri: String,

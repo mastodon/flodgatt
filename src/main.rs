@@ -1,6 +1,6 @@
 use flodgatt::config;
-use flodgatt::request::{Handler, Subscription, Timeline};
-use flodgatt::response::{Event, RedisManager, SseStream, WsStream};
+use flodgatt::request::{Handler, Subscription};
+use flodgatt::response::{RedisManager, SseStream, WsStream};
 use flodgatt::Error;
 
 use futures::{future::lazy, stream::Stream as _};
@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Instant;
 use tokio::net::UnixListener;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio::timer::Interval;
 use warp::ws::Ws2;
 use warp::Filter;
@@ -20,27 +20,21 @@ fn main() -> Result<(), Error> {
     let (postgres_cfg, redis_cfg, cfg) = config::from_env(dotenv::vars().collect())?;
     let poll_freq = *redis_cfg.polling_interval;
 
-    // Create channels to communicate between threads
-    let (event_tx, event_rx) = watch::channel((Timeline::empty(), Event::Ping));
-
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-
     let request = Handler::new(&postgres_cfg, *cfg.whitelist_mode)?;
-    let shared_manager = RedisManager::try_from(&redis_cfg, event_tx, cmd_rx)?.into_arc();
+    let shared_manager = RedisManager::try_from(&redis_cfg)?.into_arc();
 
     // Server Sent Events
     let sse_manager = shared_manager.clone();
-    let (sse_rx, sse_cmd_tx) = (event_rx.clone(), cmd_tx.clone());
     let sse = request
         .sse_subscription()
         .and(warp::sse())
         .map(move |subscription: Subscription, sse: warp::sse::Sse| {
             log::info!("Incoming SSE request for {:?}", subscription.timeline);
             let mut manager = sse_manager.lock().unwrap_or_else(RedisManager::recover);
-            let (event_tx_2, _event_rx_2) = mpsc::unbounded_channel();
-            manager.subscribe(&subscription, event_tx_2);
-
-            SseStream::send_events(sse, sse_cmd_tx.clone(), subscription, sse_rx.clone())
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            manager.subscribe(&subscription, event_tx);
+            let sse_stream = SseStream::new(subscription);
+            sse_stream.send_events(sse, event_rx)
         })
         .with(warp::reply::with::header("Connection", "keep-alive"));
 
@@ -52,13 +46,13 @@ fn main() -> Result<(), Error> {
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             let mut manager = ws_manager.lock().unwrap_or_else(RedisManager::recover);
-            let (event_tx_2, event_rx_2) = mpsc::unbounded_channel();
-            manager.subscribe(&subscription, event_tx_2);
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            manager.subscribe(&subscription, event_tx);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
-            let ws_stream = WsStream::new(cmd_tx.clone(), subscription);
+            let ws_stream = WsStream::new(subscription);
 
             (
-                ws.on_upgrade(move |ws| ws_stream.send_to(ws, event_rx_2)),
+                ws.on_upgrade(move |ws| ws_stream.send_to(ws, event_rx)),
                 token,
             )
         })

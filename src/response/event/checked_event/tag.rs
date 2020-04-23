@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Tag {
     name: String,
     url: String,
@@ -9,7 +9,7 @@ pub(super) struct Tag {
 }
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct History {
     day: String,
     uses: String,

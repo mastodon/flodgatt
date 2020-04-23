@@ -11,39 +11,29 @@ use crate::request::{Subscription, Timeline};
 
 pub(self) use super::EventErr;
 
-use futures::{Async, Stream as _Stream};
+use futures::Async;
 use hashbrown::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc::UnboundedSender;
+use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Error>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
-#[derive(Debug)]
 pub struct Manager {
     redis_connection: RedisConn,
-    clients_per_timeline: HashMap<Timeline, i32>,
-    tx: watch::Sender<(Timeline, Event)>,
-    timelines: HashMap<Timeline, Vec<mpsc::UnboundedSender<Event>>>,
-    rx: mpsc::UnboundedReceiver<Timeline>,
+    timelines: HashMap<Timeline, HashMap<Uuid, UnboundedSender<Event>>>,
     ping_time: Instant,
 }
 
 impl Manager {
     /// Create a new `Manager`, with its own Redis connections (but, as yet, no
     /// active subscriptions).
-    pub fn try_from(
-        redis_cfg: &config::Redis,
-        tx: watch::Sender<(Timeline, Event)>,
-        rx: mpsc::UnboundedReceiver<Timeline>,
-    ) -> Result<Self> {
+    pub fn try_from(redis_cfg: &config::Redis) -> Result<Self> {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
-            clients_per_timeline: HashMap::new(),
             timelines: HashMap::new(),
-            tx,
-            rx,
             ping_time: Instant::now(),
         })
     }
@@ -52,77 +42,45 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(
-        &mut self,
-        subscription: &Subscription,
-        channel: mpsc::UnboundedSender<Event>,
-    ) {
+    pub fn subscribe(&mut self, subscription: &Subscription, channel: UnboundedSender<Event>) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);
         };
 
-        self.timelines
-            .entry(tl)
-            .and_modify(|vec| vec.push(channel.clone()))
-            .or_insert_with(|| vec![channel]);
+        let channels = self.timelines.entry(tl).or_default();
+        channels.insert(Uuid::new_v4(), channel);
 
-        let number_of_subscriptions = self
-            .clients_per_timeline
-            .entry(tl)
-            .and_modify(|n| *n += 1)
-            .or_insert(1);
-
-        use RedisCmd::*;
-        if *number_of_subscriptions == 1 {
+        if channels.len() == 1 {
             self.redis_connection
-                .send_cmd(Subscribe, &tl)
+                .send_cmd(RedisCmd::Subscribe, &tl)
                 .unwrap_or_else(|e| log::error!("Could not subscribe to the Redis channel: {}", e));
         };
     }
 
-    pub(crate) fn unsubscribe(
-        &mut self,
-        tl: Timeline,
-        _target_channel: mpsc::UnboundedSender<Event>,
-    ) -> Result<()> {
-        let channels = self.timelines.get(&tl).expect("TODO");
-        for (_i, _channel) in channels.iter().enumerate() {
-            // TODO - find alternate implementation
-        }
+    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &Uuid) -> Result<()> {
+        let channels = self.timelines.get_mut(tl).expect("TODO");
+        channels.remove(id);
 
-        let number_of_subscriptions = self
-            .clients_per_timeline
-            .entry(tl)
-            .and_modify(|n| *n -= 1)
-            .or_insert_with(|| {
-                log::error!(
-                    "Attempted to unsubscribe from a timeline to which you were not subscribed: {:?}",
-                    tl
-                );
-                0
-            });
-        use RedisCmd::*;
-        if *number_of_subscriptions == 0 {
-            self.redis_connection.send_cmd(Unsubscribe, &tl)?;
-            self.clients_per_timeline.remove_entry(&tl);
+        if channels.len() == 0 {
+            self.redis_connection.send_cmd(RedisCmd::Unsubscribe, &tl)?;
+            self.timelines.remove(&tl);
         };
         log::info!("Ended stream for {:?}", tl);
         Ok(())
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
-        // while let Ok(Async::Ready(Some(tl))) = self.rx.poll() {
-        //     self.unsubscribe(tl)?
-        // }
+        let (start, mut sent) = (std::time::Instant::now(), false);
         let mut completed_timelines = Vec::new();
         if self.ping_time.elapsed() > Duration::from_secs(30) {
+            log::info!("Ping!");
             self.ping_time = Instant::now();
             for (timeline, channels) in self.timelines.iter_mut() {
-                for channel in channels.iter_mut() {
+                for (uuid, channel) in channels.iter_mut() {
                     match channel.try_send(Event::Ping) {
                         Ok(_) => (),
-                        Err(_) => completed_timelines.push((*timeline, channel.clone())),
+                        Err(_) => completed_timelines.push((*timeline, *uuid)),
                     }
                 }
             }
@@ -130,21 +88,26 @@ impl Manager {
         loop {
             match self.redis_connection.poll_redis() {
                 Ok(Async::NotReady) => break,
-                Ok(Async::Ready(Some((timeline, event)))) => {
-                    for channel in self.timelines.get_mut(&timeline).ok_or(Error::InvalidId)? {
+                Ok(Async::Ready(Some((tl, event)))) => {
+                    for (uuid, channel) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
+                        log::info!("Sending real event for {:?}", tl);
+                        sent = true;
                         match channel.try_send(event.clone()) {
                             Ok(_) => (),
-                            Err(_) => completed_timelines.push((timeline, channel.clone())),
+                            Err(_) => completed_timelines.push((tl, *uuid)),
                         }
                     }
                 }
-                Ok(Async::Ready(None)) => (), // None = cmd or msg for other namespace
+                Ok(Async::Ready(None)) => (), // cmd or msg for other namespace
                 Err(err) => log::error!("{}", err), // drop msg, log err, and proceed
             }
         }
 
-        for (tl, channel) in completed_timelines {
-            self.unsubscribe(tl, channel)?;
+        for (tl, channel) in completed_timelines.iter_mut() {
+            self.unsubscribe(tl, &channel)?;
+        }
+        if sent {
+            log::info!("{:?}", start.elapsed())
         }
         Ok(())
     }
@@ -157,20 +120,20 @@ impl Manager {
     pub fn count(&self) -> String {
         format!(
             "Current connections: {}",
-            self.clients_per_timeline.values().sum::<i32>()
+            self.timelines.values().map(|el| el.len()).sum::<usize>()
         )
     }
 
     pub fn list(&self) -> String {
         let max_len = self
-            .clients_per_timeline
+            .timelines
             .keys()
             .fold(0, |acc, el| acc.max(format!("{:?}:", el).len()));
-        self.clients_per_timeline
+        self.timelines
             .iter()
-            .map(|(tl, n)| {
+            .map(|(tl, channel_map)| {
                 let tl_txt = format!("{:?}:", tl);
-                format!("{:>1$} {2}\n", tl_txt, max_len, n)
+                format!("{:>1$} {2}\n", tl_txt, max_len, channel_map.len())
             })
             .collect()
     }

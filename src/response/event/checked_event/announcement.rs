@@ -2,7 +2,7 @@ use super::{emoji::Emoji, mention::Mention, tag::Tag, AnnouncementReaction};
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Announcement {
     // Fully undocumented
     id: String,

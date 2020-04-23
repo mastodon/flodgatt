@@ -2,7 +2,7 @@ use super::{account::Account, status::Status};
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Conversation {
     id: String,
     accounts: Vec<Account>,

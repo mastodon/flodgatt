@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Attachment {
     id: String,
     r#type: AttachmentType,
@@ -15,7 +15,7 @@ pub(super) struct Attachment {
 }
 
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 enum AttachmentType {
     Unknown,
     Image,

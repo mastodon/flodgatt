@@ -2,7 +2,7 @@ use super::super::emoji::Emoji;
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Poll {
     id: String,
     expires_at: String,
@@ -17,7 +17,7 @@ pub(super) struct Poll {
 }
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 struct PollOptions {
     title: String,
     votes_count: Option<i32>,

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct AnnouncementReaction {
     #[serde(skip_serializing_if = "Option::is_none")]
     announcement_id: Option<String>,

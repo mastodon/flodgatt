@@ -12,7 +12,7 @@ use std::convert::TryFrom;
 use std::string::String;
 use warp::sse::ServerSentEvent;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     TypeSafe(CheckedEvent),
     Dynamic(DynEvent),
