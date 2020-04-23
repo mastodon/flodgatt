@@ -63,7 +63,7 @@ impl RedisConn {
                     }
                 }
                 Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock) => {
-                    return Ok(Async::NotReady);
+                    break;
                 }
                 Err(e) => break log::error!("{}", e),
             };
@@ -96,19 +96,18 @@ impl RedisConn {
                 }
                 Some(_non_matching_namespace) => (Ok(Ready(None)), msg.leftover_input),
             },
+
             Ok(NonMsg(leftover)) => (Ok(Ready(None)), leftover),
             Err(RedisParseErr::Incomplete) => (Ok(NotReady), input),
             Err(other_parse_err) => (Err(ManagerErr::RedisParseErr(other_parse_err)), input),
         };
 
-        self.cursor = [leftover.as_bytes(), invalid_bytes]
-            .concat()
-            .bytes()
-            .fold(0, |acc, cur| {
-                // TODO - make clearer and comment side-effect
-                self.redis_input[acc] = cur.expect("TODO");
-                acc + 1
-            });
+        // Store leftover in same buffer and set cursor to start after leftover next time
+        self.cursor = 0;
+        for byte in [leftover.as_bytes(), invalid_bytes].concat().iter() {
+            self.redis_input[self.cursor] = *byte;
+            self.cursor += 1;
+        }
         res
     }
 
@@ -123,6 +122,12 @@ impl RedisConn {
 
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
         self.primary.write_all(&primary_cmd)?;
+
+        // We also need to set a key to tell the Puma server that we've subscribed
+        // or unsubscribed to the channel because it stops publishing updates when it
+        // thinks no one is subscribed.  (Documented in [PR
+        // #3278](https://github.com/tootsuite/mastodon/pull/3278))
+        // Question: why can't the Puma server just use NUMSUB for this?
         self.secondary.write_all(&secondary_cmd)?;
         Ok(())
     }

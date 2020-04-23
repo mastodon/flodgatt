@@ -1,4 +1,5 @@
 use std::fmt;
+
 #[derive(Debug)]
 pub enum Error {
     PgPool(r2d2::Error),
@@ -28,7 +29,7 @@ impl From<postgres::Error> for Error {
         Self::Pg(e)
     }
 }
-// TODO make Timeline & TimelineErr their own top-level module
+
 #[derive(Debug)]
 pub enum Timeline {
     MissingHashtag,

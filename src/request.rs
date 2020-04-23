@@ -17,6 +17,7 @@ use crate::config::Postgres;
 use warp::filters::BoxedFilter;
 use warp::http::StatusCode;
 use warp::path;
+use warp::reply;
 use warp::{Filter, Rejection};
 
 #[cfg(test)]
@@ -54,7 +55,7 @@ macro_rules! parse_sse_query {
     };
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Handler {
     pg_conn: PgPool,
 }
@@ -118,14 +119,23 @@ impl Handler {
     }
 
     pub fn err(r: Rejection) -> std::result::Result<impl warp::Reply, warp::Rejection> {
-        let json_err = match r.cause() {
-            Some(text) if text.to_string() == "Missing request header 'authorization'" => {
-                warp::reply::json(&"Error: Missing access token".to_string())
-            }
-            Some(text) => warp::reply::json(&text.to_string()),
-            None => warp::reply::json(&"Error: Nonexistant endpoint".to_string()),
+        use StatusCode as Code;
+        let (msg, code) = match &r.cause().map(|s| s.to_string()).as_deref() {
+            Some(PgPool::BAD_TOKEN) => (PgPool::BAD_TOKEN, Code::UNAUTHORIZED),
+            Some(PgPool::PG_NULL) => (PgPool::PG_NULL, Code::BAD_REQUEST),
+            Some(PgPool::MISSING_HASHTAG) => (PgPool::MISSING_HASHTAG, Code::BAD_REQUEST),
+            Some(PgPool::SERVER_ERR) | Some(_) => (PgPool::SERVER_ERR, Code::INTERNAL_SERVER_ERROR),
+            None if r.is_not_found() => return Err(r),
+
+            None => (PgPool::SERVER_ERR, Code::INTERNAL_SERVER_ERROR),
         };
-        Ok(warp::reply::with_status(json_err, StatusCode::UNAUTHORIZED))
+
+        if code == Code::INTERNAL_SERVER_ERROR {
+            log::error!("Internal error: {:?}", &r);
+        } else {
+            log::info!("Request rejected: {} - {:?}", code, &r);
+        };
+        Ok(reply::with_status(reply::json(&msg), code))
     }
 }
 

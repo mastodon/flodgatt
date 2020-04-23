@@ -29,9 +29,9 @@ impl RedisCmd {
                 .concat(),
                 [
                     b"*3\r\n$3\r\nSET\r\n$",
-                    tl.len().to_string().as_bytes(),
-                    b"\r\n",
-                    tl.as_bytes(),
+                    (tl.len() + "subscribed:".len()).to_string().as_bytes(),
+                    b"\r\nsubscribed:",
+                    tl.to_string().as_bytes(),
                     b"\r\n$1\r\n1\r\n",
                 ]
                 .concat(),
@@ -47,9 +47,9 @@ impl RedisCmd {
                 .concat(),
                 [
                     b"*3\r\n$3\r\nSET\r\n$",
-                    tl.len().to_string().as_bytes(),
-                    b"\r\n",
-                    tl.as_bytes(),
+                    (tl.len() + "subscribed:".len()).to_string().as_bytes(),
+                    b"\r\nsubscribed:",
+                    tl.to_string().as_bytes(),
                     b"\r\n$1\r\n0\r\n",
                 ]
                 .concat(),

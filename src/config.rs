@@ -26,13 +26,25 @@ pub fn merge_dotenv() -> Result<()> {
     let res = dotenv::from_filename(env_file);
 
     if let Ok(log_level) = env::var("RUST_LOG") {
-        if res.is_err() && ["warn", "info", "trace", "debug"].contains(&log_level.as_str()) {
-            eprintln!(
-                 " WARN: could not load environmental variables from {:?}\n\
-                  {:8}Are you in the right directory?  Proceeding with variables from the environment.",
-                env::current_dir().unwrap_or_else(|_|"./".into()).join(env_file), ""
+        if ["warn", "info", "trace", "debug"].contains(&log_level.as_str()) {
+            let env_file = env::current_dir()
+                .unwrap_or_else(|_| "./".into())
+                .join(env_file);
 
-            );
+            match res {
+                Err(dotenv::Error::LineParse(msg, line)) => eprintln!(
+                    " ERROR: could not parse environmental file at {:?}\n\
+                     {:8}could not parse line {}, `{}`",
+                    env_file, "", line, msg
+                ),
+                Err(dotenv::Error::Io(_)) => eprintln!(
+                    " WARN: could not load environmental variables from {:?}\n\
+                      {:8}Are you in the right directory?  Proceeding with variables from the environment.",
+                    env_file, ""
+                ),
+                Err(_) => eprintln!(" ERROR: could not load environmental file at {:?}", env_file),
+                Ok(_) => ()
+            }
         }
     }
     Ok(())
