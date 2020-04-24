@@ -60,28 +60,23 @@ impl Manager {
         };
     }
 
-    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &u32) -> Result<()> {
-        let channels = self.timelines.get_mut(tl).ok_or(Error::InvalidId)?;
-        channels.remove(id);
+    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline) -> Result<()> {
+        self.redis_connection.send_cmd(RedisCmd::Unsubscribe, &tl)?;
+        self.timelines.remove(&tl);
 
-        if channels.len() == 0 {
-            self.redis_connection.send_cmd(RedisCmd::Unsubscribe, &tl)?;
-            self.timelines.remove(&tl);
-        };
         log::info!("Ended stream for {:?}", tl);
         Ok(())
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
         let mut completed_timelines = Vec::new();
+
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
-            for (timeline, channels) in self.timelines.iter_mut() {
-                for (id, channel) in channels.iter_mut() {
-                    match channel.try_send(Arc::new(Event::Ping)) {
-                        Ok(_) => (),
-                        Err(_) => completed_timelines.push((*timeline, *id)),
-                    }
+            for (tl, channels) in self.timelines.iter_mut() {
+                channels.retain(|_id, channel| channel.try_send(Arc::new(Event::Ping)).is_ok());
+                if channels.is_empty() {
+                    completed_timelines.push(*tl);
                 }
             }
         };
@@ -91,9 +86,10 @@ impl Manager {
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(Some((tl, event)))) => {
                     let sendable_event = Arc::new(event);
-                    for (uuid, tx) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
-                        tx.try_send(sendable_event.clone())
-                            .unwrap_or_else(|_| completed_timelines.push((tl, *uuid)))
+                    let channels = self.timelines.get_mut(&tl).ok_or(Error::InvalidId)?;
+                    channels.retain(|_, channel| channel.try_send(sendable_event.clone()).is_ok());
+                    if channels.is_empty() {
+                        completed_timelines.push(tl);
                     }
                 }
                 Ok(Async::Ready(None)) => (), // cmd or msg for other namespace
@@ -101,8 +97,8 @@ impl Manager {
             }
         }
 
-        for (tl, channel) in completed_timelines.iter_mut() {
-            self.unsubscribe(tl, &channel)?;
+        for tl in &mut completed_timelines {
+            self.unsubscribe(tl)?;
         }
         Ok(())
     }
@@ -115,7 +111,7 @@ impl Manager {
     pub fn count(&self) -> String {
         format!(
             "Current connections: {}",
-            self.timelines.values().map(|el| el.len()).sum::<usize>()
+            self.timelines.values().map(HashMap::len).sum::<usize>()
         )
     }
 
