@@ -3,10 +3,11 @@ use crate::request::Subscription;
 
 use futures::future::Future;
 use futures::stream::Stream;
+use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
 use warp::ws::{Message, WebSocket};
 
-type EventRx = Receiver<Event>;
+type EventRx = Receiver<Arc<Event>>;
 type MsgTx = UnboundedSender<Message>;
 
 pub struct Ws(Subscription);
@@ -39,7 +40,7 @@ impl Ws {
         );
 
         event_rx.map_err(|_| ()).for_each(move |event| {
-            if matches!(event, Event::Ping) {
+            if matches!(*event, Event::Ping) {
                 send_msg(&event, &mut ws_tx)?
             } else {
                 match (event.update_payload(), event.dyn_update_payload()) {

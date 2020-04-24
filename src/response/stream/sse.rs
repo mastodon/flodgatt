@@ -2,12 +2,13 @@ use super::{Event, Payload};
 use crate::request::Subscription;
 
 use futures::stream::Stream;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use warp::reply::Reply;
 use warp::sse::Sse as WarpSse;
 
-type EventRx = Receiver<Event>;
+type EventRx = Receiver<Arc<Event>>;
 
 pub struct Sse(Subscription);
 

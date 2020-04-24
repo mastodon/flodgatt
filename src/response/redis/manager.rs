@@ -22,7 +22,7 @@ type Result<T> = std::result::Result<T, Error>;
 /// The item that streams from Redis and is polled by the `ClientAgent`
 pub struct Manager {
     redis_connection: RedisConn,
-    timelines: HashMap<Timeline, HashMap<u32, Sender<Event>>>,
+    timelines: HashMap<Timeline, HashMap<u32, Sender<Arc<Event>>>>,
     ping_time: Instant,
     channel_id: u32,
 }
@@ -43,7 +43,7 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription, channel: Sender<Event>) {
+    pub fn subscribe(&mut self, subscription: &Subscription, channel: Sender<Arc<Event>>) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);
@@ -78,19 +78,21 @@ impl Manager {
             self.ping_time = Instant::now();
             for (timeline, channels) in self.timelines.iter_mut() {
                 for (id, channel) in channels.iter_mut() {
-                    match channel.try_send(Event::Ping) {
+                    match channel.try_send(Arc::new(Event::Ping)) {
                         Ok(_) => (),
                         Err(_) => completed_timelines.push((*timeline, *id)),
                     }
                 }
             }
         };
+
         loop {
             match self.redis_connection.poll_redis() {
                 Ok(Async::NotReady) => break,
                 Ok(Async::Ready(Some((tl, event)))) => {
+                    let sendable_event = Arc::new(event);
                     for (uuid, tx) in self.timelines.get_mut(&tl).ok_or(Error::InvalidId)? {
-                        tx.try_send(event.clone())
+                        tx.try_send(sendable_event.clone())
                             .unwrap_or_else(|_| completed_timelines.push((tl, *uuid)))
                     }
                 }
