@@ -70,11 +70,16 @@ impl Manager {
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
         let mut completed_timelines = Vec::new();
+        let log_send_err = |tl, e| Some(log::error!("cannot send to {:?}: {}", tl, e)).is_some();
 
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
             for (tl, channels) in self.timelines.iter_mut() {
-                channels.retain(|_id, channel| channel.try_send(Arc::new(Event::Ping)).is_ok());
+                channels.retain(|_, chan| match chan.try_send(Arc::new(Event::Ping)) {
+                    Ok(()) => true,
+                    Err(e) if !e.is_closed() => log_send_err(*tl, e),
+                    Err(_) => false,
+                });
                 if channels.is_empty() {
                     completed_timelines.push(*tl);
                 }
@@ -87,7 +92,11 @@ impl Manager {
                 Ok(Async::Ready(Some((tl, event)))) => {
                     let sendable_event = Arc::new(event);
                     let channels = self.timelines.get_mut(&tl).ok_or(Error::InvalidId)?;
-                    channels.retain(|_, channel| channel.try_send(sendable_event.clone()).is_ok());
+                    channels.retain(|_, chan| match chan.try_send(sendable_event.clone()) {
+                        Ok(()) => true,
+                        Err(e) if !e.is_closed() => log_send_err(tl, e),
+                        Err(_) => false,
+                    });
                     if channels.is_empty() {
                         completed_timelines.push(tl);
                     }

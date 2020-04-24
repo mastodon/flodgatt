@@ -20,7 +20,7 @@ from_env_var!(
 from_env_var!(
     /// How frequently to poll Redis
     let name = RedisInterval;
-    let default: Duration = Duration::from_millis(10);
+    let default: Duration = Duration::from_millis(100);
     let (env_var, allowed_values) = ("REDIS_FREQ", "a number of milliseconds");
     let from_str = |s| s.parse().map(Duration::from_millis).ok();
 );

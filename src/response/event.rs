@@ -21,13 +21,9 @@ pub enum Event {
 
 pub(crate) trait Payload {
     fn language_unset(&self) -> bool;
-
     fn language(&self) -> String;
-
     fn involved_users(&self) -> HashSet<Id>;
-
     fn author(&self) -> &Id;
-
     fn sent_from(&self) -> &str;
 }
 
