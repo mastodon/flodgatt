@@ -4,11 +4,10 @@ use crate::request::Subscription;
 use futures::future::Future;
 use futures::stream::Stream;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
+use tokio::sync::mpsc::Receiver;
 use warp::ws::{Message, WebSocket};
 
 type EventRx = Receiver<Arc<Event>>;
-type MsgTx = UnboundedSender<Message>;
 
 pub struct Ws(Subscription);
 
@@ -23,45 +22,37 @@ impl Ws {
         event_rx: EventRx,
     ) -> impl Future<Item = (), Error = ()> {
         let (transmit_to_ws, _receive_from_ws) = ws.split();
-        // Create a pipe, send one end of it to a different green thread and tell that end
-        // to forward to the WebSocket client
-        let (mut ws_tx, ws_rx) = mpsc::unbounded_channel();
-        warp::spawn(
-            ws_rx
-                .map_err(|_| -> warp::Error { unreachable!() })
-                .forward(transmit_to_ws)
-                .map(|_r| ())
-                .map_err(|e| {
-                    match e.to_string().as_ref() {
-                        "IO error: Broken pipe (os error 32)" => (), // just closed unix socket
-                        _ => log::warn!("WebSocket send error: {}", e),
+        event_rx
+            .filter_map(move |event| {
+                if matches!(*event, Event::Ping) {
+                    Some(Message::text(&event.to_json_string()))
+                } else {
+                    match (event.update_payload(), event.dyn_update_payload()) {
+                        (Some(update), _) if !self.filtered(update) => {
+                            Some(Message::text(&event.to_json_string()))
+                        }
+                        (None, None) => Some(Message::text(&event.to_json_string())), // send all non-updates
+                        (_, Some(dyn_update)) if !self.filtered(dyn_update) => {
+                            Some(Message::text(&event.to_json_string()))
+                        }
+                        _ => None,
                     }
-                }),
-        );
-
-        event_rx.map_err(|_| ()).for_each(move |event| {
-            if matches!(*event, Event::Ping) {
-                send_msg(&event, &mut ws_tx)?
-            } else {
-                match (event.update_payload(), event.dyn_update_payload()) {
-                    (Some(update), _) => self.send_or_filter(&event, update, &mut ws_tx),
-                    (None, None) => send_msg(&event, &mut ws_tx), // send all non-updates
-                    (_, Some(dyn_update)) => self.send_or_filter(&event, dyn_update, &mut ws_tx),
-                }?
-            }
-            Ok(())
-        })
+                }
+            })
+            .map_err(|_| -> warp::Error { unreachable!() })
+            .forward(transmit_to_ws)
+            .map(|_r| ())
+            // ignore errors that indicate normal disconnects.  TODO - once we upgrade our
+            // Warp version, we should stop matching on text, which is fragile.
+            .map_err(|e| match e.to_string().as_ref() {
+                "IO error: Broken pipe (os error 32)"
+                | "IO error: Connection reset by peer (os error 104)" => (),
+                e => log::warn!("WebSocket send error: {}", e),
+            })
     }
-
-    fn send_or_filter(
-        &mut self,
-        event: &Event,
-        update: &impl Payload,
-        mut ws_tx: &mut MsgTx,
-    ) -> Result<(), ()> {
+    fn filtered(&mut self, update: &impl Payload) -> bool {
         let (blocks, allowed_langs) = (&self.0.blocks, &self.0.allowed_langs);
-
-        let skip = |reason, tl| Ok(log::info!("{:?} msg skipped - {}", tl, reason));
+        let skip = |msg| Some(log::info!("{:?} msg skipped - {}", self.0.timeline, msg)).is_some();
 
         match self.0.timeline {
             tl if tl.is_public()
@@ -69,23 +60,14 @@ impl Ws {
                 && !allowed_langs.is_empty()
                 && !allowed_langs.contains(&update.language()) =>
             {
-                skip("disallowed language", tl)
+                skip("disallowed language")
             }
-
-            tl if !blocks.blocked_users.is_disjoint(&update.involved_users()) => {
-                skip("involves blocked user", tl)
+            _ if !blocks.blocked_users.is_disjoint(&update.involved_users()) => {
+                skip("involves blocked user")
             }
-            tl if blocks.blocking_users.contains(update.author()) => skip("from blocking user", tl),
-            tl if blocks.blocked_domains.contains(update.sent_from()) => {
-                skip("from blocked domain", tl)
-            }
-            _ => Ok(send_msg(event, &mut ws_tx)?),
+            _ if blocks.blocking_users.contains(update.author()) => skip("from blocking user"),
+            _ if blocks.blocked_domains.contains(update.sent_from()) => skip("from blocked domain"),
+            _ => false,
         }
     }
-}
-
-fn send_msg(event: &Event, ws_tx: &mut MsgTx) -> Result<(), ()> {
-    ws_tx
-        .try_send(Message::text(&event.to_json_string()))
-        .map_err(|_| log::info!("WebSocket connection closed"))
 }

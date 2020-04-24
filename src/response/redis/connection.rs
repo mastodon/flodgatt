@@ -133,7 +133,6 @@ impl RedisConn {
         // (Documented in [PR #3278](https://github.com/tootsuite/mastodon/pull/3278))
         // Question: why can't the Puma server just use NUMSUB for this?
         self.secondary.write_all(&secondary_cmd)?;
-        log::info!("Sent {}", String::from_utf8_lossy(&secondary_cmd));
         Ok(())
     }
 

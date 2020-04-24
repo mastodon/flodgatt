@@ -12,7 +12,7 @@ use crate::request::{Subscription, Timeline};
 pub(self) use super::EventErr;
 
 use futures::Async;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Sender;
@@ -28,8 +28,7 @@ pub struct Manager {
 }
 
 impl Manager {
-    /// Create a new `Manager`, with its own Redis connections (but, as yet, no
-    /// active subscriptions).
+    /// Create a new `Manager`, with its own Redis connections (but no active subscriptions).
     pub fn try_from(redis_cfg: &config::Redis) -> Result<Self> {
         Ok(Self {
             redis_connection: RedisConn::new(redis_cfg)?,
@@ -60,16 +59,14 @@ impl Manager {
         };
     }
 
-    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline) -> Result<()> {
+    pub(crate) fn unsubscribe(&mut self, tl: &Timeline) -> Result<()> {
         self.redis_connection.send_cmd(RedisCmd::Unsubscribe, &tl)?;
         self.timelines.remove(&tl);
-
-        log::info!("Ended stream for {:?}", tl);
-        Ok(())
+        Ok(log::info!("Ended stream for {:?}", tl))
     }
 
     pub fn poll_broadcast(&mut self) -> Result<()> {
-        let mut completed_timelines = Vec::new();
+        let mut completed_timelines = HashSet::new();
         let log_send_err = |tl, e| Some(log::error!("cannot send to {:?}: {}", tl, e)).is_some();
 
         if self.ping_time.elapsed() > Duration::from_secs(30) {
@@ -80,8 +77,16 @@ impl Manager {
                     Err(e) if !e.is_closed() => log_send_err(*tl, e),
                     Err(_) => false,
                 });
+
+                // NOTE: this takes two cycles to close a connection after the client
+                // times out: on the first cycle, this fn sends the Event to the
+                // response::Ws thread without any error, but that thread encounters an
+                // error sending to the client and ends.  On the *second* cycle, this fn
+                // gets the error it's waiting on to clean up the connection.  This isn't
+                // ideal, but is harmless, since the only reason we haven't cleaned up the
+                // connection is that no messages are being sent to that client.
                 if channels.is_empty() {
-                    completed_timelines.push(*tl);
+                    completed_timelines.insert(*tl);
                 }
             }
         };
@@ -98,7 +103,7 @@ impl Manager {
                         Err(_) => false,
                     });
                     if channels.is_empty() {
-                        completed_timelines.push(tl);
+                        completed_timelines.insert(tl);
                     }
                 }
                 Ok(Async::Ready(None)) => (), // cmd or msg for other namespace
@@ -106,7 +111,7 @@ impl Manager {
             }
         }
 
-        for tl in &mut completed_timelines {
+        for tl in &mut completed_timelines.iter() {
             self.unsubscribe(tl)?;
         }
         Ok(())
@@ -135,6 +140,9 @@ impl Manager {
                 let tl_txt = format!("{:?}:", tl);
                 format!("{:>1$} {2}\n", tl_txt, max_len, channel_map.len())
             })
+            .chain(std::iter::once(
+                "\n*may include recently disconnected clients".to_string(),
+            ))
             .collect()
     }
 }

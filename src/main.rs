@@ -16,7 +16,7 @@ use warp::Filter;
 
 fn main() -> Result<(), Error> {
     config::merge_dotenv()?;
-    pretty_env_logger::try_init()?;
+    pretty_env_logger::try_init_timed()?;
     let (postgres_cfg, redis_cfg, cfg) = config::from_env(dotenv::vars().collect())?;
     let poll_freq = *redis_cfg.polling_interval;
 
