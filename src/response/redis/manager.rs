@@ -16,15 +16,15 @@ use hashbrown::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
-use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Error>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 pub struct Manager {
     redis_connection: RedisConn,
-    timelines: HashMap<Timeline, HashMap<Uuid, UnboundedSender<Event>>>,
+    timelines: HashMap<Timeline, HashMap<u32, UnboundedSender<Event>>>,
     ping_time: Instant,
+    channel_id: u32,
 }
 
 impl Manager {
@@ -35,6 +35,7 @@ impl Manager {
             redis_connection: RedisConn::new(redis_cfg)?,
             timelines: HashMap::new(),
             ping_time: Instant::now(),
+            channel_id: 0,
         })
     }
 
@@ -49,7 +50,8 @@ impl Manager {
         };
 
         let channels = self.timelines.entry(tl).or_default();
-        channels.insert(Uuid::new_v4(), channel);
+        channels.insert(self.channel_id, channel);
+        self.channel_id += 1;
 
         if channels.len() == 1 {
             self.redis_connection
@@ -58,7 +60,7 @@ impl Manager {
         };
     }
 
-    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &Uuid) -> Result<()> {
+    pub(crate) fn unsubscribe(&mut self, tl: &mut Timeline, id: &u32) -> Result<()> {
         let channels = self.timelines.get_mut(tl).ok_or(Error::InvalidId)?;
         channels.remove(id);
 
@@ -75,10 +77,10 @@ impl Manager {
         if self.ping_time.elapsed() > Duration::from_secs(30) {
             self.ping_time = Instant::now();
             for (timeline, channels) in self.timelines.iter_mut() {
-                for (uuid, channel) in channels.iter_mut() {
+                for (id, channel) in channels.iter_mut() {
                     match channel.try_send(Event::Ping) {
                         Ok(_) => (),
-                        Err(_) => completed_timelines.push((*timeline, *uuid)),
+                        Err(_) => completed_timelines.push((*timeline, *id)),
                     }
                 }
             }
