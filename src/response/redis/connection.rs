@@ -104,7 +104,7 @@ impl RedisConn {
 
         // Store leftover in same buffer and set cursor to start after leftover next time
         self.cursor = 0;
-        for byte in [leftover.as_bytes(), invalid_bytes].concat().iter() {
+        for byte in &[leftover.as_bytes(), invalid_bytes].concat() {
             self.redis_input[self.cursor] = *byte;
             self.cursor += 1;
         }

@@ -31,7 +31,7 @@ fn main() -> Result<(), Error> {
         .map(move |subscription: Subscription, sse: warp::sse::Sse| {
             log::info!("Incoming SSE request for {:?}", subscription.timeline);
             let mut manager = sse_manager.lock().unwrap_or_else(RedisManager::recover);
-            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::channel(10);
             manager.subscribe(&subscription, event_tx);
             let sse_stream = SseStream::new(subscription);
             sse_stream.send_events(sse, event_rx)
@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
         .map(move |subscription: Subscription, ws: Ws2| {
             log::info!("Incoming websocket request for {:?}", subscription.timeline);
             let mut manager = ws_manager.lock().unwrap_or_else(RedisManager::recover);
-            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            let (event_tx, event_rx) = mpsc::channel(10);
             manager.subscribe(&subscription, event_tx);
             let token = subscription.access_token.clone().unwrap_or_default(); // token sent for security
             let ws_stream = WsStream::new(subscription);
@@ -99,5 +99,5 @@ fn main() -> Result<(), Error> {
         let server_addr = SocketAddr::new(*cfg.address, *cfg.port);
         tokio::run(lazy(move || streaming_server().bind(server_addr)));
     }
-    Err(Error::Unrecoverable) // only get here if there's an unrecoverable error in poll_broadcast.
+    Err(Error::Unrecoverable) // only reached if poll_broadcast encounters an unrecoverable error
 }

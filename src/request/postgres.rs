@@ -216,5 +216,5 @@ fn get_col_or_reject(row: &postgres::row::SimpleQueryRow, col: usize) -> Rejecta
     Ok(row
         .try_get(col)
         .map_err(reject::custom)?
-        .ok_or(reject::custom(PgPool::PG_NULL))?)
+        .ok_or_else(|| reject::custom(PgPool::PG_NULL))?)
 }

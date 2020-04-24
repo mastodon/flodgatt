@@ -120,7 +120,7 @@ impl Handler {
 
     pub fn err(r: Rejection) -> std::result::Result<impl warp::Reply, warp::Rejection> {
         use StatusCode as Code;
-        let (msg, code) = match &r.cause().map(|s| s.to_string()).as_deref() {
+        let (msg, code) = match &r.cause().map(|cause| cause.to_string()).as_deref() {
             Some(PgPool::BAD_TOKEN) => (PgPool::BAD_TOKEN, Code::UNAUTHORIZED),
             Some(PgPool::PG_NULL) => (PgPool::PG_NULL, Code::BAD_REQUEST),
             Some(PgPool::MISSING_HASHTAG) => (PgPool::MISSING_HASHTAG, Code::BAD_REQUEST),
