@@ -73,7 +73,7 @@ impl RedisConn {
         let input = &self.redis_input[..self.cursor];
 
         let (input, invalid_bytes) = str::from_utf8(&input)
-            .map(|input| (input, &b""[..]))
+            .map(|input| (input, "".as_bytes()))
             .unwrap_or_else(|e| {
                 let (valid, invalid) = input.split_at(e.valid_up_to());
                 (str::from_utf8(valid).expect("Guaranteed by ^^^^"), invalid)
@@ -117,18 +117,23 @@ impl RedisConn {
     }
 
     pub(crate) fn send_cmd(&mut self, cmd: RedisCmd, timeline: &Timeline) -> Result<()> {
+        let namespace = self.redis_namespace.take();
         let hashtag = timeline.tag().and_then(|id| self.tag_name_cache.get(&id));
-        let tl = timeline.to_redis_raw_timeline(hashtag)?;
+        let tl = match &namespace {
+            Some(ns) => format!("{}:{}", ns, timeline.to_redis_raw_timeline(hashtag)?),
+            None => timeline.to_redis_raw_timeline(hashtag)?,
+        };
 
         let (primary_cmd, secondary_cmd) = cmd.into_sendable(&tl);
         self.primary.write_all(&primary_cmd)?;
 
-        // We also need to set a key to tell the Puma server that we've subscribed
-        // or unsubscribed to the channel because it stops publishing updates when it
-        // thinks no one is subscribed.  (Documented in [PR
-        // #3278](https://github.com/tootsuite/mastodon/pull/3278))
+        // We also need to set a key to tell the Puma server that we've subscribed or
+        // unsubscribed to the channel because it stops publishing updates when it thinks
+        // no one is subscribed.
+        // (Documented in [PR #3278](https://github.com/tootsuite/mastodon/pull/3278))
         // Question: why can't the Puma server just use NUMSUB for this?
         self.secondary.write_all(&secondary_cmd)?;
+        log::info!("Sent {}", String::from_utf8_lossy(&secondary_cmd));
         Ok(())
     }
 
