@@ -42,17 +42,17 @@ impl Ws {
             .map_err(|_| -> warp::Error { unreachable!() })
             .forward(transmit_to_ws)
             .map(|_r| ())
-            .map_err(|e| {
-                match e.to_string().as_ref() {
-                    "IO error: Broken pipe (os error 32)" => log::info!("transmit_to_ws error"), // just closed unix socket
-                    _ => log::warn!("WebSocket send error: {}", e),
-                }
+            // ignore errors that indicate normal disconnects.  TODO - once we upgrade our
+            // Warp version, we should stop matching on text, which is fragile.
+            .map_err(|e| match e.to_string().as_ref() {
+                "IO error: Broken pipe (os error 32)"
+                | "IO error: Connection reset by peer (os error 104)" => (),
+                e => log::warn!("WebSocket send error: {}", e),
             })
     }
     fn filtered(&mut self, update: &impl Payload) -> bool {
         let (blocks, allowed_langs) = (&self.0.blocks, &self.0.allowed_langs);
-
-        let skip = |reason, tl| Some(log::info!("{:?} msg skipped - {}", tl, reason)).is_some();
+        let skip = |msg| Some(log::info!("{:?} msg skipped - {}", self.0.timeline, msg)).is_some();
 
         match self.0.timeline {
             tl if tl.is_public()
@@ -60,16 +60,13 @@ impl Ws {
                 && !allowed_langs.is_empty()
                 && !allowed_langs.contains(&update.language()) =>
             {
-                skip("disallowed language", tl)
+                skip("disallowed language")
             }
-
-            tl if !blocks.blocked_users.is_disjoint(&update.involved_users()) => {
-                skip("involves blocked user", tl)
+            _ if !blocks.blocked_users.is_disjoint(&update.involved_users()) => {
+                skip("involves blocked user")
             }
-            tl if blocks.blocking_users.contains(update.author()) => skip("from blocking user", tl),
-            tl if blocks.blocked_domains.contains(update.sent_from()) => {
-                skip("from blocked domain", tl)
-            }
+            _ if blocks.blocking_users.contains(update.author()) => skip("from blocking user"),
+            _ if blocks.blocked_domains.contains(update.sent_from()) => skip("from blocked domain"),
             _ => false,
         }
     }
