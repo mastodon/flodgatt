@@ -103,7 +103,7 @@ impl Event {
                 Conversation         { payload, .. } => Some(escaped(payload)),
                 Announcement         { payload, .. } => Some(escaped(payload)),
                 AnnouncementReaction { payload, .. } => Some(escaped(payload)),
-                AnnouncementDelete   { payload, .. } => Some(payload.clone()),
+                AnnouncementDelete   { payload, .. } |
                 Delete               { payload, .. } => Some(payload.clone()),
                 FiltersChanged                       => None,
             },
