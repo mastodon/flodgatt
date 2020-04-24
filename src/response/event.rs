@@ -97,18 +97,19 @@ impl Event {
         })
     }
 
+    #[rustfmt::skip]
     fn payload(&self) -> Option<String> {
         use CheckedEvent::*;
         match self {
             Self::TypeSafe(checked) => match checked {
-                Update { payload, .. } => Some(escaped(payload)),
-                Notification { payload, .. } => Some(escaped(payload)),
-                Delete { payload, .. } => Some(payload.clone()),
-                Announcement { payload, .. } => Some(escaped(payload)),
+                Update               { payload, .. } => Some(escaped(payload)),
+                Notification         { payload, .. } => Some(escaped(payload)),
+                Conversation         { payload, .. } => Some(escaped(payload)),
+                Announcement         { payload, .. } => Some(escaped(payload)),
                 AnnouncementReaction { payload, .. } => Some(escaped(payload)),
-                AnnouncementDelete { payload, .. } => Some(payload.clone()),
-                Conversation { payload, .. } => Some(escaped(payload)),
-                FiltersChanged => None,
+                AnnouncementDelete   { payload, .. } => Some(payload.clone()),
+                Delete               { payload, .. } => Some(payload.clone()),
+                FiltersChanged                       => None,
             },
             Self::Dynamic(DynEvent { payload, .. }) => Some(payload.to_string()),
             Self::Ping => unreachable!(), // private method only called above
