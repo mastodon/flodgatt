@@ -3,11 +3,11 @@ use crate::request::Subscription;
 
 use futures::stream::Stream;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 use warp::reply::Reply;
 use warp::sse::Sse as WarpSse;
 
-type EventRx = UnboundedReceiver<Event>;
+type EventRx = Receiver<Event>;
 
 pub struct Sse(Subscription);
 

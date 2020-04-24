@@ -15,14 +15,14 @@ use futures::Async;
 use hashbrown::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 type Result<T> = std::result::Result<T, Error>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 pub struct Manager {
     redis_connection: RedisConn,
-    timelines: HashMap<Timeline, HashMap<u32, UnboundedSender<Event>>>,
+    timelines: HashMap<Timeline, HashMap<u32, Sender<Event>>>,
     ping_time: Instant,
     channel_id: u32,
 }
@@ -43,7 +43,7 @@ impl Manager {
         Arc::new(Mutex::new(self))
     }
 
-    pub fn subscribe(&mut self, subscription: &Subscription, channel: UnboundedSender<Event>) {
+    pub fn subscribe(&mut self, subscription: &Subscription, channel: Sender<Event>) {
         let (tag, tl) = (subscription.hashtag_name.clone(), subscription.timeline);
         if let (Some(hashtag), Some(id)) = (tag, tl.tag()) {
             self.redis_connection.update_cache(hashtag, id);

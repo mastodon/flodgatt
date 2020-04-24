@@ -3,10 +3,10 @@ use crate::request::Subscription;
 
 use futures::future::Future;
 use futures::stream::Stream;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, Receiver, UnboundedSender};
 use warp::ws::{Message, WebSocket};
 
-type EventRx = UnboundedReceiver<Event>;
+type EventRx = Receiver<Event>;
 type MsgTx = UnboundedSender<Message>;
 
 pub struct Ws(Subscription);
