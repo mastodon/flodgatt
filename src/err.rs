@@ -15,7 +15,7 @@ pub enum Error {
 
 impl Error {
     pub fn log(msg: impl fmt::Display) {
-        eprintln!("{}", msg);
+        eprintln!("Error: {}", msg);
     }
 }
 

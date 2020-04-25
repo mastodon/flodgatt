@@ -1,18 +1,18 @@
 use super::super::{RedisConnErr, RedisParseErr};
 use super::{Event, EventErr};
-use crate::request::{Timeline, TimelineErr};
+use crate::request::TimelineErr;
 
 use std::fmt;
+use std::sync::Arc;
+
 #[derive(Debug)]
 pub enum Error {
     InvalidId,
-
     TimelineErr(TimelineErr),
     EventErr(EventErr),
     RedisParseErr(RedisParseErr),
     RedisConnErr(RedisConnErr),
-    ChannelSendErr(tokio::sync::watch::error::SendError<(Timeline, Event)>),
-    ChannelSendErr2(tokio::sync::mpsc::error::UnboundedTrySendError<Event>),
+    ChannelSendErr(tokio::sync::mpsc::error::TrySendError<Arc<Event>>),
 }
 
 impl std::error::Error for Error {}
@@ -30,20 +30,14 @@ impl fmt::Display for Error {
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
             ChannelSendErr(inner) => write!(f, "{}", inner),
-            ChannelSendErr2(inner) => write!(f, "{}", inner),
         }?;
         Ok(())
     }
 }
 
-impl From<tokio::sync::watch::error::SendError<(Timeline, Event)>> for Error {
-    fn from(error: tokio::sync::watch::error::SendError<(Timeline, Event)>) -> Self {
+impl From<tokio::sync::mpsc::error::TrySendError<Arc<Event>>> for Error {
+    fn from(error: tokio::sync::mpsc::error::TrySendError<Arc<Event>>) -> Self {
         Self::ChannelSendErr(error)
-    }
-}
-impl From<tokio::sync::mpsc::error::UnboundedTrySendError<Event>> for Error {
-    fn from(error: tokio::sync::mpsc::error::UnboundedTrySendError<Event>) -> Self {
-        Self::ChannelSendErr2(error)
     }
 }
 

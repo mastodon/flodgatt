@@ -14,4 +14,4 @@ mod stream;
 pub use redis::Error;
 
 #[cfg(feature = "bench")]
-pub use redis::msg::{RedisMsg, RedisParseOutput};
+pub use redis::{RedisMsg, RedisParseOutput};
