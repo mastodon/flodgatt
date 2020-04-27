@@ -40,14 +40,15 @@ impl RedisConn {
             tag_id_cache: LruCache::new(1000),
             tag_name_cache: LruCache::new(1000),
             namespace: redis_cfg.namespace.clone().0,
-            input: vec![47_u8; 10_000], // TODO - set to something reasonable
+            input: vec![0; 4096 * 4],
         })
     }
     pub(super) fn poll_redis(&mut self, start: usize) -> Poll<usize, ManagerErr> {
-        const BLOCK: usize = 8192;
-        if self.input.len() <= start + BLOCK {
+        const BLOCK: usize = 4096 * 2;
+        if self.input.len() < start + BLOCK {
             self.input.resize(self.input.len() * 2, 0);
-            log::info!("Resizing input buffer. (Old input was {} bytes)", start);
+            log::info!("Resizing input buffer to {} KiB.", self.input.len() / 1024);
+            // log::info!("Current buffer: {}", String::from_utf8_lossy(&self.input));
         }
 
         use Async::*;

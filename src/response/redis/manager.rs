@@ -11,7 +11,7 @@ use crate::request::{Subscription, Timeline};
 
 pub(self) use super::EventErr;
 
-use futures::Async;
+use futures::{Async, Poll, Stream};
 use hashbrown::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::str;
@@ -28,6 +28,76 @@ pub struct Manager {
     timelines: HashMap<Timeline, HashMap<u32, EventChannel>>,
     ping_time: Instant,
     channel_id: u32,
+    unread_idx: (usize, usize),
+}
+
+impl Stream for Manager {
+    type Item = ();
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Option<()>, Error> {
+        if self.ping_time.elapsed() > Duration::from_secs(30) {
+            self.send_pings()?
+        }
+
+        while let Async::Ready(msg_len) = self.redis_conn.poll_redis(self.unread_idx.1)? {
+            self.unread_idx.1 += msg_len;
+            let input = &self.redis_conn.input[..self.unread_idx.1];
+            let mut unread = str::from_utf8(input).unwrap_or_else(|e| {
+                str::from_utf8(input.split_at(e.valid_up_to()).0).expect("guaranteed by `split_at`")
+            });
+
+            while !unread.is_empty() {
+                let tag_id_cache = &mut self.redis_conn.tag_id_cache;
+                let redis_namespace = &self.redis_conn.namespace;
+
+                use {Error::InvalidId, RedisParseOutput::*};
+                unread = match RedisParseOutput::try_from(unread) {
+                    Ok(Msg(msg)) => {
+                        let trimmed_tl = match redis_namespace {
+                            Some(ns) if msg.timeline_txt.starts_with(ns) => {
+                                Some(&msg.timeline_txt[ns.len() + ":timeline:".len()..])
+                            }
+                            None => Some(&msg.timeline_txt["timeline:".len()..]),
+                            Some(_non_matching_ns) => None,
+                        };
+
+                        if let Some(trimmed_tl) = trimmed_tl {
+                            let tl = Timeline::from_redis_text(trimmed_tl, tag_id_cache)?;
+                            let event: Arc<Event> = Arc::new(msg.event_txt.try_into()?);
+                            let channels = self.timelines.get_mut(&tl).ok_or(InvalidId)?;
+                            for (_id, channel) in channels {
+                                if let Ok(Async::NotReady) = channel.poll_ready() {
+                                    log::warn!("{:?} channel full", tl);
+                                    return Ok(Async::NotReady);
+                                }
+                                let _ = channel.try_send(event.clone()); // err just means channel will be closed
+                            }
+                        } else {
+                            // skip messages for different Redis namespaces
+                        }
+                        msg.leftover_input
+                    }
+                    Ok(NonMsg(leftover_input)) => leftover_input,
+                    Err(RedisParseErr::Incomplete) => {
+                        log::info!("Copying partial message");
+                        let (read, unread) = self.redis_conn.input[..self.unread_idx.1]
+                            .split_at_mut(self.unread_idx.0);
+                        for (i, b) in unread.iter().enumerate() {
+                            read[i] = *b;
+                        }
+                        self.unread_idx = (0, unread.len());
+                        break;
+                    }
+                    Err(e) => Err(e)?,
+                };
+                self.unread_idx.0 = self.unread_idx.1 - unread.len();
+            }
+
+            self.unread_idx = (0, 0) // reaching here means last msg was complete; reuse the full buffer
+        }
+        Ok(Async::Ready(Some(())))
+    }
 }
 
 impl Manager {
@@ -38,6 +108,7 @@ impl Manager {
             timelines: HashMap::new(),
             ping_time: Instant::now(),
             channel_id: 0,
+            unread_idx: (0, 0),
         })
     }
 
@@ -72,7 +143,7 @@ impl Manager {
         self.ping_time = Instant::now();
         let mut subscriptions_to_close = HashSet::new();
         self.timelines.retain(|tl, channels| {
-            channels.retain(|_, chan| try_send_event(Arc::new(Event::Ping), chan, *tl).is_ok());
+            channels.retain(|_, chan| chan.try_send(Arc::new(Event::Ping)).is_ok());
 
             if channels.is_empty() {
                 subscriptions_to_close.insert(*tl);
@@ -88,67 +159,6 @@ impl Manager {
                 .send_cmd(RedisCmd::Unsubscribe, &timelines[..])?;
             log::info!("Unsubscribed from {:?}", timelines);
         }
-
-        Ok(())
-    }
-
-    pub fn poll_broadcast(&mut self) -> Result<()> {
-        if self.ping_time.elapsed() > Duration::from_secs(30) {
-            self.send_pings()?
-        }
-
-        let (mut unread_start, mut msg_end) = (0, 0);
-
-        while let Async::Ready(msg_len) = self.redis_conn.poll_redis(msg_end)? {
-            msg_end += msg_len;
-            let input = &self.redis_conn.input[..msg_end];
-            let mut unread = str::from_utf8(input).unwrap_or_else(|e| {
-                str::from_utf8(input.split_at(e.valid_up_to()).0).expect("guaranteed by `split_at`")
-            });
-
-            while !unread.is_empty() {
-                let tag_id_cache = &mut self.redis_conn.tag_id_cache;
-                let redis_namespace = &self.redis_conn.namespace;
-
-                use {Error::InvalidId, RedisParseOutput::*};
-                unread = match RedisParseOutput::try_from(unread) {
-                    Ok(Msg(msg)) => {
-                        let trimmed_tl = match redis_namespace {
-                            Some(ns) if msg.timeline_txt.starts_with(ns) => {
-                                Some(&msg.timeline_txt[ns.len() + ":timeline:".len()..])
-                            }
-                            None => Some(&msg.timeline_txt["timeline:".len()..]),
-                            Some(_non_matching_ns) => None,
-                        };
-
-                        if let Some(trimmed_tl) = trimmed_tl {
-                            let tl = Timeline::from_redis_text(trimmed_tl, tag_id_cache)?;
-                            let event: Arc<Event> = Arc::new(msg.event_txt.try_into()?);
-                            let channels = self.timelines.get_mut(&tl).ok_or(InvalidId)?;
-                            channels.retain(|_, c| try_send_event(event.clone(), c, tl).is_ok());
-                        } else {
-                            // skip messages for different Redis namespaces
-                        }
-                        msg.leftover_input
-                    }
-                    Ok(NonMsg(leftover_input)) => leftover_input,
-                    Err(RedisParseErr::Incomplete) => break,
-                    Err(e) => Err(e)?,
-                };
-                unread_start = msg_end - unread.len();
-            }
-            if !unread.is_empty() && unread_start > unread.len() {
-                log::info!("Re-using memory");
-                let (read, unread) = self.redis_conn.input[..msg_end].split_at_mut(unread_start);
-
-                for (i, b) in unread.iter().enumerate() {
-                    read[i] = *b;
-                }
-                msg_end = unread.len();
-                unread_start = 0;
-            }
-        }
-
         Ok(())
     }
 
@@ -161,6 +171,13 @@ impl Manager {
         format!(
             "Current connections: {}",
             self.timelines.values().map(HashMap::len).sum::<usize>()
+        )
+    }
+
+    pub fn backpresure(&self) -> String {
+        format!(
+            "Input buffer size: {} KiB",
+            (self.unread_idx.1 - self.unread_idx.0) / 1024
         )
     }
 
@@ -179,16 +196,5 @@ impl Manager {
                 "\n*may include recently disconnected clients".to_string(),
             ))
             .collect()
-    }
-}
-
-fn try_send_event(event: Arc<Event>, chan: &mut EventChannel, tl: Timeline) -> Result<()> {
-    match chan.try_send(event) {
-        Ok(()) => Ok(()),
-        Err(e) if !e.is_closed() => {
-            log::error!("cannot send to {:?}: {}", tl, e);
-            Ok(())
-        }
-        Err(e) => Err(e)?,
     }
 }
