@@ -118,6 +118,10 @@ impl Handler {
         warp::path!("api" / "v1" / "streaming" / "status" / "per_timeline").boxed()
     }
 
+    pub fn status_backpresure(&self) -> BoxedFilter<()> {
+        warp::path!("api" / "v1" / "streaming" / "status" / "backpresure").boxed()
+    }
+
     pub fn err(r: Rejection) -> std::result::Result<impl warp::Reply, warp::Rejection> {
         use StatusCode as Code;
         let (msg, code) = match &r.cause().map(|cause| cause.to_string()).as_deref() {

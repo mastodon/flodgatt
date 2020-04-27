@@ -3,7 +3,8 @@ use flodgatt::request::{Handler, Subscription};
 use flodgatt::response::{RedisManager, SseStream, WsStream};
 use flodgatt::Error;
 
-use futures::{future::lazy, stream::Stream as _};
+use futures::future::lazy;
+use futures::stream::Stream as _;
 use std::fs;
 use std::net::SocketAddr;
 use std::os::unix::fs::PermissionsExt;
@@ -61,10 +62,12 @@ fn main() -> Result<(), Error> {
     #[cfg(feature = "stub_status")]
     #[rustfmt::skip]
     let status = {
-        let (r1, r3) = (shared_manager.clone(), shared_manager.clone());
+        let (r1, r2, r3) = (shared_manager.clone(), shared_manager.clone(), shared_manager.clone());
         request.health().map(|| "OK")
             .or(request.status()
                 .map(move || r1.lock().unwrap_or_else(RedisManager::recover).count()))
+            .or(request.status_backpresure()
+                .map(move || r2.lock().unwrap_or_else(RedisManager::recover).backpresure()))
             .or(request.status_per_timeline()
                 .map(move || r3.lock().unwrap_or_else(RedisManager::recover).list()))
     };
@@ -80,10 +83,12 @@ fn main() -> Result<(), Error> {
         let manager = shared_manager.clone();
         let stream = Interval::new(Instant::now(), poll_freq)
             .map_err(|e| log::error!("{}", e))
-            .for_each(move |_| {
-                let mut manager = manager.lock().unwrap_or_else(RedisManager::recover);
-                manager.poll_broadcast().map_err(Error::log)
-            });
+            .for_each(
+                move |_| match manager.lock().unwrap_or_else(RedisManager::recover).poll() {
+                    Err(e) => Ok(log::error!("{}", e)),
+                    Ok(_) => Ok(()),
+                },
+            );
 
         warp::spawn(lazy(move || stream));
         warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))

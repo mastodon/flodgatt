@@ -50,9 +50,12 @@ impl Ws {
                 e => log::warn!("WebSocket send error: {}", e),
             })
     }
-    fn filtered(&mut self, update: &impl Payload) -> bool {
+    fn filtered<T: std::fmt::Debug + Payload>(&mut self, update: &T) -> bool {
         let (blocks, allowed_langs) = (&self.0.blocks, &self.0.allowed_langs);
-        let skip = |msg| Some(log::info!("{:?} msg skipped - {}", self.0.timeline, msg)).is_some();
+        let skip = |msg| {
+            // Some(log::info!("{:?} msg skipped - {}\n{:?}", self.0.timeline, msg, update)).is_some()
+            Some(log::info!("{:?} msg skipped - {}", self.0.timeline, msg)).is_some()
+        };
 
         match self.0.timeline {
             tl if tl.is_public()

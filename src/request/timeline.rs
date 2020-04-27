@@ -35,7 +35,6 @@ impl Timeline {
     }
 
     pub(crate) fn to_redis_raw_timeline(&self, hashtag: Option<&String>) -> Result<String> {
-        // TODO -- does this need to account for namespaces?
         use {Content::*, Error::*, Reach::*, Stream::*};
 
         Ok(match self {

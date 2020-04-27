@@ -13,12 +13,6 @@ pub enum Error {
     Config(config::Error),
 }
 
-impl Error {
-    pub fn log(msg: impl fmt::Display) {
-        eprintln!("{}", msg);
-    }
-}
-
 impl std::error::Error for Error {}
 
 impl fmt::Debug for Error {

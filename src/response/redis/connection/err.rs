@@ -31,7 +31,7 @@ impl fmt::Display for RedisConnErr {
                 addr, inner
             ),
             InvalidRedisReply(unexpected_reply) => format!(
-                "Received and unexpected reply from Redis.  Expected `+PONG` reply but got `{}`",
+                "Received and unexpected reply from Redis: `{}`",
                 unexpected_reply
             ),
             UnknownRedisErr(io_err) => {
