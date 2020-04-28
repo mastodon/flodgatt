@@ -10,7 +10,7 @@ pub enum Error {
     InvalidId,
     TimelineErr(TimelineErr),
     EventErr(EventErr),
-    RedisParseErr(RedisParseErr),
+    RedisParseErr(RedisParseErr, String),
     RedisConnErr(RedisConnErr),
     ChannelSendErr(tokio::sync::mpsc::error::TrySendError<Arc<Event>>),
 }
@@ -26,7 +26,7 @@ impl fmt::Display for Error {
                 "tried to access a timeline/channel subscription that does not exist"
             ),
             EventErr(inner) => write!(f, "{}", inner),
-            RedisParseErr(inner) => write!(f, "{}", inner),
+            RedisParseErr(inner, input) => write!(f, "error parsing {}\n{}", input, inner),
             RedisConnErr(inner) => write!(f, "{}", inner),
             TimelineErr(inner) => write!(f, "{}", inner),
             ChannelSendErr(inner) => write!(f, "{}", inner),
@@ -59,8 +59,8 @@ impl From<TimelineErr> for Error {
     }
 }
 
-impl From<RedisParseErr> for Error {
-    fn from(e: RedisParseErr) -> Self {
-        Self::RedisParseErr(e)
-    }
-}
+// impl From<RedisParseErr> for Error {
+//     fn from(e: RedisParseErr) -> Self {
+//         Self::RedisParseErr(e)
+//     }
+// }
