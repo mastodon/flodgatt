@@ -22,8 +22,7 @@ pub(super) struct RedisConn {
     // TODO: eventually, it might make sense to have Mastodon publish to timelines with
     //       the tag number instead of the tag name.  This would save us from dealing
     //       with a cache here and would be consistent with how lists/users are handled.
-    pub(super) tag_id_cache: LruCache<String, i64>,
-    tag_name_cache: LruCache<i64, String>,
+    pub(super) tag_name_cache: LruCache<i64, String>,
     pub(super) input: Vec<u8>,
 }
 
@@ -37,7 +36,6 @@ impl RedisConn {
         Ok(Self {
             primary: conn,
             secondary: Self::new_connection(&addr, redis_cfg.password.as_ref())?,
-            tag_id_cache: LruCache::new(1000),
             tag_name_cache: LruCache::new(1000),
             namespace: redis_cfg.namespace.clone().0,
             input: vec![0; 4096 * 4],
@@ -60,11 +58,6 @@ impl RedisConn {
                 Ok(Ready(0))
             }
         }
-    }
-
-    pub(super) fn update_cache(&mut self, hashtag: String, id: i64) {
-        self.tag_id_cache.put(hashtag.clone(), id);
-        self.tag_name_cache.put(id, hashtag);
     }
 
     pub(crate) fn send_cmd(&mut self, cmd: RedisCmd, timelines: &[Timeline]) -> Result<()> {

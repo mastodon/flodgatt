@@ -39,6 +39,18 @@ pub(crate) struct RedisMsg<'a> {
     pub(crate) leftover_input: &'a str,
 }
 
+impl<'a> RedisMsg<'a> {
+    pub(super) fn timeline_matching_ns(&self, namespace: &Option<String>) -> Option<&str> {
+        match namespace {
+            Some(ns) if self.timeline_txt.starts_with(ns) => {
+                Some(&self.timeline_txt[ns.len() + ":timeline:".len()..])
+            }
+            None => Some(&self.timeline_txt["timeline:".len()..]),
+            Some(_non_matching_ns) => None,
+        }
+    }
+}
+
 impl<'a> TryFrom<&'a str> for RedisParseOutput<'a> {
     type Error = RedisParseErr;
     fn try_from(utf8: &'a str) -> Result<RedisParseOutput<'a>, Self::Error> {
