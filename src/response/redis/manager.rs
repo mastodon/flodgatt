@@ -70,15 +70,18 @@ impl Stream for Manager {
                             }
                         }
                         unread = msg.leftover_input;
+                        self.unread_idx.0 = self.unread_idx.1 - unread.len();
                     }
-                    Ok(NonMsg(leftover_input)) => unread = leftover_input,
+                    Ok(NonMsg(leftover_input)) => {
+                        unread = leftover_input;
+                        self.unread_idx.0 = self.unread_idx.1 - unread.len();
+                    }
                     Err(RedisParseErr::Incomplete) => {
                         self.copy_partial_msg();
-                        unread = "";
+                        break;
                     }
                     Err(e) => Err(Error::RedisParseErr(e, unread.to_string()))?,
                 };
-                self.unread_idx.0 = self.unread_idx.1 - unread.len();
             }
             if self.unread_idx.0 == self.unread_idx.1 {
                 self.unread_idx = (0, 0)
@@ -104,6 +107,7 @@ impl Manager {
             self.redis_conn.input = self.redis_conn.input[self.unread_idx.0..].into();
         }
         self.unread_idx = (0, self.unread_idx.1 - self.unread_idx.0);
+        dbg!(&self.unread_idx);
     }
     /// Create a new `Manager`, with its own Redis connections (but no active subscriptions).
     pub fn try_from(redis_cfg: &config::Redis) -> Result<Self> {
