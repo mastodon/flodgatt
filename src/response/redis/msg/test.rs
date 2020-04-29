@@ -1,6 +1,5 @@
 use super::*;
 use std::fs;
-use std::path;
 
 #[test]
 fn parse_redis_subscribe() -> Result<(), RedisParseErr> {

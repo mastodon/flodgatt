@@ -1,5 +1,5 @@
 mod application;
-mod attachment;
+pub(super) mod attachment;
 mod card;
 mod poll;
 
