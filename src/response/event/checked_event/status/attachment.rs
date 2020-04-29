@@ -2,21 +2,21 @@ use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Attachment {
-    id: String,
-    r#type: AttachmentType,
-    url: String,
-    preview_url: String,
-    remote_url: Option<String>,
-    text_url: Option<String>,
-    meta: Option<serde_json::Value>,
-    description: Option<String>,
-    blurhash: Option<String>,
+pub(in super::super) struct Attachment {
+    pub(super) id: String,
+    pub(super) r#type: AttachmentType,
+    pub(super) url: String,
+    pub(super) preview_url: String,
+    pub(super) remote_url: Option<String>,
+    pub(super) text_url: Option<String>,
+    pub(super) meta: Option<serde_json::Value>,
+    pub(super) description: Option<String>,
+    pub(super) blurhash: Option<String>,
 }
 
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-enum AttachmentType {
+pub(super) enum AttachmentType {
     Unknown,
     Image,
     Gifv,

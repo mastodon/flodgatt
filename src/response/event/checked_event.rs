@@ -35,3 +35,6 @@ pub enum CheckedEvent {
     AnnouncementDelete { payload: String },
     Conversation { payload: Conversation, queued_at: Option<i64> },
 }
+
+#[cfg(test)]
+mod test;

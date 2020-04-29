@@ -5,7 +5,7 @@ pub enum RedisParseErr {
     Incomplete,
     InvalidNumber(std::num::ParseIntError),
     InvalidLineStart(String),
-    InvalidLineEnd,
+    InvalidLineEnd(usize, String),
     IncorrectRedisType,
     MissingField,
 }
@@ -28,7 +28,11 @@ impl fmt::Display for RedisParseErr {
                  the type of the Redis line.",
                 line_start_char
             ),
-            InvalidLineEnd => "A Redis line ended before expected line length".to_string(),
+            InvalidLineEnd(len, line) => format!( // TODO - FIXME
+                "A Redis line did not have the promised length of {}.  \
+                 The line is: {}",
+                len, line
+            ),
             IncorrectRedisType => "Received a Redis type that is not supported in this context.  \
                                    Flodgatt expects each message from Redis to be a Redis array \
                                    consisting of bulk strings or integers."
