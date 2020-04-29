@@ -58,13 +58,10 @@ fn parse_redis_msg() -> Result<(), RedisParseErr> {
 
 #[test]
 fn parse_long_redis_msg() -> Result<(), Box<dyn std::error::Error>> {
-    let pwd = path::Path::new(file!()).parent().expect("TEST");
-
     let mut test_num = 1;
-
     while let (Ok(input), Ok(output)) = (
-        fs::read_to_string(format!("{}/test_input/{:03}.resp", pwd.display(), test_num)),
-        fs::read_to_string(format!("{}/test_output/{:03}.txt", pwd.display(), test_num)),
+        fs::read_to_string(format!("test_data/redis_input_{:03}.resp", test_num)),
+        fs::read_to_string(format!("test_data/msg.event_txt_{:03}.txt", test_num)),
     ) {
         println!("parsing `{:03}.resp`", test_num);
         test_num += 1;
@@ -82,6 +79,7 @@ fn parse_long_redis_msg() -> Result<(), Box<dyn std::error::Error>> {
 
         assert_eq!(r_msg.timeline_txt, "timeline:public");
     }
+    assert!(test_num > 1);
 
     Ok(())
 }

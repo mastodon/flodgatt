@@ -6,45 +6,45 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(super) struct Account {
     pub id: Id,
-    username: String,
+    pub(super) username: String,
     pub acct: String,
-    url: String,
-    display_name: String,
-    note: String,
-    avatar: String,
-    avatar_static: String,
-    header: String,
-    header_static: String,
-    locked: bool,
-    emojis: Vec<Emoji>,
-    discoverable: Option<bool>, // Shouldn't be option?
-    created_at: String,
-    statuses_count: i64,
-    followers_count: i64,
-    following_count: i64,
-    moved: Option<String>,
-    fields: Option<Vec<Field>>,
-    bot: Option<bool>,
-    source: Option<Source>,
-    group: Option<bool>,            // undocumented
-    last_status_at: Option<String>, // undocumented
+    pub(super) url: String,
+    pub(super) display_name: String,
+    pub(super) note: String,
+    pub(super) avatar: String,
+    pub(super) avatar_static: String,
+    pub(super) header: String,
+    pub(super) header_static: String,
+    pub(super) locked: bool,
+    pub(super) emojis: Vec<Emoji>,
+    pub(super) discoverable: Option<bool>, // Shouldn't be option?
+    pub(super) created_at: String,
+    pub(super) statuses_count: i64,
+    pub(super) followers_count: i64,
+    pub(super) following_count: i64,
+    pub(super) moved: Option<String>,
+    pub(super) fields: Option<Vec<Field>>,
+    pub(super) bot: Option<bool>,
+    pub(super) source: Option<Source>,
+    pub(super) group: Option<bool>,            // undocumented
+    pub(super) last_status_at: Option<String>, // undocumented
 }
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-struct Field {
-    name: String,
-    value: String,
-    verified_at: Option<String>,
+pub(super) struct Field {
+    pub(super) name: String,
+    pub(super) value: String,
+    pub(super) verified_at: Option<String>,
 }
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-struct Source {
-    note: String,
-    fields: Vec<Field>,
-    privacy: Option<Visibility>,
-    sensitive: bool,
-    language: String,
-    follow_requests_count: i64,
+pub(super) struct Source {
+    pub(super) note: String,
+    pub(super) fields: Vec<Field>,
+    pub(super) privacy: Option<Visibility>,
+    pub(super) sensitive: bool,
+    pub(super) language: String,
+    pub(super) follow_requests_count: i64,
 }
