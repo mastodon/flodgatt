@@ -79,21 +79,17 @@ fn utf8_to_redis_data<'a>(s: &'a str) -> Result<(RedisData, &'a str), RedisParse
         e => Err(InvalidLineStart(e.to_string())),
     }
 }
-
-fn after_newline_at(s: &str, start: usize) -> RedisParser<&str> {
-    let s = s.get(start..).ok_or(Incomplete)?;
-    if s.len() < 2 {
-        Err(Incomplete)?;
+fn skip_line(s: &str, len: usize) -> RedisParser<&str> {
+    let line = s.get(..len + 2).ok_or(Incomplete)?;
+    if !line.ends_with("\r\n") {
+        Err(InvalidLineEnd(len, s.to_string()))?;
     }
-    if !s.starts_with("\r\n") {
-        Err(InvalidLineEnd)?;
-    }
-    Ok(s.get("\r\n".len()..).ok_or(Incomplete)?)
+    Ok(s.get(len + "\r\n".len()..).ok_or(Incomplete)?)
 }
 
 fn parse_number_at<'a>(s: &'a str) -> RedisParser<(usize, &'a str)> {
     let len = s.chars().position(|c| !c.is_numeric()).ok_or(Incomplete)?;
-    Ok((s[..len].parse()?, after_newline_at(s, len)?))
+    Ok((s[..len].parse()?, skip_line(s, len)?))
 }
 
 /// Parse a Redis bulk string and return the content of that string and the unparsed remainder.
@@ -102,7 +98,7 @@ fn parse_number_at<'a>(s: &'a str) -> RedisParser<(usize, &'a str)> {
 fn parse_redis_bulk_string<'a>(s: &'a str) -> RedisParser<(RedisData, &'a str)> {
     let (len, rest) = parse_number_at(s)?;
     let content = rest.get(..len).ok_or(Incomplete)?;
-    Ok((BulkString(content), after_newline_at(&rest, len)?))
+    Ok((BulkString(content), skip_line(rest, len)?))
 }
 
 fn parse_redis_int<'a>(s: &'a str) -> RedisParser<(RedisData, &'a str)> {
