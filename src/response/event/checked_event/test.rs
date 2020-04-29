@@ -1,11 +1,12 @@
 use super::{super::*, *};
 use checked_event::{
     account::{Account, Field},
+    status::attachment::{Attachment, AttachmentType::*},
     tag::Tag,
     visibility::Visibility::*,
     CheckedEvent::*,
-    *,
 };
+use serde_json::json;
 use std::fs;
 
 #[test]
@@ -20,6 +21,22 @@ fn parse_redis_msg_to_event() -> Result<(), Box<dyn std::error::Error>> {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/test_data/event_002.rs"
+        )),
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/event_003.rs"
+        )),
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/event_004.rs"
+        )),
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/event_005.rs"
+        )),
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/event_006.rs"
         )),
     ];
 
