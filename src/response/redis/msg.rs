@@ -27,15 +27,15 @@ use std::str;
 mod err;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum RedisParseOutput<'a> {
+pub enum RedisParseOutput<'a> {
     Msg(RedisMsg<'a>),
     NonMsg(&'a str),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RedisMsg<'a> {
-    pub(crate) timeline_txt: &'a str,
-    pub(crate) event_txt: &'a str,
+pub struct RedisMsg<'a> {
+    pub timeline_txt: &'a str,
+    pub event_txt: &'a str,
     pub(crate) leftover_input: &'a str,
 }
 

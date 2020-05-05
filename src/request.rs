@@ -9,6 +9,11 @@ mod subscription;
 pub use err::{Error, Timeline as TimelineErr};
 pub use subscription::{Blocks, Subscription};
 pub use timeline::Timeline;
+
+#[cfg(feature = "bench")]
+pub use timeline::{Content, Reach, Stream};
+
+#[cfg(not(feature = "bench"))]
 use timeline::{Content, Reach, Stream};
 
 pub use self::postgres::PgPool;

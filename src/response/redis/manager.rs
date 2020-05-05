@@ -25,73 +25,111 @@ type EventChannel = Sender<Arc<Event>>;
 
 /// The item that streams from Redis and is polled by the `ClientAgent`
 pub struct Manager {
-    redis_conn: RedisConn,
+    pub redis_conn: RedisConn,
     timelines: HashMap<Timeline, HashMap<u32, EventChannel>>,
     ping_time: Instant,
     channel_id: u32,
-    unread_idx: (usize, usize),
+    pub unread_idx: (usize, usize),
     tag_id_cache: LruCache<String, i64>,
 }
 
 impl Stream for Manager {
-    type Item = ();
+    type Item = (Timeline, Arc<Event>);
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Option<()>, Error> {
-        if self.ping_time.elapsed() > Duration::from_secs(30) {
-            self.send_pings()?
-        }
-
-        while let Async::Ready(msg_len) = self.redis_conn.poll_redis(self.unread_idx.1)? {
-            self.unread_idx = (0, self.unread_idx.1 + msg_len);
-
-            let input = &self.redis_conn.input[..self.unread_idx.1];
-            let mut unread = str::from_utf8(input).unwrap_or_else(|e| {
-                str::from_utf8(input.split_at(e.valid_up_to()).0).expect("guaranteed by `split_at`")
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Error> {
+        let input = &self.redis_conn.input[self.unread_idx.0..self.unread_idx.1];
+        let (valid, invalid) = str::from_utf8(input)
+            .map(|v| (v, &b""[..]))
+            .unwrap_or_else(|e| {
+                // NOTE - this bounds check occurs more often than necessary; it could occur only when
+                // polling Redis.  However, benchmarking with Criterion shows it to be *very*
+                // inexpensive (<1 us) and thus not worth removing (doing so would require `unsafe`).
+                let (valid, invalid) = input.split_at(e.valid_up_to());
+                (str::from_utf8(valid).expect("split_at"), invalid)
             });
 
-            while !unread.is_empty() {
-                use RedisParseOutput::*;
-                match RedisParseOutput::try_from(unread) {
-                    Ok(Msg(msg)) => {
-                        // If we get a message and it matches the redis_namespace, get the msg's
-                        // Event and send it to all channels matching the msg's Timeline
-                        if let Some(tl) = msg.timeline_matching_ns(&self.redis_conn.namespace) {
-                            let tl = Timeline::from_redis_text(tl, &mut self.tag_id_cache)?;
-                            let event: Arc<Event> = Arc::new(msg.event_txt.try_into()?);
-                            if let Some(channels) = self.timelines.get_mut(&tl) {
-                                for channel in channels.values_mut() {
-                                    if let Ok(Async::NotReady) = channel.poll_ready() {
-                                        log::warn!("{:?} channel full\ncan't send:{:?}", tl, event);
-                                        return Ok(Async::NotReady);
-                                    }
-                                    let _ = channel.try_send(event.clone()); // err just means channel will be closed
-                                }
-                            }
-                        }
-                        unread = msg.leftover_input;
-                        self.unread_idx.0 = self.unread_idx.1 - unread.len();
+        if !valid.is_empty() {
+            use RedisParseOutput::*;
+            match RedisParseOutput::try_from(valid) {
+                Ok(Msg(msg)) => {
+                    // If we get a message and it matches the redis_namespace, get the msg's
+                    // Event and send it to all channels matching the msg's Timeline
+                    if let Some(tl) = msg.timeline_matching_ns(&self.redis_conn.namespace) {
+                        self.unread_idx.0 =
+                            self.unread_idx.1 - msg.leftover_input.len() - invalid.len();
+
+                        let tl = Timeline::from_redis_text(tl, &mut self.tag_id_cache)?;
+                        let event: Arc<Event> = Arc::new(msg.event_txt.try_into()?);
+                        Ok(Async::Ready(Some((tl, event))))
+                    } else {
+                        Ok(Async::Ready(None))
                     }
-                    Ok(NonMsg(leftover_input)) => {
-                        unread = leftover_input;
-                        self.unread_idx.0 = self.unread_idx.1 - unread.len();
-                    }
-                    Err(RedisParseErr::Incomplete) => {
-                        self.copy_partial_msg();
-                        break;
-                    }
-                    Err(e) => Err(Error::RedisParseErr(e, unread.to_string()))?,
-                };
+                }
+                Ok(NonMsg(leftover_input)) => {
+                    self.unread_idx.0 = self.unread_idx.1 - leftover_input.len();
+                    Ok(Async::Ready(None))
+                }
+                Err(RedisParseErr::Incomplete) => {
+                    self.copy_partial_msg();
+                    Ok(Async::NotReady)
+                }
+                Err(e) => Err(Error::RedisParseErr(e, valid.to_string()))?,
             }
-            if self.unread_idx.0 == self.unread_idx.1 {
-                self.unread_idx = (0, 0)
-            }
+        } else {
+            self.unread_idx = (0, 0);
+            Ok(Async::NotReady)
         }
-        Ok(Async::Ready(Some(())))
     }
 }
 
 impl Manager {
+    // untested
+    pub fn send_msgs(&mut self) -> Poll<(), Error> {
+        if self.ping_time.elapsed() > Duration::from_secs(30) {
+            self.send_pings()?
+        }
+
+        while let Ok(Async::Ready(Some(msg_len))) = self.redis_conn.poll_redis(self.unread_idx.1) {
+            self.unread_idx.1 += msg_len;
+
+            while let Ok(Async::Ready(msg)) = self.poll() {
+                if let Some((tl, event)) = msg {
+                    for channel in self.timelines.entry(tl).or_default().values_mut() {
+                        if let Ok(Async::NotReady) = channel.poll_ready() {
+                            log::warn!("{:?} channel full\ncan't send:{:?}", tl, event);
+                            self.rewind_to_prev_msg();
+                            return Ok(Async::NotReady);
+                        }
+
+                        let _ = channel.try_send(event.clone()); // err just means channel will be closed
+                    }
+                }
+            }
+        }
+        Ok(Async::Ready(()))
+    }
+
+    fn rewind_to_prev_msg(&mut self) {
+        self.unread_idx.0 = loop {
+            let input = &self.redis_conn.input[..self.unread_idx.0];
+            let input = str::from_utf8(input).unwrap_or_else(|e| {
+                str::from_utf8(input.split_at(e.valid_up_to()).0).expect("guaranteed by `split_at`")
+            });
+
+            let index = if let Some(i) = input.rfind("\r\n*") {
+                i + "\r\n".len()
+            } else {
+                0
+            };
+            self.unread_idx.0 = index;
+
+            if let Ok(Async::Ready(Some(_))) = self.poll() {
+                break index;
+            }
+        }
+    }
+
     fn copy_partial_msg(&mut self) {
         if self.unread_idx.0 == 0 {
             // msg already first; no copying needed
@@ -107,7 +145,7 @@ impl Manager {
             self.redis_conn.input = self.redis_conn.input[self.unread_idx.0..].into();
         }
         self.unread_idx = (0, self.unread_idx.1 - self.unread_idx.0);
-        dbg!(&self.unread_idx);
+        &self.unread_idx;
     }
     /// Create a new `Manager`, with its own Redis connections (but no active subscriptions).
     pub fn try_from(redis_cfg: &config::Redis) -> Result<Self> {
@@ -208,3 +246,6 @@ impl Manager {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod test;

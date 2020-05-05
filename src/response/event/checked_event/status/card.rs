@@ -2,25 +2,25 @@ use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(in super::super) struct Card {
-    pub(super) url: String,
-    pub(super) title: String,
-    pub(super) description: String,
-    pub(super) r#type: CardType,
-    pub(super) author_name: Option<String>,
-    pub(super) author_url: Option<String>,
-    pub(super) provider_name: Option<String>,
-    pub(super) provider_url: Option<String>,
-    pub(super) html: Option<String>,
-    pub(super) width: Option<i64>,
-    pub(super) height: Option<i64>,
-    pub(super) image: Option<String>,
-    pub(super) embed_url: Option<String>,
+pub(crate) struct Card {
+    pub(crate) url: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) r#type: CardType,
+    pub(crate) author_name: Option<String>,
+    pub(crate) author_url: Option<String>,
+    pub(crate) provider_name: Option<String>,
+    pub(crate) provider_url: Option<String>,
+    pub(crate) html: Option<String>,
+    pub(crate) width: Option<i64>,
+    pub(crate) height: Option<i64>,
+    pub(crate) image: Option<String>,
+    pub(crate) embed_url: Option<String>,
 }
 
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) enum CardType {
+pub(crate) enum CardType {
     Link,
     Photo,
     Video,

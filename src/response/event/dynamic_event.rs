@@ -18,7 +18,7 @@ pub struct DynEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum EventKind {
+pub enum EventKind {
     Update(DynStatus),
     NonUpdate,
 }
@@ -30,7 +30,7 @@ impl Default for EventKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DynStatus {
+pub struct DynStatus {
     pub(crate) id: Id,
     pub(crate) username: String,
     pub(crate) language: Option<String>,

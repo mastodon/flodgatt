@@ -1,6 +1,7 @@
-pub(crate) use self::inner::{Content, Reach, Scope, Stream, UserData};
+pub use self::inner::{Content, Reach, Scope, Stream};
 use super::err::Timeline as Error;
 use super::query::Query;
+pub(crate) use inner::UserData;
 
 use lru::LruCache;
 use warp::reject::Rejection;
@@ -11,7 +12,7 @@ mod inner;
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub struct Timeline(pub(crate) Stream, pub(crate) Reach, pub(crate) Content);
+pub struct Timeline(pub Stream, pub Reach, pub Content);
 
 impl Timeline {
     pub fn empty() -> Self {
@@ -61,10 +62,7 @@ impl Timeline {
         })
     }
 
-    pub(crate) fn from_redis_text(
-        timeline: &str,
-        cache: &mut LruCache<String, i64>,
-    ) -> Result<Self> {
+    pub fn from_redis_text(timeline: &str, cache: &mut LruCache<String, i64>) -> Result<Self> {
         use {Content::*, Error::*, Reach::*, Stream::*};
         let mut tag_id = |t: &str| cache.get(&t.to_string()).map_or(Err(BadTag), |id| Ok(*id));
 

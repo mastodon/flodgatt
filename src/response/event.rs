@@ -1,9 +1,12 @@
+#[cfg(not(test))]
 mod checked_event;
+#[cfg(test)]
+pub mod checked_event;
 mod dynamic_event;
 pub mod err;
 
-use self::checked_event::CheckedEvent;
-use self::dynamic_event::{DynEvent, EventKind};
+pub use self::checked_event::CheckedEvent;
+pub use self::dynamic_event::{DynEvent, EventKind};
 use crate::Id;
 
 use hashbrown::HashSet;

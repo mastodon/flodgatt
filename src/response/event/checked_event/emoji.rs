@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Emoji {
+pub(crate) struct Emoji {
     shortcode: String,
     url: String,
     static_url: String,

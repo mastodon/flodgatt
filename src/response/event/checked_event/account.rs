@@ -4,47 +4,47 @@ use serde::{Deserialize, Serialize};
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Account {
+pub(crate) struct Account {
     pub id: Id,
-    pub(super) username: String,
+    pub(crate) username: String,
     pub acct: String,
-    pub(super) url: String,
-    pub(super) display_name: String,
-    pub(super) note: String,
-    pub(super) avatar: String,
-    pub(super) avatar_static: String,
-    pub(super) header: String,
-    pub(super) header_static: String,
-    pub(super) locked: bool,
-    pub(super) emojis: Vec<Emoji>,
-    pub(super) discoverable: Option<bool>, // Shouldn't be option?
-    pub(super) created_at: String,
-    pub(super) statuses_count: i64,
-    pub(super) followers_count: i64,
-    pub(super) following_count: i64,
-    pub(super) moved: Option<String>,
-    pub(super) fields: Option<Vec<Field>>,
-    pub(super) bot: Option<bool>,
-    pub(super) source: Option<Source>,
-    pub(super) group: Option<bool>,            // undocumented
-    pub(super) last_status_at: Option<String>, // undocumented
+    pub(crate) url: String,
+    pub(crate) display_name: String,
+    pub(crate) note: String,
+    pub(crate) avatar: String,
+    pub(crate) avatar_static: String,
+    pub(crate) header: String,
+    pub(crate) header_static: String,
+    pub(crate) locked: bool,
+    pub(crate) emojis: Vec<Emoji>,
+    pub(crate) discoverable: Option<bool>, // Shouldn't be option?
+    pub(crate) created_at: String,
+    pub(crate) statuses_count: i64,
+    pub(crate) followers_count: i64,
+    pub(crate) following_count: i64,
+    pub(crate) moved: Option<String>,
+    pub(crate) fields: Option<Vec<Field>>,
+    pub(crate) bot: Option<bool>,
+    pub(crate) source: Option<Source>,
+    pub(crate) group: Option<bool>,            // undocumented
+    pub(crate) last_status_at: Option<String>, // undocumented
 }
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Field {
-    pub(super) name: String,
-    pub(super) value: String,
-    pub(super) verified_at: Option<String>,
+pub(crate) struct Field {
+    pub(crate) name: String,
+    pub(crate) value: String,
+    pub(crate) verified_at: Option<String>,
 }
 
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub(super) struct Source {
-    pub(super) note: String,
-    pub(super) fields: Vec<Field>,
-    pub(super) privacy: Option<Visibility>,
-    pub(super) sensitive: bool,
-    pub(super) language: String,
-    pub(super) follow_requests_count: i64,
+pub(crate) struct Source {
+    pub(crate) note: String,
+    pub(crate) fields: Vec<Field>,
+    pub(crate) privacy: Option<Visibility>,
+    pub(crate) sensitive: bool,
+    pub(crate) language: String,
+    pub(crate) follow_requests_count: i64,
 }
