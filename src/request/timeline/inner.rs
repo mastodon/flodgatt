@@ -5,7 +5,7 @@ use hashbrown::HashSet;
 use std::convert::TryFrom;
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum Stream {
+pub enum Stream {
     User(Id),
     List(i64),
     Direct(i64),
@@ -15,20 +15,20 @@ pub(crate) enum Stream {
 }
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum Reach {
+pub enum Reach {
     Local,
     Federated,
 }
 
 #[derive(Clone, Debug, Copy, Eq, Hash, PartialEq)]
-pub(crate) enum Content {
+pub enum Content {
     All,
     Media,
     Notification,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Scope {
+pub enum Scope {
     Read,
     Statuses,
     Notifications,

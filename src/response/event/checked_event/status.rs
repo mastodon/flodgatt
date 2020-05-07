@@ -1,5 +1,5 @@
 mod application;
-pub(super) mod attachment;
+pub(crate) mod attachment;
 mod card;
 mod poll;
 
@@ -22,37 +22,36 @@ use std::string::String;
 #[serde(deny_unknown_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Status {
-    pub(super) id: Id,
-    pub(super) uri: String,
-    pub(super) created_at: String,
-    pub(super) account: Account,
-    pub(super) content: String,
-    pub(super) visibility: Visibility,
-    pub(super) sensitive: bool,
-    pub(super) spoiler_text: String,
-    pub(super) media_attachments: Vec<Attachment>,
-    pub(super) application: Option<Application>, // Should be non-optional?
-    pub(super) mentions: Vec<Mention>,
-    pub(super) tags: Vec<Tag>,
-    pub(super) emojis: Vec<Emoji>,
-    pub(super) reblogs_count: i64,
-    pub(super) favourites_count: i64,
-    pub(super) replies_count: i64,
-    pub(super) url: Option<String>,
-    pub(super) in_reply_to_id: Option<Id>,
-    pub(super) in_reply_to_account_id: Option<Id>,
-    pub(super) reblog: Option<Box<Status>>,
-    pub(super) poll: Option<Poll>,
-    pub(super) card: Option<Card>,
+    pub(crate) id: Id,
+    pub(crate) uri: String,
+    pub(crate) created_at: String,
+    pub(crate) account: Account,
+    pub(crate) content: String,
+    pub(crate) visibility: Visibility,
+    pub(crate) sensitive: bool,
+    pub(crate) spoiler_text: String,
+    pub(crate) media_attachments: Vec<Attachment>,
+    pub(crate) application: Option<Application>, // Should be non-optional?
+    pub(crate) mentions: Vec<Mention>,
+    pub(crate) tags: Vec<Tag>,
+    pub(crate) emojis: Vec<Emoji>,
+    pub(crate) reblogs_count: i64,
+    pub(crate) favourites_count: i64,
+    pub(crate) replies_count: i64,
+    pub(crate) url: Option<String>,
+    pub(crate) in_reply_to_id: Option<Id>,
+    pub(crate) in_reply_to_account_id: Option<Id>,
+    pub(crate) reblog: Option<Box<Status>>,
+    pub(crate) poll: Option<Poll>,
+    pub(crate) card: Option<Card>,
     pub(crate) language: Option<String>,
-
-    pub(super) text: Option<String>,
+    pub(crate) text: Option<String>,
     // ↓↓↓ Only for authorized users
-    pub(super) favourited: Option<bool>,
-    pub(super) reblogged: Option<bool>,
-    pub(super) muted: Option<bool>,
-    pub(super) bookmarked: Option<bool>,
-    pub(super) pinned: Option<bool>,
+    pub(crate) favourited: Option<bool>,
+    pub(crate) reblogged: Option<bool>,
+    pub(crate) muted: Option<bool>,
+    pub(crate) bookmarked: Option<bool>,
+    pub(crate) pinned: Option<bool>,
 }
 
 impl Payload for Status {

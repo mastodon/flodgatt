@@ -13,6 +13,7 @@ pub enum RedisConnErr {
 }
 
 impl RedisConnErr {
+    #[allow(unused)] // Not used during testing due to conditional compilation
     pub(super) fn with_addr<T: AsRef<str>>(address: T, inner: std::io::Error) -> Self {
         Self::ConnectionErr {
             addr: address.as_ref().to_string(),

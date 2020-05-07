@@ -15,8 +15,8 @@ impl fmt::Display for RedisParseErr {
         use RedisParseErr::*;
         let msg = match self {
             Incomplete => "The input from Redis does not form a complete message, likely because \
-                           the input buffer filled partway through a message.  Save this input \
-                           and try again with additional input from Redis."
+                the input buffer filled partway through a message.  Save this input and try again \
+                with additional input from Redis."
                 .to_string(),
             InvalidNumber(parse_int_err) => format!(
                 "Redis indicated that an item would be a number, but it could not be parsed: {}",
@@ -25,20 +25,19 @@ impl fmt::Display for RedisParseErr {
 
             InvalidLineStart(line_start_char) => format!(
                 "A line from Redis started with `{}`, which is not a valid character to indicate \
-                 the type of the Redis line.",
+                the type of the Redis line.",
                 line_start_char
             ),
-            InvalidLineEnd(len, line) => format!( // TODO - FIXME
-                "A Redis line did not have the promised length of {}.  \
-                 The line is: {}",
+            InvalidLineEnd(len, line) => format!(
+                "A Redis line did not have the promised length of {}.  The line is: {}",
                 len, line
             ),
             IncorrectRedisType => "Received a Redis type that is not supported in this context.  \
-                                   Flodgatt expects each message from Redis to be a Redis array \
-                                   consisting of bulk strings or integers."
+                Flodgatt expects each message from Redis to be a Redis array consisting of bulk \
+                strings or integers."
                 .to_string(),
             MissingField => "Redis input was missing a field Flodgatt expected (e.g., a `message` \
-                             without a payload line)"
+                without a payload line)"
                 .to_string(),
         };
         write!(f, "{}", msg)

@@ -83,12 +83,16 @@ fn main() -> Result<(), Error> {
         let manager = shared_manager.clone();
         let stream = Interval::new(Instant::now(), poll_freq)
             .map_err(|e| log::error!("{}", e))
-            .for_each(
-                move |_| match manager.lock().unwrap_or_else(RedisManager::recover).poll() {
+            .for_each(move |_| {
+                match manager
+                    .lock()
+                    .unwrap_or_else(RedisManager::recover)
+                    .send_msgs()
+                {
                     Err(e) => Ok(log::error!("{}", e)),
                     Ok(_) => Ok(()),
-                },
-            );
+                }
+            });
 
         warp::spawn(lazy(move || stream));
         warp::serve(ws.or(sse).with(cors).or(status).recover(Handler::err))

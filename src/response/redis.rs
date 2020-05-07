@@ -13,7 +13,7 @@ pub use msg::{RedisMsg, RedisParseOutput};
 use connection::RedisConnErr;
 use msg::RedisParseErr;
 
-enum RedisCmd {
+pub(crate) enum RedisCmd {
     Subscribe,
     Unsubscribe,
 }
